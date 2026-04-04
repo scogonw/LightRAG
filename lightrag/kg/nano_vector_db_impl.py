@@ -21,6 +21,24 @@ from .shared_storage import (
 )
 
 
+def _apply_metadata_filter(
+    results: list[dict[str, Any]], metadata_filter: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Filter results by exact-match on metadata key-value pairs.
+
+    A result matches if its 'metadata' dict contains all key-value pairs
+    from metadata_filter. Results without metadata are excluded when a filter is active.
+    """
+    filtered = []
+    for result in results:
+        result_metadata = result.get("metadata")
+        if not isinstance(result_metadata, dict):
+            continue
+        if all(result_metadata.get(k) == v for k, v in metadata_filter.items()):
+            filtered.append(result)
+    return filtered
+
+
 @final
 @dataclass
 class NanoVectorDBStorage(BaseVectorStorage):
@@ -142,7 +160,7 @@ class NanoVectorDBStorage(BaseVectorStorage):
             )
 
     async def query(
-        self, query: str, top_k: int, query_embedding: list[float] = None
+        self, query: str, top_k: int, query_embedding: list[float] = None, metadata_filter: dict[str, Any] | None = None
     ) -> list[dict[str, Any]]:
         # Use provided embedding or compute it
         if query_embedding is not None:
@@ -155,9 +173,11 @@ class NanoVectorDBStorage(BaseVectorStorage):
             embedding = embedding[0]
 
         client = await self._get_client()
+        # Fetch extra results when filtering to compensate for filtered-out items
+        fetch_top_k = top_k * 3 if metadata_filter else top_k
         results = client.query(
             query=embedding,
-            top_k=top_k,
+            top_k=fetch_top_k,
             better_than_threshold=self.cosine_better_than_threshold,
         )
         results = [
@@ -169,7 +189,12 @@ class NanoVectorDBStorage(BaseVectorStorage):
             }
             for dp in results
         ]
-        return results
+
+        # Apply metadata filter (post-retrieval exact match)
+        if metadata_filter:
+            results = _apply_metadata_filter(results, metadata_filter)
+
+        return results[:top_k]
 
     @property
     async def client_storage(self):
