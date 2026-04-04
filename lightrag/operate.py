@@ -3575,7 +3575,8 @@ async def _get_vector_context(
         cosine_threshold = chunks_vdb.cosine_better_than_threshold
 
         results = await chunks_vdb.query(
-            query, top_k=search_top_k, query_embedding=query_embedding
+            query, top_k=search_top_k, query_embedding=query_embedding,
+            metadata_filter=query_param.metadata_filter
         )
         if not results:
             logger.info(
@@ -4403,7 +4404,8 @@ async def _get_node_data(
     )
 
     results = await entities_vdb.query(
-        query, top_k=query_param.top_k, query_embedding=query_embedding
+        query, top_k=query_param.top_k, query_embedding=query_embedding,
+        metadata_filter=query_param.metadata_filter
     )
 
     if not len(results):
@@ -4678,7 +4680,8 @@ async def _get_edge_data(
     )
 
     results = await relationships_vdb.query(
-        keywords, top_k=query_param.top_k, query_embedding=query_embedding
+        keywords, top_k=query_param.top_k, query_embedding=query_embedding,
+        metadata_filter=query_param.metadata_filter
     )
 
     if not len(results):
