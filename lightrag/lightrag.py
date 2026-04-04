@@ -1241,6 +1241,7 @@ class LightRAG:
         ids: str | list[str] | None = None,
         file_paths: str | list[str] | None = None,
         track_id: str | None = None,
+        metadata: dict | None = None,
     ) -> str:
         """Async Insert documents with checkpoint support
 
@@ -1261,7 +1262,7 @@ class LightRAG:
         if track_id is None:
             track_id = generate_track_id("insert")
 
-        await self.apipeline_enqueue_documents(input, ids, file_paths, track_id)
+        await self.apipeline_enqueue_documents(input, ids, file_paths, track_id, metadata=metadata)
         await self.apipeline_process_enqueue_documents(
             split_by_character, split_by_character_only
         )
@@ -1346,6 +1347,7 @@ class LightRAG:
         ids: list[str] | None = None,
         file_paths: str | list[str] | None = None,
         track_id: str | None = None,
+        metadata: dict | None = None,
     ) -> str:
         """
         Pipeline for Processing Documents
@@ -1409,7 +1411,7 @@ class LightRAG:
 
             # Reconstruct contents with unique content
             contents = {
-                id_: {"content": content, "file_path": file_path}
+                id_: {"content": content, "file_path": file_path, "metadata": metadata}
                 for content, (id_, file_path) in unique_contents.items()
             }
         else:
@@ -1425,6 +1427,7 @@ class LightRAG:
                 compute_mdhash_id(content, prefix="doc-"): {
                     "content": content,
                     "file_path": path,
+                    "metadata": metadata,
                 }
                 for content, path in unique_content_with_paths.items()
             }
@@ -1514,6 +1517,7 @@ class LightRAG:
             doc_id: {
                 "content": contents[doc_id]["content"],
                 "file_path": contents[doc_id]["file_path"],
+                "metadata": contents[doc_id].get("metadata"),
             }
             for doc_id in new_docs.keys()
         }
