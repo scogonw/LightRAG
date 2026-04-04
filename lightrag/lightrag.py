@@ -2760,6 +2760,7 @@ class LightRAG:
             model_func=param.model_func,
             user_prompt=param.user_prompt,
             enable_rerank=param.enable_rerank,
+            metadata_filter=param.metadata_filter,
         )
 
         query_result = None
