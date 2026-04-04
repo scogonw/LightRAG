@@ -31,10 +31,18 @@ def _apply_metadata_filter(
     contains all key-value pairs from metadata_filter.
     Results without metadata are excluded when a filter is active.
     """
+    from lightrag.utils import logger
+
+    logger.info(
+        f"[_apply_metadata_filter] Filtering {len(results)} results with filter={metadata_filter}"
+    )
     filtered = []
     for result in results:
         result_metadata = result.get("metadata")
         if result_metadata is None:
+            logger.debug(
+                f"[_apply_metadata_filter]   SKIP id={result.get('id','?')} - no metadata"
+            )
             continue
         # Normalize to list
         if isinstance(result_metadata, dict):
@@ -44,11 +52,18 @@ def _apply_metadata_filter(
         else:
             continue
         # Match if ANY metadata dict contains all filter key-value pairs
-        if any(
+        matched = any(
             isinstance(m, dict) and all(m.get(k) == v for k, v in metadata_filter.items())
             for m in meta_list
-        ):
+        )
+        logger.info(
+            f"[_apply_metadata_filter]   id={result.get('id', result.get('entity_name', '?'))[:30]} metadata={result_metadata} -> {'PASS' if matched else 'REJECT'}"
+        )
+        if matched:
             filtered.append(result)
+    logger.info(
+        f"[_apply_metadata_filter] Result: {len(filtered)}/{len(results)} passed filter"
+    )
     return filtered
 
 

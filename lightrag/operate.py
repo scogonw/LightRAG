@@ -3284,6 +3284,10 @@ async def kg_query(
     if not query:
         return QueryResult(content=PROMPTS["fail_response"])
 
+    logger.info(
+        f"[kg_query] mode={query_param.mode} metadata_filter={query_param.metadata_filter}"
+    )
+
     if query_param.model_func:
         use_model_func = query_param.model_func
     else:
@@ -3388,10 +3392,13 @@ async def kg_query(
     if cached_result is not None:
         cached_response, _ = cached_result  # Extract content, ignore timestamp
         logger.info(
-            " == LLM cache == Query cache hit, using cached response as query result"
+            f"[kg_query] LLM cache HIT (hash={args_hash[:12]}... metadata_filter={query_param.metadata_filter})"
         )
         response = cached_response
     else:
+        logger.info(
+            f"[kg_query] LLM cache MISS (hash={args_hash[:12]}... metadata_filter={query_param.metadata_filter})"
+        )
         response = await use_model_func(
             user_query,
             system_prompt=sys_prompt,
@@ -3618,10 +3625,21 @@ async def _get_vector_context(
         search_top_k = query_param.chunk_top_k or query_param.top_k
         cosine_threshold = chunks_vdb.cosine_better_than_threshold
 
+        logger.info(
+            f"[_get_vector_context] metadata_filter={query_param.metadata_filter} top_k={search_top_k}"
+        )
         results = await chunks_vdb.query(
             query, top_k=search_top_k, query_embedding=query_embedding,
             metadata_filter=query_param.metadata_filter
         )
+        logger.info(
+            f"[_get_vector_context] VDB returned {len(results) if results else 0} chunks"
+        )
+        if results:
+            for r in results:
+                logger.info(
+                    f"[_get_vector_context]   chunk file_path={r.get('file_path')} metadata={r.get('metadata')}"
+                )
         if not results:
             logger.info(
                 f"Naive query: 0 chunks (chunk_top_k:{search_top_k} cosine:{cosine_threshold})"
@@ -4447,10 +4465,20 @@ async def _get_node_data(
         f"Query nodes: {query} (top_k:{query_param.top_k}, cosine:{entities_vdb.cosine_better_than_threshold})"
     )
 
+    logger.info(
+        f"[_get_node_data] metadata_filter={query_param.metadata_filter}"
+    )
     results = await entities_vdb.query(
         query, top_k=query_param.top_k, query_embedding=query_embedding,
         metadata_filter=query_param.metadata_filter
     )
+    logger.info(
+        f"[_get_node_data] VDB returned {len(results)} entities"
+    )
+    for r in results:
+        logger.info(
+            f"[_get_node_data]   entity={r.get('entity_name')} metadata={r.get('metadata')}"
+        )
 
     if not len(results):
         return [], []
@@ -4722,11 +4750,21 @@ async def _get_edge_data(
     logger.info(
         f"Query edges: {keywords} (top_k:{query_param.top_k}, cosine:{relationships_vdb.cosine_better_than_threshold})"
     )
+    logger.info(
+        f"[_get_edge_data] metadata_filter={query_param.metadata_filter}"
+    )
 
     results = await relationships_vdb.query(
         keywords, top_k=query_param.top_k, query_embedding=query_embedding,
         metadata_filter=query_param.metadata_filter
     )
+    logger.info(
+        f"[_get_edge_data] VDB returned {len(results)} relations"
+    )
+    for r in results:
+        logger.info(
+            f"[_get_edge_data]   rel={r.get('src_id','?')}->{r.get('tgt_id','?')} metadata={r.get('metadata')}"
+        )
 
     if not len(results):
         return [], []
@@ -5221,10 +5259,13 @@ async def naive_query(
     if cached_result is not None:
         cached_response, _ = cached_result  # Extract content, ignore timestamp
         logger.info(
-            " == LLM cache == Query cache hit, using cached response as query result"
+            f"[naive_query] LLM cache HIT (hash={args_hash[:12]}... metadata_filter={query_param.metadata_filter})"
         )
         response = cached_response
     else:
+        logger.info(
+            f"[naive_query] LLM cache MISS (hash={args_hash[:12]}... metadata_filter={query_param.metadata_filter})"
+        )
         response = await use_model_func(
             user_query,
             system_prompt=sys_prompt,
