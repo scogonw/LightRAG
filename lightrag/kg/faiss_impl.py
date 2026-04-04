@@ -19,6 +19,20 @@ from .shared_storage import (
 import faiss  # type: ignore
 
 
+def _apply_metadata_filter(
+    results: list[dict], metadata_filter: dict
+) -> list[dict]:
+    """Filter results by exact-match on metadata key-value pairs."""
+    filtered = []
+    for result in results:
+        result_metadata = result.get("metadata")
+        if not isinstance(result_metadata, dict):
+            continue
+        if all(result_metadata.get(k) == v for k, v in metadata_filter.items()):
+            filtered.append(result)
+    return filtered
+
+
 @final
 @dataclass
 class FaissVectorDBStorage(BaseVectorStorage):
@@ -183,7 +197,7 @@ class FaissVectorDBStorage(BaseVectorStorage):
         return [m["__id__"] for m in list_data]
 
     async def query(
-        self, query: str, top_k: int, query_embedding: list[float] = None
+        self, query: str, top_k: int, query_embedding: list[float] = None, metadata_filter: dict[str, Any] | None = None
     ) -> list[dict[str, Any]]:
         """
         Search by a textual query; returns top_k results with their metadata + similarity distance.
@@ -199,9 +213,12 @@ class FaissVectorDBStorage(BaseVectorStorage):
 
         faiss.normalize_L2(embedding)  # we do in-place normalization
 
+        # Fetch extra results when filtering to compensate for filtered-out items
+        fetch_top_k = top_k * 3 if metadata_filter else top_k
+
         # Perform the similarity search
         index = await self._get_index()
-        distances, indices = index.search(embedding, top_k)
+        distances, indices = index.search(embedding, fetch_top_k)
 
         distances = distances[0]
         indices = indices[0]
@@ -227,6 +244,10 @@ class FaissVectorDBStorage(BaseVectorStorage):
                     "created_at": meta.get("__created_at__"),
                 }
             )
+
+        if metadata_filter:
+            results = _apply_metadata_filter(results, metadata_filter)
+            results = results[:top_k]
 
         return results
 

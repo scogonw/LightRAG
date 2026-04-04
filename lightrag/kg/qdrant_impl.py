@@ -15,6 +15,20 @@ from ..exceptions import DataMigrationError
 from ..kg.shared_storage import get_data_init_lock
 from ..utils import compute_mdhash_id, logger
 
+
+def _apply_metadata_filter(
+    results: list[dict], metadata_filter: dict
+) -> list[dict]:
+    """Filter results by exact-match on metadata key-value pairs."""
+    filtered = []
+    for result in results:
+        result_metadata = result.get("metadata")
+        if not isinstance(result_metadata, dict):
+            continue
+        if all(result_metadata.get(k) == v for k, v in metadata_filter.items()):
+            filtered.append(result)
+    return filtered
+
 if not pm.is_installed("qdrant-client"):
     pm.install("qdrant-client")
 
@@ -693,7 +707,7 @@ class QdrantVectorDBStorage(BaseVectorStorage):
         return results
 
     async def query(
-        self, query: str, top_k: int, query_embedding: list[float] = None
+        self, query: str, top_k: int, query_embedding: list[float] = None, metadata_filter: dict[str, Any] | None = None
     ) -> list[dict[str, Any]]:
         if query_embedding is not None:
             embedding = query_embedding
@@ -703,10 +717,13 @@ class QdrantVectorDBStorage(BaseVectorStorage):
             )  # higher priority for query
             embedding = embedding_result[0]
 
+        # Fetch extra results when filtering to compensate for filtered-out items
+        fetch_top_k = top_k * 3 if metadata_filter else top_k
+
         results = self._client.query_points(
             collection_name=self.final_namespace,
             query=embedding,
-            limit=top_k,
+            limit=fetch_top_k,
             with_payload=True,
             score_threshold=self.cosine_better_than_threshold,
             query_filter=models.Filter(
@@ -714,7 +731,7 @@ class QdrantVectorDBStorage(BaseVectorStorage):
             ),
         ).points
 
-        return [
+        results = [
             {
                 **dp.payload,
                 "distance": dp.score,
@@ -722,6 +739,12 @@ class QdrantVectorDBStorage(BaseVectorStorage):
             }
             for dp in results
         ]
+
+        if metadata_filter:
+            results = _apply_metadata_filter(results, metadata_filter)
+            results = results[:top_k]
+
+        return results
 
     async def index_done_callback(self) -> None:
         # Qdrant handles persistence automatically

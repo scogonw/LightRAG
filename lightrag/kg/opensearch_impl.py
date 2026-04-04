@@ -44,6 +44,20 @@ config = configparser.ConfigParser()
 config.read("config.ini", "utf-8")
 
 
+def _apply_metadata_filter(
+    results: list[dict], metadata_filter: dict
+) -> list[dict]:
+    """Filter results by exact-match on metadata key-value pairs."""
+    filtered = []
+    for result in results:
+        result_metadata = result.get("metadata")
+        if not isinstance(result_metadata, dict):
+            continue
+        if all(result_metadata.get(k) == v for k, v in metadata_filter.items()):
+            filtered.append(result)
+    return filtered
+
+
 def _get_opensearch_env(key, fallback):
     cfg_key = key.replace("OPENSEARCH_", "").lower()
     return os.environ.get(key, config.get("opensearch", cfg_key, fallback=fallback))
@@ -2544,7 +2558,7 @@ class OpenSearchVectorDBStorage(BaseVectorStorage):
             raise
 
     async def query(
-        self, query: str, top_k: int, query_embedding: list[float] = None
+        self, query: str, top_k: int, query_embedding: list[float] = None, metadata_filter: dict[str, Any] | None = None
     ) -> list[dict[str, Any]]:
         """k-NN similarity search with cosine score conversion for lucene engine."""
         if not self._index_ready:
@@ -2559,9 +2573,12 @@ class OpenSearchVectorDBStorage(BaseVectorStorage):
             embedding = await self.embedding_func([query], _priority=5)
             query_vector = embedding[0].tolist()
 
+        # Fetch extra results when filtering to compensate for filtered-out items
+        fetch_top_k = top_k * 3 if metadata_filter else top_k
+
         search_body = {
-            "size": top_k,
-            "query": {"knn": {"vector": {"vector": query_vector, "k": top_k}}},
+            "size": fetch_top_k,
+            "query": {"knn": {"vector": {"vector": query_vector, "k": fetch_top_k}}},
             "_source": {"excludes": ["vector"]},
         }
         try:
@@ -2587,6 +2604,11 @@ class OpenSearchVectorDBStorage(BaseVectorStorage):
                 f"score_range=[{min((h['_score'] for h in response['hits']['hits']), default=0):.4f}, "
                 f"{max((h['_score'] for h in response['hits']['hits']), default=0):.4f}]"
             )
+
+            if metadata_filter:
+                results = _apply_metadata_filter(results, metadata_filter)
+                results = results[:top_k]
+
             return results
         except OpenSearchException as e:
             if _is_missing_index_error(e):

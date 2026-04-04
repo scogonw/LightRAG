@@ -18,6 +18,20 @@ from ..base import (
 )
 from ..utils import logger, compute_mdhash_id, _cooperative_yield
 from ..types import KnowledgeGraph, KnowledgeGraphNode, KnowledgeGraphEdge
+
+
+def _apply_metadata_filter(
+    results: list[dict], metadata_filter: dict
+) -> list[dict]:
+    """Filter results by exact-match on metadata key-value pairs."""
+    filtered = []
+    for result in results:
+        result_metadata = result.get("metadata")
+        if not isinstance(result_metadata, dict):
+            continue
+        if all(result_metadata.get(k) == v for k, v in metadata_filter.items()):
+            filtered.append(result)
+    return filtered
 from ..constants import GRAPH_FIELD_SEP
 from .._version import __version__
 from ..kg.shared_storage import get_data_init_lock
@@ -2254,7 +2268,7 @@ class MongoVectorDBStorage(BaseVectorStorage):
         return list_data
 
     async def query(
-        self, query: str, top_k: int, query_embedding: list[float] = None
+        self, query: str, top_k: int, query_embedding: list[float] = None, metadata_filter: dict[str, Any] | None = None
     ) -> list[dict[str, Any]]:
         """Queries the vector database using Atlas Vector Search."""
         if query_embedding is not None:
@@ -2271,6 +2285,9 @@ class MongoVectorDBStorage(BaseVectorStorage):
             # Convert numpy array to a list to ensure compatibility with MongoDB
             query_vector = embedding[0].tolist()
 
+        # Fetch extra results when filtering to compensate for filtered-out items
+        fetch_top_k = top_k * 3 if metadata_filter else top_k
+
         # Define the aggregation pipeline with the converted query vector
         pipeline = [
             {
@@ -2279,7 +2296,7 @@ class MongoVectorDBStorage(BaseVectorStorage):
                     "path": "vector",
                     "queryVector": query_vector,
                     "numCandidates": 100,  # Adjust for performance
-                    "limit": top_k,
+                    "limit": fetch_top_k,
                 }
             },
             {"$addFields": {"score": {"$meta": "vectorSearchScore"}}},
@@ -2292,7 +2309,7 @@ class MongoVectorDBStorage(BaseVectorStorage):
         results = await cursor.to_list(length=None)
 
         # Format and return the results with created_at field
-        return [
+        results = [
             {
                 **doc,
                 "id": doc["_id"],
@@ -2301,6 +2318,12 @@ class MongoVectorDBStorage(BaseVectorStorage):
             }
             for doc in results
         ]
+
+        if metadata_filter:
+            results = _apply_metadata_filter(results, metadata_filter)
+            results = results[:top_k]
+
+        return results
 
     async def index_done_callback(self) -> None:
         # Mongo handles persistence automatically

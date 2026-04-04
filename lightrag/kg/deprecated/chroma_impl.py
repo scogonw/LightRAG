@@ -15,6 +15,20 @@ from chromadb import HttpClient, PersistentClient  # type: ignore
 from chromadb.config import Settings  # type: ignore
 
 
+def _apply_metadata_filter(
+    results: list[dict], metadata_filter: dict
+) -> list[dict]:
+    """Filter results by exact-match on metadata key-value pairs."""
+    filtered = []
+    for result in results:
+        result_metadata = result.get("metadata")
+        if not isinstance(result_metadata, dict):
+            continue
+        if all(result_metadata.get(k) == v for k, v in metadata_filter.items()):
+            filtered.append(result)
+    return filtered
+
+
 @final
 @dataclass
 class ChromaVectorDBStorage(BaseVectorStorage):
@@ -165,26 +179,31 @@ class ChromaVectorDBStorage(BaseVectorStorage):
             logger.error(f"Error during ChromaDB upsert: {str(e)}")
             raise
 
-    async def query(self, query: str, top_k: int) -> list[dict[str, Any]]:
+    async def query(self, query: str, top_k: int, query_embedding: list[float] = None, metadata_filter: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         try:
-            embedding = await self.embedding_func(
-                [query], _priority=5
-            )  # higher priority for query
+            if query_embedding is not None:
+                embedding = query_embedding if isinstance(query_embedding, list) else list(query_embedding)
+                query_embeddings = [embedding]
+            else:
+                embedding = await self.embedding_func(
+                    [query], _priority=5
+                )  # higher priority for query
+                query_embeddings = embedding.tolist() if not isinstance(embedding, list) else embedding
+
+            # Fetch extra results when filtering to compensate for filtered-out items
+            fetch_top_k = top_k * 3 if metadata_filter else top_k * 2
 
             results = self._collection.query(
-                query_embeddings=embedding.tolist()
-                if not isinstance(embedding, list)
-                else embedding,
-                n_results=top_k * 2,  # Request more results to allow for filtering
+                query_embeddings=query_embeddings,
+                n_results=fetch_top_k,  # Request more results to allow for filtering
                 include=["metadatas", "distances", "documents"],
             )
 
             # Filter results by cosine similarity threshold and take top k
-            # We request 2x results initially to have enough after filtering
             # ChromaDB returns cosine similarity (1 = identical, 0 = orthogonal)
             # We convert to distance (0 = identical, 1 = orthogonal) via (1 - similarity)
             # Only keep results with distance below threshold, then take top k
-            return [
+            formatted_results = [
                 {
                     "id": results["ids"][0][i],
                     "distance": 1 - results["distances"][0][i],
@@ -194,7 +213,12 @@ class ChromaVectorDBStorage(BaseVectorStorage):
                 }
                 for i in range(len(results["ids"][0]))
                 if (1 - results["distances"][0][i]) >= self.cosine_better_than_threshold
-            ][:top_k]
+            ]
+
+            if metadata_filter:
+                formatted_results = _apply_metadata_filter(formatted_results, metadata_filter)
+
+            return formatted_results[:top_k]
 
         except Exception as e:
             logger.error(f"Error during ChromaDB query: {str(e)}")
