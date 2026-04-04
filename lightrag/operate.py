@@ -3378,6 +3378,7 @@ async def kg_query(
         ll_keywords_str,
         query_param.user_prompt or "",
         query_param.enable_rerank,
+        str(query_param.metadata_filter) if query_param.metadata_filter else "",
     )
 
     cached_result = await handle_cache(
@@ -5212,6 +5213,7 @@ async def naive_query(
         query_param.max_total_tokens,
         query_param.user_prompt or "",
         query_param.enable_rerank,
+        str(query_param.metadata_filter) if query_param.metadata_filter else "",
     )
     cached_result = await handle_cache(
         hashing_kv, args_hash, user_query, query_param.mode, cache_type="query"
