@@ -240,6 +240,10 @@ class InsertTextRequest(BaseModel):
     file_source: Optional[str] = Field(
         default=None, min_length=0, description="File Source"
     )
+    metadata: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Optional metadata dict attached to the document. Propagates to chunks, entities, and relations. Used for filtering during queries. Example: {\"department\": \"engineering\", \"year\": 2024}",
+    )
 
     @field_validator("text", mode="after")
     @classmethod
@@ -275,6 +279,10 @@ class InsertTextsRequest(BaseModel):
     )
     file_sources: Optional[list[str]] = Field(
         default=None, min_length=0, description="Sources of the texts"
+    )
+    metadata: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Optional metadata dict attached to all documents in this batch. Propagates to chunks, entities, and relations. Used for filtering during queries.",
     )
 
     @field_validator("texts", mode="after")

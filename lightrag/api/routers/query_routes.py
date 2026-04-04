@@ -110,6 +110,11 @@ class QueryRequest(BaseModel):
         description="If True, enables streaming output for real-time responses. Only affects /query/stream endpoint.",
     )
 
+    metadata_filter: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Optional metadata filter for retrieval. Only returns results whose metadata contains all specified key-value pairs (exact match). Example: {\"department\": \"engineering\"}",
+    )
+
     @field_validator("query", mode="after")
     @classmethod
     def query_strip_after(cls, query: str) -> str:
