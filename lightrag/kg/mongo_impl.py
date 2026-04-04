@@ -23,13 +23,28 @@ from ..types import KnowledgeGraph, KnowledgeGraphNode, KnowledgeGraphEdge
 def _apply_metadata_filter(
     results: list[dict], metadata_filter: dict
 ) -> list[dict]:
-    """Filter results by exact-match on metadata key-value pairs."""
+    """Filter results by exact-match on metadata key-value pairs.
+
+    Metadata can be a single dict or a list of dicts (for entities/relations
+    that span multiple documents). A result matches if ANY metadata dict
+    contains all key-value pairs from metadata_filter.
+    Results without metadata are excluded when a filter is active.
+    """
     filtered = []
     for result in results:
         result_metadata = result.get("metadata")
-        if not isinstance(result_metadata, dict):
+        if result_metadata is None:
             continue
-        if all(result_metadata.get(k) == v for k, v in metadata_filter.items()):
+        if isinstance(result_metadata, dict):
+            meta_list = [result_metadata]
+        elif isinstance(result_metadata, list):
+            meta_list = result_metadata
+        else:
+            continue
+        if any(
+            isinstance(m, dict) and all(m.get(k) == v for k, v in metadata_filter.items())
+            for m in meta_list
+        ):
             filtered.append(result)
     return filtered
 from ..constants import GRAPH_FIELD_SEP

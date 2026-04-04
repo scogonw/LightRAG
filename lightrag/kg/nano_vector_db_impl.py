@@ -26,15 +26,28 @@ def _apply_metadata_filter(
 ) -> list[dict[str, Any]]:
     """Filter results by exact-match on metadata key-value pairs.
 
-    A result matches if its 'metadata' dict contains all key-value pairs
-    from metadata_filter. Results without metadata are excluded when a filter is active.
+    Metadata can be a single dict or a list of dicts (for entities/relations
+    that span multiple documents). A result matches if ANY metadata dict
+    contains all key-value pairs from metadata_filter.
+    Results without metadata are excluded when a filter is active.
     """
     filtered = []
     for result in results:
         result_metadata = result.get("metadata")
-        if not isinstance(result_metadata, dict):
+        if result_metadata is None:
             continue
-        if all(result_metadata.get(k) == v for k, v in metadata_filter.items()):
+        # Normalize to list
+        if isinstance(result_metadata, dict):
+            meta_list = [result_metadata]
+        elif isinstance(result_metadata, list):
+            meta_list = result_metadata
+        else:
+            continue
+        # Match if ANY metadata dict contains all filter key-value pairs
+        if any(
+            isinstance(m, dict) and all(m.get(k) == v for k, v in metadata_filter.items())
+            for m in meta_list
+        ):
             filtered.append(result)
     return filtered
 

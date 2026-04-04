@@ -1916,12 +1916,34 @@ async def _merge_nodes_then_upsert(
         else:
             logger.debug(status_message)
 
-        # Get metadata from nodes_data (use first non-None value)
-        metadata = None
+        # Collect all unique metadata dicts from nodes_data
+        metadata_list = []
+        seen_metadata = set()
         for dp in nodes_data:
-            if dp.get("metadata") is not None:
-                metadata = dp["metadata"]
-                break
+            m = dp.get("metadata")
+            if m is not None and isinstance(m, dict):
+                # Use frozenset of items as hashable key for dedup
+                key = frozenset(sorted(m.items()))
+                if key not in seen_metadata:
+                    seen_metadata.add(key)
+                    metadata_list.append(m)
+        # Also include existing metadata from already_node if present
+        if already_node:
+            existing_meta = already_node.get("metadata")
+            if existing_meta is not None:
+                if isinstance(existing_meta, list):
+                    for m in existing_meta:
+                        if isinstance(m, dict):
+                            key = frozenset(sorted(m.items()))
+                            if key not in seen_metadata:
+                                seen_metadata.add(key)
+                                metadata_list.append(m)
+                elif isinstance(existing_meta, dict):
+                    key = frozenset(sorted(existing_meta.items()))
+                    if key not in seen_metadata:
+                        seen_metadata.add(key)
+                        metadata_list.append(existing_meta)
+        metadata = metadata_list if metadata_list else None
 
         # 11. Update both graph and vector db
         node_data = dict(
@@ -2091,12 +2113,33 @@ async def _merge_edges_then_upsert(
         else:  # In FIFO mode, keep all edges - truncation happens at source_ids level only
             edges_data = list(edges_data)
 
-        # Get metadata from edges_data (use first non-None value)
-        metadata = None
+        # Collect all unique metadata dicts from edges_data
+        metadata_list = []
+        seen_metadata = set()
         for dp in edges_data:
-            if dp.get("metadata") is not None:
-                metadata = dp["metadata"]
-                break
+            m = dp.get("metadata")
+            if m is not None and isinstance(m, dict):
+                key = frozenset(sorted(m.items()))
+                if key not in seen_metadata:
+                    seen_metadata.add(key)
+                    metadata_list.append(m)
+        # Also include existing metadata from already_edge if present
+        if already_edge:
+            existing_meta = already_edge.get("metadata")
+            if existing_meta is not None:
+                if isinstance(existing_meta, list):
+                    for m in existing_meta:
+                        if isinstance(m, dict):
+                            key = frozenset(sorted(m.items()))
+                            if key not in seen_metadata:
+                                seen_metadata.add(key)
+                                metadata_list.append(m)
+                elif isinstance(existing_meta, dict):
+                    key = frozenset(sorted(existing_meta.items()))
+                    if key not in seen_metadata:
+                        seen_metadata.add(key)
+                        metadata_list.append(existing_meta)
+        metadata = metadata_list if metadata_list else None
 
         # 5. Check if we need to skip summary due to source_ids limit
         if (

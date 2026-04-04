@@ -6545,7 +6545,16 @@ SQL_TEMPLATES = {
               FROM {table_name} c
               WHERE c.workspace = $1
                 AND c.content_vector <=> '[{embedding_string}]'::{vector_cast} < $2
-                AND c.metadata @> $4::jsonb
+                AND (
+                    CASE jsonb_typeof(c.metadata)
+                        WHEN 'array' THEN EXISTS (
+                            SELECT 1 FROM jsonb_array_elements(c.metadata) elem
+                            WHERE elem @> $4::jsonb
+                        )
+                        WHEN 'object' THEN c.metadata @> $4::jsonb
+                        ELSE false
+                    END
+                )
               ORDER BY c.content_vector <=> '[{embedding_string}]'::{vector_cast}
               LIMIT $3;
               """,
@@ -6555,7 +6564,16 @@ SQL_TEMPLATES = {
                 FROM {table_name} e
                 WHERE e.workspace = $1
                   AND e.content_vector <=> '[{embedding_string}]'::{vector_cast} < $2
-                  AND e.metadata @> $4::jsonb
+                  AND (
+                      CASE jsonb_typeof(e.metadata)
+                          WHEN 'array' THEN EXISTS (
+                              SELECT 1 FROM jsonb_array_elements(e.metadata) elem
+                              WHERE elem @> $4::jsonb
+                          )
+                          WHEN 'object' THEN e.metadata @> $4::jsonb
+                          ELSE false
+                      END
+                  )
                 ORDER BY e.content_vector <=> '[{embedding_string}]'::{vector_cast}
                 LIMIT $3;
                 """,
@@ -6566,7 +6584,16 @@ SQL_TEMPLATES = {
                      FROM {table_name} r
                      WHERE r.workspace = $1
                        AND r.content_vector <=> '[{embedding_string}]'::{vector_cast} < $2
-                       AND r.metadata @> $4::jsonb
+                       AND (
+                           CASE jsonb_typeof(r.metadata)
+                               WHEN 'array' THEN EXISTS (
+                                   SELECT 1 FROM jsonb_array_elements(r.metadata) elem
+                                   WHERE elem @> $4::jsonb
+                               )
+                               WHEN 'object' THEN r.metadata @> $4::jsonb
+                               ELSE false
+                           END
+                       )
                      ORDER BY r.content_vector <=> '[{embedding_string}]'::{vector_cast}
                      LIMIT $3;
                      """,
