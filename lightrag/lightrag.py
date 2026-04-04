@@ -1983,6 +1983,7 @@ class LightRAG:
                                     "full_doc_id": doc_id,
                                     "file_path": file_path,  # Add file path to each chunk
                                     "llm_cache_list": [],  # Initialize empty LLM cache list for each chunk
+                                    "metadata": content_data.get("metadata") if content_data else None,
                                 }
                                 for dp in chunking_result
                             }
