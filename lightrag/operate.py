@@ -388,6 +388,7 @@ def _handle_single_entity_extraction(
     chunk_key: str,
     timestamp: int,
     file_path: str = "unknown_source",
+    metadata: dict | None = None,
 ):
     if len(record_attributes) != 4 or "entity" not in record_attributes[0]:
         if len(record_attributes) > 1 and "entity" in record_attributes[0]:
@@ -456,6 +457,7 @@ def _handle_single_entity_extraction(
             source_id=chunk_key,
             file_path=file_path,
             timestamp=timestamp,
+            metadata=metadata,
         )
 
     except ValueError as e:
@@ -475,6 +477,7 @@ def _handle_single_relationship_extraction(
     chunk_key: str,
     timestamp: int,
     file_path: str = "unknown_source",
+    metadata: dict | None = None,
 ):
     if (
         len(record_attributes) != 5 or "relation" not in record_attributes[0]
@@ -543,6 +546,7 @@ def _handle_single_relationship_extraction(
             source_id=edge_source_id,
             file_path=file_path,
             timestamp=timestamp,
+            metadata=metadata,
         )
 
     except ValueError as e:
@@ -941,6 +945,7 @@ async def _process_extraction_result(
     file_path: str = "unknown_source",
     tuple_delimiter: str = "<|#|>",
     completion_delimiter: str = "<|COMPLETE|>",
+    metadata: dict | None = None,
 ) -> tuple[dict, dict]:
     """Process a single extraction result (either initial or gleaning)
     Args:
@@ -1023,7 +1028,7 @@ async def _process_extraction_result(
 
         # Try to parse as entity
         entity_data = _handle_single_entity_extraction(
-            record_attributes, chunk_key, timestamp, file_path
+            record_attributes, chunk_key, timestamp, file_path, metadata=metadata
         )
         if entity_data is not None:
             truncated_name = _truncate_entity_identifier(
@@ -1039,7 +1044,7 @@ async def _process_extraction_result(
 
         # Try to parse as relationship
         relationship_data = _handle_single_relationship_extraction(
-            record_attributes, chunk_key, timestamp, file_path
+            record_attributes, chunk_key, timestamp, file_path, metadata=metadata
         )
         if relationship_data is not None:
             truncated_source = _truncate_entity_identifier(
@@ -1079,12 +1084,17 @@ async def _rebuild_from_extraction_result(
         Tuple of (entities_dict, relationships_dict)
     """
 
-    # Get chunk data for file_path from storage
+    # Get chunk data for file_path and metadata from storage
     chunk_data = await text_chunks_storage.get_by_id(chunk_id)
     file_path = (
         chunk_data.get("file_path", "unknown_source")
         if chunk_data
         else "unknown_source"
+    )
+    chunk_metadata = (
+        chunk_data.get("metadata")
+        if chunk_data
+        else None
     )
 
     # Call the shared processing function
@@ -1095,6 +1105,7 @@ async def _rebuild_from_extraction_result(
         file_path,
         tuple_delimiter=PROMPTS["DEFAULT_TUPLE_DELIMITER"],
         completion_delimiter=PROMPTS["DEFAULT_COMPLETION_DELIMITER"],
+        metadata=chunk_metadata,
     )
 
 
@@ -1152,6 +1163,7 @@ async def _rebuild_single_entity(
                     "description": final_description,
                     "entity_type": entity_type,
                     "file_path": updated_entity_data["file_path"],
+                    "metadata": current_entity.get("metadata"),
                 }
             }
 
@@ -1543,6 +1555,7 @@ async def _rebuild_single_relationship(
                         "source_id": node_source_id,
                         "entity_type": "UNKNOWN",
                         "file_path": node_file_path,
+                        "metadata": current_relationship.get("metadata"),
                     }
                 }
                 await safe_vdb_operation_with_exception(
@@ -1583,6 +1596,7 @@ async def _rebuild_single_relationship(
                 "description": final_description,
                 "weight": weight,
                 "file_path": updated_relationship_data["file_path"],
+                "metadata": current_relationship.get("metadata"),
             }
         }
 
@@ -1902,6 +1916,13 @@ async def _merge_nodes_then_upsert(
         else:
             logger.debug(status_message)
 
+        # Get metadata from nodes_data (use first non-None value)
+        metadata = None
+        for dp in nodes_data:
+            if dp.get("metadata") is not None:
+                metadata = dp["metadata"]
+                break
+
         # 11. Update both graph and vector db
         node_data = dict(
             entity_id=entity_name,
@@ -1927,6 +1948,7 @@ async def _merge_nodes_then_upsert(
                     "content": entity_content,
                     "source_id": source_id,
                     "file_path": file_path,
+                    "metadata": metadata,
                 }
             }
             await safe_vdb_operation_with_exception(
@@ -2068,6 +2090,13 @@ async def _merge_edges_then_upsert(
             edges_data = filtered_edges
         else:  # In FIFO mode, keep all edges - truncation happens at source_ids level only
             edges_data = list(edges_data)
+
+        # Get metadata from edges_data (use first non-None value)
+        metadata = None
+        for dp in edges_data:
+            if dp.get("metadata") is not None:
+                metadata = dp["metadata"]
+                break
 
         # 5. Check if we need to skip summary due to source_ids limit
         if (
@@ -2295,6 +2324,7 @@ async def _merge_edges_then_upsert(
                             "source_id": source_id,
                             "entity_type": "UNKNOWN",
                             "file_path": file_path,
+                            "metadata": metadata,
                         }
                     }
                     await safe_vdb_operation_with_exception(
@@ -2405,6 +2435,7 @@ async def _merge_edges_then_upsert(
                                 "file_path": existing_node.get(
                                     "file_path", "unknown_source"
                                 ),
+                                "metadata": metadata,
                             }
                         }
                         await safe_vdb_operation_with_exception(
@@ -2479,6 +2510,7 @@ async def _merge_edges_then_upsert(
                     "description": description,
                     "weight": weight,
                     "file_path": file_path,
+                    "metadata": metadata,
                 }
             }
             await safe_vdb_operation_with_exception(
@@ -2940,8 +2972,9 @@ async def extract_entities(
         chunk_key = chunk_key_dp[0]
         chunk_dp = chunk_key_dp[1]
         content = chunk_dp["content"]
-        # Get file path from chunk data or use default
+        # Get file path and metadata from chunk data or use defaults
         file_path = chunk_dp.get("file_path", "unknown_source")
+        chunk_metadata = chunk_dp.get("metadata")
 
         # Create cache keys collector for batch processing
         cache_keys_collector = []
@@ -2981,6 +3014,7 @@ async def extract_entities(
             file_path,
             tuple_delimiter=context_base["tuple_delimiter"],
             completion_delimiter=context_base["completion_delimiter"],
+            metadata=chunk_metadata,
         )
 
         # Process additional gleaning results only 1 time when entity_extract_max_gleaning is greater than zero.
@@ -3024,6 +3058,7 @@ async def extract_entities(
                     file_path,
                     tuple_delimiter=context_base["tuple_delimiter"],
                     completion_delimiter=context_base["completion_delimiter"],
+                    metadata=chunk_metadata,
                 )
 
                 # Merge results - compare description lengths to choose better version
