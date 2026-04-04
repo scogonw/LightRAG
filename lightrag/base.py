@@ -168,6 +168,12 @@ class QueryParam:
     containing citation information for the retrieved content.
     """
 
+    metadata_filter: dict[str, Any] | None = None
+    """Optional metadata filter for retrieval. Only returns results whose stored metadata
+    contains all key-value pairs specified here (exact match).
+    Example: {"department": "engineering", "year": 2024}
+    """
+
 
 @dataclass
 class StorageNameSpace(ABC):
@@ -260,7 +266,7 @@ class BaseVectorStorage(StorageNameSpace, ABC):
 
     @abstractmethod
     async def query(
-        self, query: str, top_k: int, query_embedding: list[float] = None
+        self, query: str, top_k: int, query_embedding: list[float] = None, metadata_filter: dict[str, Any] | None = None
     ) -> list[dict[str, Any]]:
         """Query the vector storage and retrieve top_k results.
 
@@ -269,6 +275,9 @@ class BaseVectorStorage(StorageNameSpace, ABC):
             top_k: Number of top results to return
             query_embedding: Optional pre-computed embedding for the query.
                            If provided, skips embedding computation for better performance.
+            metadata_filter: Optional metadata filter. Only returns results whose stored
+                           metadata contains all key-value pairs specified here (exact match).
+                           Example: {"department": "engineering", "year": 2024}
         """
 
     @abstractmethod
