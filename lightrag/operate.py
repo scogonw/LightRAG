@@ -4737,6 +4737,30 @@ async def _find_related_text_unit_from_entities(
                     "order": i + 1,  # 1-based order in final entity-related results
                 }
 
+    # Step 7: Apply metadata filter to entity-related chunks
+    if query_param.metadata_filter and result_chunks:
+        before_count = len(result_chunks)
+        filtered_chunks = []
+        for chunk in result_chunks:
+            chunk_meta = chunk.get("metadata")
+            if chunk_meta is None:
+                continue
+            if isinstance(chunk_meta, dict):
+                meta_list = [chunk_meta]
+            elif isinstance(chunk_meta, list):
+                meta_list = chunk_meta
+            else:
+                continue
+            if any(
+                isinstance(m, dict) and all(m.get(k) == v for k, v in query_param.metadata_filter.items())
+                for m in meta_list
+            ):
+                filtered_chunks.append(chunk)
+        logger.info(
+            f"[_find_related_text_unit_from_entities] Metadata filter applied: {len(filtered_chunks)}/{before_count} entity chunks passed"
+        )
+        result_chunks = filtered_chunks
+
     return result_chunks
 
 
@@ -5042,6 +5066,30 @@ async def _find_related_text_unit_from_relations(
                     "frequency": chunk_occurrence_count.get(chunk_id, 1),
                     "order": i + 1,  # 1-based order in final relation-related results
                 }
+
+    # Apply metadata filter to relation-related chunks
+    if query_param.metadata_filter and result_chunks:
+        before_count = len(result_chunks)
+        filtered_chunks = []
+        for chunk in result_chunks:
+            chunk_meta = chunk.get("metadata")
+            if chunk_meta is None:
+                continue
+            if isinstance(chunk_meta, dict):
+                meta_list = [chunk_meta]
+            elif isinstance(chunk_meta, list):
+                meta_list = chunk_meta
+            else:
+                continue
+            if any(
+                isinstance(m, dict) and all(m.get(k) == v for k, v in query_param.metadata_filter.items())
+                for m in meta_list
+            ):
+                filtered_chunks.append(chunk)
+        logger.info(
+            f"[_find_related_text_unit_from_relations] Metadata filter applied: {len(filtered_chunks)}/{before_count} relation chunks passed"
+        )
+        result_chunks = filtered_chunks
 
     return result_chunks
 
