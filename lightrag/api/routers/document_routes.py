@@ -1753,6 +1753,7 @@ async def pipeline_index_texts(
     texts: List[str],
     file_sources: List[str] = None,
     track_id: str = None,
+    metadata: dict = None,
 ):
     """Index a list of texts with track_id
 
@@ -1761,6 +1762,7 @@ async def pipeline_index_texts(
         texts: The texts to index
         file_sources: Sources of the texts
         track_id: Optional tracking ID
+        metadata: Optional metadata to associate with the documents
     """
     if not texts:
         return
@@ -1778,7 +1780,7 @@ async def pipeline_index_texts(
             )
 
     await rag.apipeline_enqueue_documents(
-        input=texts, file_paths=normalized_file_sources, track_id=track_id
+        input=texts, file_paths=normalized_file_sources, track_id=track_id, metadata=metadata
     )
     await rag.apipeline_process_enqueue_documents()
 
@@ -2357,6 +2359,7 @@ def create_document_routes(
                 [request.text],
                 file_sources=[request.file_source],
                 track_id=track_id,
+                metadata=request.metadata,
             )
 
             return InsertResponse(
@@ -2440,6 +2443,7 @@ def create_document_routes(
                 request.texts,
                 file_sources=request.file_sources,
                 track_id=track_id,
+                metadata=request.metadata,
             )
 
             return InsertResponse(
