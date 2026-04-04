@@ -779,6 +779,10 @@ def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
                                                     "source_id": {"type": "string"},
                                                     "file_path": {"type": "string"},
                                                     "reference_id": {"type": "string"},
+                                                    "metadata": {
+                                                        "type": "object",
+                                                        "description": "Document metadata propagated during insertion (present only if metadata was provided)",
+                                                    },
                                                 },
                                             },
                                             "description": "Retrieved entities from knowledge graph",
@@ -796,6 +800,10 @@ def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
                                                     "source_id": {"type": "string"},
                                                     "file_path": {"type": "string"},
                                                     "reference_id": {"type": "string"},
+                                                    "metadata": {
+                                                        "type": "object",
+                                                        "description": "Document metadata propagated during insertion (present only if metadata was provided)",
+                                                    },
                                                 },
                                             },
                                             "description": "Retrieved relationships from knowledge graph",
@@ -809,6 +817,10 @@ def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
                                                     "file_path": {"type": "string"},
                                                     "chunk_id": {"type": "string"},
                                                     "reference_id": {"type": "string"},
+                                                    "metadata": {
+                                                        "type": "object",
+                                                        "description": "Document metadata propagated during insertion (present only if metadata was provided)",
+                                                    },
                                                 },
                                             },
                                             "description": "Retrieved text chunks from vector database",

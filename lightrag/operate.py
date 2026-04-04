@@ -3656,6 +3656,8 @@ async def _get_vector_context(
                     "source_type": "vector",  # Mark the source type
                     "chunk_id": result.get("id"),  # Add chunk_id for deduplication
                 }
+                if result.get("metadata"):
+                    chunk_with_metadata["metadata"] = result["metadata"]
                 valid_chunks.append(chunk_with_metadata)
 
         logger.info(
@@ -4108,13 +4110,14 @@ async def _merge_all_chunks(
             chunk_id = chunk.get("chunk_id") or chunk.get("id")
             if chunk_id and chunk_id not in seen_chunk_ids:
                 seen_chunk_ids.add(chunk_id)
-                merged_chunks.append(
-                    {
-                        "content": chunk["content"],
-                        "file_path": chunk.get("file_path", "unknown_source"),
-                        "chunk_id": chunk_id,
-                    }
-                )
+                chunk_data = {
+                    "content": chunk["content"],
+                    "file_path": chunk.get("file_path", "unknown_source"),
+                    "chunk_id": chunk_id,
+                }
+                if chunk.get("metadata"):
+                    chunk_data["metadata"] = chunk["metadata"]
+                merged_chunks.append(chunk_data)
 
         # Add from entity chunks (Local mode)
         if i < len(entity_chunks):
@@ -4122,13 +4125,14 @@ async def _merge_all_chunks(
             chunk_id = chunk.get("chunk_id") or chunk.get("id")
             if chunk_id and chunk_id not in seen_chunk_ids:
                 seen_chunk_ids.add(chunk_id)
-                merged_chunks.append(
-                    {
-                        "content": chunk["content"],
-                        "file_path": chunk.get("file_path", "unknown_source"),
-                        "chunk_id": chunk_id,
-                    }
-                )
+                chunk_data = {
+                    "content": chunk["content"],
+                    "file_path": chunk.get("file_path", "unknown_source"),
+                    "chunk_id": chunk_id,
+                }
+                if chunk.get("metadata"):
+                    chunk_data["metadata"] = chunk["metadata"]
+                merged_chunks.append(chunk_data)
 
         # Add from relation chunks (Global mode)
         if i < len(relation_chunks):
@@ -4136,13 +4140,14 @@ async def _merge_all_chunks(
             chunk_id = chunk.get("chunk_id") or chunk.get("id")
             if chunk_id and chunk_id not in seen_chunk_ids:
                 seen_chunk_ids.add(chunk_id)
-                merged_chunks.append(
-                    {
-                        "content": chunk["content"],
-                        "file_path": chunk.get("file_path", "unknown_source"),
-                        "chunk_id": chunk_id,
-                    }
-                )
+                chunk_data = {
+                    "content": chunk["content"],
+                    "file_path": chunk.get("file_path", "unknown_source"),
+                    "chunk_id": chunk_id,
+                }
+                if chunk.get("metadata"):
+                    chunk_data["metadata"] = chunk["metadata"]
+                merged_chunks.append(chunk_data)
 
     logger.info(
         f"Round-robin merged chunks: {origin_len} -> {len(merged_chunks)} (deduplicated {origin_len - len(merged_chunks)})"

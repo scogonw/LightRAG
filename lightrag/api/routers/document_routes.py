@@ -231,6 +231,7 @@ class InsertTextRequest(BaseModel):
     Attributes:
         text: The text content to be inserted into the RAG system
         file_source: Source of the text (optional)
+        metadata: Optional metadata dict for filtering during queries (optional)
     """
 
     text: str = Field(
@@ -260,6 +261,7 @@ class InsertTextRequest(BaseModel):
             "example": {
                 "text": "This is a sample text to be inserted into the RAG system.",
                 "file_source": "Source of the text (optional)",
+                "metadata": {"department": "engineering", "year": 2024},
             }
         }
     )
@@ -271,6 +273,7 @@ class InsertTextsRequest(BaseModel):
     Attributes:
         texts: List of text contents to be inserted into the RAG system
         file_sources: Sources of the texts (optional)
+        metadata: Optional metadata dict for filtering during queries (optional)
     """
 
     texts: list[str] = Field(
@@ -310,6 +313,7 @@ class InsertTextsRequest(BaseModel):
                 "file_sources": [
                     "First file source (optional)",
                 ],
+                "metadata": {"department": "engineering", "year": 2024},
             }
         }
     )
