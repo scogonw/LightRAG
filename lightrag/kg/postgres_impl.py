@@ -3233,8 +3233,9 @@ class PGVectorStorage(BaseVectorStorage):
                 item["content"],  # $6
                 item["__vector__"],  # $7 - numpy array, handled by pgvector codec
                 item["file_path"],  # $8
-                current_time,  # $9
+                json.dumps(item.get("metadata")) if item.get("metadata") else None,  # $9
                 current_time,  # $10
+                current_time,  # $11
             )
         except Exception as e:
             logger.error(
@@ -3268,8 +3269,9 @@ class PGVectorStorage(BaseVectorStorage):
             item["__vector__"],  # $5 - numpy array, handled by pgvector codec
             chunk_ids,  # $6
             item.get("file_path", None),  # $7
-            current_time,  # $8
+            json.dumps(item.get("metadata")) if item.get("metadata") else None,  # $8
             current_time,  # $9
+            current_time,  # $10
         )
         return upsert_sql, values
 
@@ -3300,8 +3302,9 @@ class PGVectorStorage(BaseVectorStorage):
             item["__vector__"],  # $6 - numpy array, handled by pgvector codec
             chunk_ids,  # $7
             item.get("file_path", None),  # $8
-            current_time,  # $9
+            json.dumps(item.get("metadata")) if item.get("metadata") else None,  # $9
             current_time,  # $10
+            current_time,  # $11
         )
         return upsert_sql, values
 
@@ -3426,7 +3429,7 @@ class PGVectorStorage(BaseVectorStorage):
 
     #################### query method ###############
     async def query(
-        self, query: str, top_k: int, query_embedding: list[float] = None
+        self, query: str, top_k: int, query_embedding: list[float] = None, metadata_filter: dict[str, Any] | None = None
     ) -> list[dict[str, Any]]:
         if query_embedding is not None:
             embedding = query_embedding
@@ -3443,16 +3446,32 @@ class PGVectorStorage(BaseVectorStorage):
             if getattr(self.db, "vector_index_type", None) == "HNSW_HALFVEC"
             else "vector"
         )
-        sql = SQL_TEMPLATES[self.namespace].format(
-            embedding_string=embedding_string,
-            table_name=self.table_name,
-            vector_cast=vector_cast,
-        )
-        params = {
-            "workspace": self.workspace,
-            "closer_than_threshold": 1 - self.cosine_better_than_threshold,
-            "top_k": top_k,
-        }
+
+        # Build SQL with optional metadata filter
+        if metadata_filter:
+            sql_key = self.namespace + "_with_metadata"
+            sql = SQL_TEMPLATES[sql_key].format(
+                embedding_string=embedding_string,
+                table_name=self.table_name,
+                vector_cast=vector_cast,
+            )
+            params = {
+                "workspace": self.workspace,
+                "closer_than_threshold": 1 - self.cosine_better_than_threshold,
+                "top_k": top_k,
+                "metadata_filter": json.dumps(metadata_filter),
+            }
+        else:
+            sql = SQL_TEMPLATES[self.namespace].format(
+                embedding_string=embedding_string,
+                table_name=self.table_name,
+                vector_cast=vector_cast,
+            )
+            params = {
+                "workspace": self.workspace,
+                "closer_than_threshold": 1 - self.cosine_better_than_threshold,
+                "top_k": top_k,
+            }
         results = await self.db.query(sql, params=list(params.values()), multirows=True)
         return results
 
@@ -6194,6 +6213,7 @@ TABLES = {
                     content TEXT,
                     content_vector VECTOR(dimension),
                     file_path TEXT NULL,
+                    metadata JSONB NULL,
                     create_time TIMESTAMP(0) DEFAULT CURRENT_TIMESTAMP,
                     update_time TIMESTAMP(0) DEFAULT CURRENT_TIMESTAMP,
 	                CONSTRAINT LIGHTRAG_VDB_CHUNKS_PK PRIMARY KEY (workspace, id)
@@ -6210,6 +6230,7 @@ TABLES = {
                     update_time TIMESTAMP(0) DEFAULT CURRENT_TIMESTAMP,
                     chunk_ids VARCHAR(255)[] NULL,
                     file_path TEXT NULL,
+                    metadata JSONB NULL,
 	                CONSTRAINT LIGHTRAG_VDB_ENTITY_PK PRIMARY KEY (workspace, id)
                     )"""
     },
@@ -6225,6 +6246,7 @@ TABLES = {
                     update_time TIMESTAMP(0) DEFAULT CURRENT_TIMESTAMP,
                     chunk_ids VARCHAR(255)[] NULL,
                     file_path TEXT NULL,
+                    metadata JSONB NULL,
 	                CONSTRAINT LIGHTRAG_VDB_RELATION_PK PRIMARY KEY (workspace, id)
                     )"""
     },
@@ -6447,8 +6469,8 @@ SQL_TEMPLATES = {
     # SQL for VectorStorage
     "upsert_chunk": """INSERT INTO {table_name} (workspace, id, tokens,
                       chunk_order_index, full_doc_id, content, content_vector, file_path,
-                      create_time, update_time)
-                      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                      metadata, create_time, update_time)
+                      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                       ON CONFLICT (workspace,id) DO UPDATE
                       SET tokens=EXCLUDED.tokens,
                       chunk_order_index=EXCLUDED.chunk_order_index,
@@ -6456,22 +6478,24 @@ SQL_TEMPLATES = {
                       content = EXCLUDED.content,
                       content_vector=EXCLUDED.content_vector,
                       file_path=EXCLUDED.file_path,
+                      metadata=EXCLUDED.metadata,
                       update_time = EXCLUDED.update_time
                      """,
     "upsert_entity": """INSERT INTO {table_name} (workspace, id, entity_name, content,
-                      content_vector, chunk_ids, file_path, create_time, update_time)
-                      VALUES ($1, $2, $3, $4, $5, $6::varchar[], $7, $8, $9)
+                      content_vector, chunk_ids, file_path, metadata, create_time, update_time)
+                      VALUES ($1, $2, $3, $4, $5, $6::varchar[], $7, $8, $9, $10)
                       ON CONFLICT (workspace,id) DO UPDATE
                       SET entity_name=EXCLUDED.entity_name,
                       content=EXCLUDED.content,
                       content_vector=EXCLUDED.content_vector,
                       chunk_ids=EXCLUDED.chunk_ids,
                       file_path=EXCLUDED.file_path,
+                      metadata=EXCLUDED.metadata,
                       update_time=EXCLUDED.update_time
                      """,
     "upsert_relationship": """INSERT INTO {table_name} (workspace, id, source_id,
-                      target_id, content, content_vector, chunk_ids, file_path, create_time, update_time)
-                      VALUES ($1, $2, $3, $4, $5, $6, $7::varchar[], $8, $9, $10)
+                      target_id, content, content_vector, chunk_ids, file_path, metadata, create_time, update_time)
+                      VALUES ($1, $2, $3, $4, $5, $6, $7::varchar[], $8, $9, $10, $11)
                       ON CONFLICT (workspace,id) DO UPDATE
                       SET source_id=EXCLUDED.source_id,
                       target_id=EXCLUDED.target_id,
@@ -6479,6 +6503,7 @@ SQL_TEMPLATES = {
                       content_vector=EXCLUDED.content_vector,
                       chunk_ids=EXCLUDED.chunk_ids,
                       file_path=EXCLUDED.file_path,
+                      metadata=EXCLUDED.metadata,
                       update_time = EXCLUDED.update_time
                      """,
     "relationships": """
@@ -6511,6 +6536,40 @@ SQL_TEMPLATES = {
               ORDER BY c.content_vector <=> '[{embedding_string}]'::{vector_cast}
               LIMIT $3;
               """,
+    # SQL for VectorStorage with metadata filtering
+    "chunks_with_metadata": """
+              SELECT c.id,
+                     c.content,
+                     c.file_path,
+                     EXTRACT(EPOCH FROM c.create_time)::BIGINT AS created_at
+              FROM {table_name} c
+              WHERE c.workspace = $1
+                AND c.content_vector <=> '[{embedding_string}]'::{vector_cast} < $2
+                AND c.metadata @> $4::jsonb
+              ORDER BY c.content_vector <=> '[{embedding_string}]'::{vector_cast}
+              LIMIT $3;
+              """,
+    "entities_with_metadata": """
+                SELECT e.entity_name,
+                       EXTRACT(EPOCH FROM e.create_time)::BIGINT AS created_at
+                FROM {table_name} e
+                WHERE e.workspace = $1
+                  AND e.content_vector <=> '[{embedding_string}]'::{vector_cast} < $2
+                  AND e.metadata @> $4::jsonb
+                ORDER BY e.content_vector <=> '[{embedding_string}]'::{vector_cast}
+                LIMIT $3;
+                """,
+    "relationships_with_metadata": """
+                     SELECT r.source_id AS src_id,
+                            r.target_id AS tgt_id,
+                            EXTRACT(EPOCH FROM r.create_time)::BIGINT AS created_at
+                     FROM {table_name} r
+                     WHERE r.workspace = $1
+                       AND r.content_vector <=> '[{embedding_string}]'::{vector_cast} < $2
+                       AND r.metadata @> $4::jsonb
+                     ORDER BY r.content_vector <=> '[{embedding_string}]'::{vector_cast}
+                     LIMIT $3;
+                     """,
     # DROP tables
     "drop_specifiy_table_workspace": """
         DELETE FROM {table_name} WHERE workspace=$1
