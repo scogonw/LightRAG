@@ -18,6 +18,7 @@ from fastapi import (
     BackgroundTasks,
     Depends,
     File,
+    Header,
     HTTPException,
     UploadFile,
 )
@@ -1241,7 +1242,7 @@ def _extract_xlsx(file_bytes: bytes) -> str:
 
 
 async def pipeline_enqueue_file(
-    rag: LightRAG, file_path: Path, track_id: str = None
+    rag: LightRAG, file_path: Path, track_id: str = None, metadata: dict = None
 ) -> tuple[bool, str]:
     """Add a file to the queue for processing
 
@@ -1249,6 +1250,7 @@ async def pipeline_enqueue_file(
         rag: LightRAG instance
         file_path: Path to the saved file
         track_id: Optional tracking ID, if not provided will be generated
+        metadata: Optional metadata to associate with the document
     Returns:
         tuple: (success: bool, track_id: str)
     """
@@ -1614,7 +1616,7 @@ async def pipeline_enqueue_file(
 
             try:
                 await rag.apipeline_enqueue_documents(
-                    content, file_paths=file_path.name, track_id=track_id
+                    content, file_paths=file_path.name, track_id=track_id, metadata=metadata
                 )
 
                 logger.info(
@@ -1698,17 +1700,18 @@ async def pipeline_enqueue_file(
                 logger.error(f"Error deleting file {file_path}: {str(e)}")
 
 
-async def pipeline_index_file(rag: LightRAG, file_path: Path, track_id: str = None):
+async def pipeline_index_file(rag: LightRAG, file_path: Path, track_id: str = None, metadata: dict = None):
     """Index a file with track_id
 
     Args:
         rag: LightRAG instance
         file_path: Path to the saved file
         track_id: Optional tracking ID
+        metadata: Optional metadata to associate with the document
     """
     try:
         success, returned_track_id = await pipeline_enqueue_file(
-            rag, file_path, track_id
+            rag, file_path, track_id, metadata=metadata
         )
         if success:
             await rag.apipeline_process_enqueue_documents()
@@ -2133,7 +2136,9 @@ def create_document_routes(
         "/upload", response_model=InsertResponse, dependencies=[Depends(combined_auth)]
     )
     async def upload_to_input_dir(
-        background_tasks: BackgroundTasks, file: UploadFile = File(...)
+        background_tasks: BackgroundTasks,
+        file: UploadFile = File(...),
+        x_org_id: str = Header(..., alias="X-Org-Id", description="Organization ID for multi-tenancy (required)"),
     ):
         """
         Upload a file to the input directory and index it.
@@ -2281,7 +2286,7 @@ def create_document_routes(
             track_id = generate_track_id("upload")
 
             # Add to background tasks and get track_id
-            background_tasks.add_task(pipeline_index_file, rag, file_path, track_id)
+            background_tasks.add_task(pipeline_index_file, rag, file_path, track_id, metadata={"org_id": x_org_id})
 
             return InsertResponse(
                 status="success",
@@ -2301,7 +2306,9 @@ def create_document_routes(
         "/text", response_model=InsertResponse, dependencies=[Depends(combined_auth)]
     )
     async def insert_text(
-        request: InsertTextRequest, background_tasks: BackgroundTasks
+        request: InsertTextRequest,
+        background_tasks: BackgroundTasks,
+        x_org_id: str = Header(..., alias="X-Org-Id", description="Organization ID for multi-tenancy (required)"),
     ):
         """
         Insert text into the RAG system.
@@ -2357,13 +2364,17 @@ def create_document_routes(
             # Generate track_id for text insertion
             track_id = generate_track_id("insert")
 
+            # Inject org_id into metadata for multi-tenancy
+            metadata = request.metadata.copy() if request.metadata else {}
+            metadata["org_id"] = x_org_id
+
             background_tasks.add_task(
                 pipeline_index_texts,
                 rag,
                 [request.text],
                 file_sources=[request.file_source],
                 track_id=track_id,
-                metadata=request.metadata,
+                metadata=metadata,
             )
 
             return InsertResponse(
@@ -2382,7 +2393,9 @@ def create_document_routes(
         dependencies=[Depends(combined_auth)],
     )
     async def insert_texts(
-        request: InsertTextsRequest, background_tasks: BackgroundTasks
+        request: InsertTextsRequest,
+        background_tasks: BackgroundTasks,
+        x_org_id: str = Header(..., alias="X-Org-Id", description="Organization ID for multi-tenancy (required)"),
     ):
         """
         Insert multiple texts into the RAG system.
@@ -2441,13 +2454,17 @@ def create_document_routes(
             # Generate track_id for texts insertion
             track_id = generate_track_id("insert")
 
+            # Inject org_id into metadata for multi-tenancy
+            metadata = request.metadata.copy() if request.metadata else {}
+            metadata["org_id"] = x_org_id
+
             background_tasks.add_task(
                 pipeline_index_texts,
                 rag,
                 request.texts,
                 file_sources=request.file_sources,
                 track_id=track_id,
-                metadata=request.metadata,
+                metadata=metadata,
             )
 
             return InsertResponse(

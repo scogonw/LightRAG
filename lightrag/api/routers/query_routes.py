@@ -4,7 +4,7 @@ This module contains all query-related routes for the LightRAG API.
 
 import json
 from typing import Any, Dict, List, Literal, Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from lightrag.base import QueryParam
 from lightrag.api.utils_api import get_combined_auth_dependency
 from lightrag.utils import logger
@@ -327,12 +327,18 @@ def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
             },
         },
     )
-    async def query_text(request: QueryRequest):
+    async def query_text(
+        request: QueryRequest,
+        x_org_id: str = Header(..., alias="X-Org-Id", description="Organization ID for multi-tenancy (required)"),
+    ):
         """
         Comprehensive RAG query endpoint with non-streaming response. Parameter "stream" is ignored.
 
         This endpoint performs Retrieval-Augmented Generation (RAG) queries using various modes
         to provide intelligent responses based on your knowledge base.
+
+        **Headers:**
+        - **X-Org-Id** (required): Organization ID for multi-tenancy. All results are scoped to this org.
 
         **Query Modes:**
         - **local**: Focuses on specific entities and their direct relationships
@@ -395,6 +401,7 @@ def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
                 - **top_k**: Number of top entities/relations to retrieve
                 - **conversation_history**: Previous dialogue context
                 - **max_total_tokens**: Token budget for the entire response
+            x_org_id: Organization ID from X-Org-Id header (required)
 
         Returns:
             QueryResponse: JSON response containing:
@@ -404,12 +411,14 @@ def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
         Raises:
             HTTPException:
                 - 400: Invalid input parameters (e.g., query too short)
+                - 422: Missing X-Org-Id header
                 - 500: Internal processing error (e.g., LLM service unavailable)
         """
         try:
             param = request.to_query_params(
                 False
             )  # Ensure stream=False for non-streaming endpoint
+            param.org_id = x_org_id
             # Force stream=False for /query endpoint regardless of include_references setting
             param.stream = False
 
@@ -537,7 +546,10 @@ def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
             },
         },
     )
-    async def query_text_stream(request: QueryRequest):
+    async def query_text_stream(
+        request: QueryRequest,
+        x_org_id: str = Header(..., alias="X-Org-Id", description="Organization ID for multi-tenancy (required)"),
+    ):
         """
         Advanced RAG query endpoint with flexible streaming response.
 
@@ -668,6 +680,7 @@ def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
             # Use the stream parameter from the request, defaulting to True if not specified
             stream_mode = request.stream if request.stream is not None else True
             param = request.to_query_params(stream_mode)
+            param.org_id = x_org_id
 
             from fastapi.responses import StreamingResponse
 
@@ -1052,7 +1065,10 @@ def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
             },
         },
     )
-    async def query_data(request: QueryRequest):
+    async def query_data(
+        request: QueryRequest,
+        x_org_id: str = Header(..., alias="X-Org-Id", description="Organization ID for multi-tenancy (required)"),
+    ):
         """
         Advanced data retrieval endpoint for structured RAG analysis.
 
@@ -1157,6 +1173,7 @@ def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
         """
         try:
             param = request.to_query_params(False)  # No streaming for data endpoint
+            param.org_id = x_org_id
             response = await rag.aquery_data(request.query, param=param)
 
             # aquery_data returns the new format with status, message, data, and metadata

@@ -3284,6 +3284,12 @@ async def kg_query(
     if not query:
         return QueryResult(content=PROMPTS["fail_response"])
 
+    # Inject org_id into metadata_filter for multi-tenancy scoping
+    if query_param.org_id:
+        if query_param.metadata_filter is None:
+            query_param.metadata_filter = {}
+        query_param.metadata_filter["org_id"] = query_param.org_id
+
     logger.info(
         f"[kg_query] mode={query_param.mode} metadata_filter={query_param.metadata_filter}"
     )
@@ -5154,6 +5160,12 @@ async def naive_query(
 
     if not query:
         return QueryResult(content=PROMPTS["fail_response"])
+
+    # Inject org_id into metadata_filter for multi-tenancy scoping
+    if query_param.org_id:
+        if query_param.metadata_filter is None:
+            query_param.metadata_filter = {}
+        query_param.metadata_filter["org_id"] = query_param.org_id
 
     if query_param.model_func:
         use_model_func = query_param.model_func

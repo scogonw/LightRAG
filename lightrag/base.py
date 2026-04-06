@@ -174,6 +174,12 @@ class QueryParam:
     Example: {"department": "engineering", "year": 2024}
     """
 
+    org_id: str | None = None
+    """Organization ID for multi-tenancy. When set, automatically injected into
+    metadata_filter to ensure queries only return results belonging to this org.
+    Typically set from the X-Org-Id HTTP header at the API layer.
+    """
+
 
 @dataclass
 class StorageNameSpace(ABC):
