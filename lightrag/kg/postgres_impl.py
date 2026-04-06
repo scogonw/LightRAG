@@ -1582,6 +1582,53 @@ class PostgreSQLDB:
                 f"PostgreSQL, Failed to create full entities/relations tables: {e}"
             )
 
+        # Add org_id column to VDB and DOC_STATUS tables for multi-tenancy
+        try:
+            await self._migrate_add_org_id_column()
+        except Exception as e:
+            logger.error(
+                f"PostgreSQL, Failed to add org_id column: {e}"
+            )
+
+    async def _migrate_add_org_id_column(self):
+        """Add org_id column to VDB and DOC_STATUS tables for multi-tenancy support"""
+        tables_to_migrate = [
+            "lightrag_vdb_chunks",
+            "lightrag_vdb_entity",
+            "lightrag_vdb_relation",
+            "lightrag_doc_status",
+        ]
+
+        for table_name in tables_to_migrate:
+            try:
+                check_column_sql = """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = $1
+                AND column_name = 'org_id'
+                """
+                column_info = await self.query(check_column_sql, [table_name])
+                if not column_info:
+                    logger.info(f"Adding org_id column to {table_name} table")
+                    add_column_sql = f"""
+                    ALTER TABLE {table_name}
+                    ADD COLUMN org_id VARCHAR(255) NOT NULL DEFAULT ''
+                    """
+                    await self.execute(add_column_sql)
+                    logger.info(
+                        f"Successfully added org_id column to {table_name} table"
+                    )
+
+                    # Create index on org_id for query performance
+                    index_name = f"idx_{table_name}_org_id"
+                    create_index_sql = f"CREATE INDEX IF NOT EXISTS {index_name} ON {table_name}(org_id)"
+                    await self.execute(create_index_sql)
+                    logger.info(f"Created index {index_name} on {table_name}")
+            except Exception as e:
+                logger.error(
+                    f"Error adding org_id column to {table_name}: {e}"
+                )
+
     async def _migrate_create_full_entities_relations_tables(self):
         """Create LIGHTRAG_FULL_ENTITIES and LIGHTRAG_FULL_RELATIONS tables if they don't exist"""
         tables_to_check = [
@@ -3223,19 +3270,22 @@ class PGVectorStorage(BaseVectorStorage):
             upsert_sql = SQL_TEMPLATES["upsert_chunk"].format(
                 table_name=self.table_name
             )
+            metadata = item.get("metadata")
+            org_id = metadata.get("org_id", "") if isinstance(metadata, dict) else ""
             # Return tuple in the exact order of SQL parameters ($1, $2, ...)
             values: tuple[Any, ...] = (
                 self.workspace,  # $1
                 item["__id__"],  # $2
-                item["tokens"],  # $3
-                item["chunk_order_index"],  # $4
-                item["full_doc_id"],  # $5
-                item["content"],  # $6
-                item["__vector__"],  # $7 - numpy array, handled by pgvector codec
-                item["file_path"],  # $8
-                json.dumps(item.get("metadata")) if item.get("metadata") else None,  # $9
-                current_time,  # $10
+                org_id,  # $3
+                item["tokens"],  # $4
+                item["chunk_order_index"],  # $5
+                item["full_doc_id"],  # $6
+                item["content"],  # $7
+                item["__vector__"],  # $8 - numpy array, handled by pgvector codec
+                item["file_path"],  # $9
+                json.dumps(metadata) if metadata else None,  # $10
                 current_time,  # $11
+                current_time,  # $12
             )
         except Exception as e:
             logger.error(
@@ -3260,18 +3310,21 @@ class PGVectorStorage(BaseVectorStorage):
         else:
             chunk_ids = [source_id]
 
+        metadata = item.get("metadata")
+        org_id = metadata.get("org_id", "") if isinstance(metadata, dict) else ""
         # Return tuple in the exact order of SQL parameters ($1, $2, ...)
         values: tuple[Any, ...] = (
             self.workspace,  # $1
             item["__id__"],  # $2
-            item["entity_name"],  # $3
-            item["content"],  # $4
-            item["__vector__"],  # $5 - numpy array, handled by pgvector codec
-            chunk_ids,  # $6
-            item.get("file_path", None),  # $7
-            json.dumps(item.get("metadata")) if item.get("metadata") else None,  # $8
-            current_time,  # $9
+            org_id,  # $3
+            item["entity_name"],  # $4
+            item["content"],  # $5
+            item["__vector__"],  # $6 - numpy array, handled by pgvector codec
+            chunk_ids,  # $7
+            item.get("file_path", None),  # $8
+            json.dumps(metadata) if metadata else None,  # $9
             current_time,  # $10
+            current_time,  # $11
         )
         return upsert_sql, values
 
@@ -3292,19 +3345,22 @@ class PGVectorStorage(BaseVectorStorage):
         else:
             chunk_ids = [source_id]
 
+        metadata = item.get("metadata")
+        org_id = metadata.get("org_id", "") if isinstance(metadata, dict) else ""
         # Return tuple in the exact order of SQL parameters ($1, $2, ...)
         values: tuple[Any, ...] = (
             self.workspace,  # $1
             item["__id__"],  # $2
-            item["src_id"],  # $3
-            item["tgt_id"],  # $4
-            item["content"],  # $5
-            item["__vector__"],  # $6 - numpy array, handled by pgvector codec
-            chunk_ids,  # $7
-            item.get("file_path", None),  # $8
-            json.dumps(item.get("metadata")) if item.get("metadata") else None,  # $9
-            current_time,  # $10
+            org_id,  # $3
+            item["src_id"],  # $4
+            item["tgt_id"],  # $5
+            item["content"],  # $6
+            item["__vector__"],  # $7 - numpy array, handled by pgvector codec
+            chunk_ids,  # $8
+            item.get("file_path", None),  # $9
+            json.dumps(metadata) if metadata else None,  # $10
             current_time,  # $11
+            current_time,  # $12
         )
         return upsert_sql, values
 
@@ -3447,8 +3503,14 @@ class PGVectorStorage(BaseVectorStorage):
             else "vector"
         )
 
-        # Build SQL with optional metadata filter
+        # Extract org_id from metadata_filter for column-level filtering
+        org_id = ""
         if metadata_filter:
+            org_id = metadata_filter.pop("org_id", "")
+
+        # Build SQL with optional metadata filter (after org_id extraction)
+        remaining_metadata = metadata_filter if metadata_filter else None
+        if remaining_metadata:
             sql_key = self.namespace + "_with_metadata"
             sql = SQL_TEMPLATES[sql_key].format(
                 embedding_string=embedding_string,
@@ -3459,7 +3521,8 @@ class PGVectorStorage(BaseVectorStorage):
                 "workspace": self.workspace,
                 "closer_than_threshold": 1 - self.cosine_better_than_threshold,
                 "top_k": top_k,
-                "metadata_filter": json.dumps(metadata_filter),
+                "org_id": org_id,
+                "metadata_filter": json.dumps(remaining_metadata),
             }
         else:
             sql = SQL_TEMPLATES[self.namespace].format(
@@ -3471,6 +3534,7 @@ class PGVectorStorage(BaseVectorStorage):
                 "workspace": self.workspace,
                 "closer_than_threshold": 1 - self.cosine_better_than_threshold,
                 "top_k": top_k,
+                "org_id": org_id,
             }
         results = await self.db.query(sql, params=list(params.values()), multirows=True)
         return results
@@ -4404,9 +4468,10 @@ class PGDocStatusStorage(DocStatusStorage):
             len(data),
         )
 
-        sql = """insert into LIGHTRAG_DOC_STATUS(workspace,id,content_summary,content_length,chunks_count,status,file_path,chunks_list,track_id,metadata,error_msg,created_at,updated_at)
-                 values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+        sql = """insert into LIGHTRAG_DOC_STATUS(workspace,id,org_id,content_summary,content_length,chunks_count,status,file_path,chunks_list,track_id,metadata,error_msg,created_at,updated_at)
+                 values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
                   on conflict(id,workspace) do update set
+                  org_id = EXCLUDED.org_id,
                   content_summary = EXCLUDED.content_summary,
                   content_length = EXCLUDED.content_length,
                   chunks_count = EXCLUDED.chunks_count,
@@ -4419,7 +4484,7 @@ class PGDocStatusStorage(DocStatusStorage):
                   created_at = EXCLUDED.created_at,
                   updated_at = EXCLUDED.updated_at"""
 
-        # Tuple order must match SQL: (workspace, id, content_summary, content_length,
+        # Tuple order must match SQL: (workspace, id, org_id, content_summary, content_length,
         #   chunks_count, status, file_path, chunks_list, track_id, metadata,
         #   error_msg, created_at, updated_at)
         batch: list[tuple] = []
@@ -4427,10 +4492,13 @@ class PGDocStatusStorage(DocStatusStorage):
         batch_build_start = time.perf_counter()
         for i, (k, v) in enumerate(data.items(), start=1):
             try:
+                metadata = v.get("metadata", {})
+                org_id = metadata.get("org_id", "") if isinstance(metadata, dict) else ""
                 batch.append(
                     (
                         self.workspace,
                         k,
+                        org_id,
                         v["content_summary"],
                         v["content_length"],
                         v.get("chunks_count", -1),
@@ -4438,7 +4506,7 @@ class PGDocStatusStorage(DocStatusStorage):
                         v["file_path"],
                         json.dumps(v.get("chunks_list", [])),
                         v.get("track_id"),
-                        json.dumps(v.get("metadata", {})),
+                        json.dumps(metadata),
                         v.get("error_msg"),
                         _parse_doc_status_datetime(
                             v.get("created_at"),
@@ -6207,6 +6275,7 @@ TABLES = {
         "ddl": """CREATE TABLE LIGHTRAG_VDB_CHUNKS (
                     id VARCHAR(255),
                     workspace VARCHAR(255),
+                    org_id VARCHAR(255) NOT NULL,
                     full_doc_id VARCHAR(256),
                     chunk_order_index INTEGER,
                     tokens INTEGER,
@@ -6223,6 +6292,7 @@ TABLES = {
         "ddl": """CREATE TABLE LIGHTRAG_VDB_ENTITY (
                     id VARCHAR(255),
                     workspace VARCHAR(255),
+                    org_id VARCHAR(255) NOT NULL,
                     entity_name VARCHAR(512),
                     content TEXT,
                     content_vector VECTOR(dimension),
@@ -6238,6 +6308,7 @@ TABLES = {
         "ddl": """CREATE TABLE LIGHTRAG_VDB_RELATION (
                     id VARCHAR(255),
                     workspace VARCHAR(255),
+                    org_id VARCHAR(255) NOT NULL,
                     source_id VARCHAR(512),
                     target_id VARCHAR(512),
                     content TEXT,
@@ -6268,6 +6339,7 @@ TABLES = {
         "ddl": """CREATE TABLE LIGHTRAG_DOC_STATUS (
 	               workspace varchar(255) NOT NULL,
 	               id varchar(255) NOT NULL,
+	               org_id VARCHAR(255) NOT NULL,
 	               content_summary varchar(255) NULL,
 	               content_length int4 NULL,
 	               chunks_count int4 NULL,
@@ -6467,12 +6539,13 @@ SQL_TEMPLATES = {
                       update_time = EXCLUDED.update_time
                      """,
     # SQL for VectorStorage
-    "upsert_chunk": """INSERT INTO {table_name} (workspace, id, tokens,
+    "upsert_chunk": """INSERT INTO {table_name} (workspace, id, org_id, tokens,
                       chunk_order_index, full_doc_id, content, content_vector, file_path,
                       metadata, create_time, update_time)
-                      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                       ON CONFLICT (workspace,id) DO UPDATE
-                      SET tokens=EXCLUDED.tokens,
+                      SET org_id=EXCLUDED.org_id,
+                      tokens=EXCLUDED.tokens,
                       chunk_order_index=EXCLUDED.chunk_order_index,
                       full_doc_id=EXCLUDED.full_doc_id,
                       content = EXCLUDED.content,
@@ -6481,11 +6554,12 @@ SQL_TEMPLATES = {
                       metadata=EXCLUDED.metadata,
                       update_time = EXCLUDED.update_time
                      """,
-    "upsert_entity": """INSERT INTO {table_name} (workspace, id, entity_name, content,
+    "upsert_entity": """INSERT INTO {table_name} (workspace, id, org_id, entity_name, content,
                       content_vector, chunk_ids, file_path, metadata, create_time, update_time)
-                      VALUES ($1, $2, $3, $4, $5, $6::varchar[], $7, $8, $9, $10)
+                      VALUES ($1, $2, $3, $4, $5, $6, $7::varchar[], $8, $9, $10, $11)
                       ON CONFLICT (workspace,id) DO UPDATE
-                      SET entity_name=EXCLUDED.entity_name,
+                      SET org_id=EXCLUDED.org_id,
+                      entity_name=EXCLUDED.entity_name,
                       content=EXCLUDED.content,
                       content_vector=EXCLUDED.content_vector,
                       chunk_ids=EXCLUDED.chunk_ids,
@@ -6493,11 +6567,12 @@ SQL_TEMPLATES = {
                       metadata=EXCLUDED.metadata,
                       update_time=EXCLUDED.update_time
                      """,
-    "upsert_relationship": """INSERT INTO {table_name} (workspace, id, source_id,
+    "upsert_relationship": """INSERT INTO {table_name} (workspace, id, org_id, source_id,
                       target_id, content, content_vector, chunk_ids, file_path, metadata, create_time, update_time)
-                      VALUES ($1, $2, $3, $4, $5, $6, $7::varchar[], $8, $9, $10, $11)
+                      VALUES ($1, $2, $3, $4, $5, $6, $7, $8::varchar[], $9, $10, $11, $12)
                       ON CONFLICT (workspace,id) DO UPDATE
-                      SET source_id=EXCLUDED.source_id,
+                      SET org_id=EXCLUDED.org_id,
+                      source_id=EXCLUDED.source_id,
                       target_id=EXCLUDED.target_id,
                       content=EXCLUDED.content,
                       content_vector=EXCLUDED.content_vector,
@@ -6512,6 +6587,7 @@ SQL_TEMPLATES = {
                             EXTRACT(EPOCH FROM r.create_time)::BIGINT AS created_at
                      FROM {table_name} r
                      WHERE r.workspace = $1
+                       AND r.org_id = $4
                        AND r.content_vector <=> '[{embedding_string}]'::{vector_cast} < $2
                      ORDER BY r.content_vector <=> '[{embedding_string}]'::{vector_cast}
                      LIMIT $3;
@@ -6521,6 +6597,7 @@ SQL_TEMPLATES = {
                        EXTRACT(EPOCH FROM e.create_time)::BIGINT AS created_at
                 FROM {table_name} e
                 WHERE e.workspace = $1
+                  AND e.org_id = $4
                   AND e.content_vector <=> '[{embedding_string}]'::{vector_cast} < $2
                 ORDER BY e.content_vector <=> '[{embedding_string}]'::{vector_cast}
                 LIMIT $3;
@@ -6532,6 +6609,7 @@ SQL_TEMPLATES = {
                      EXTRACT(EPOCH FROM c.create_time)::BIGINT AS created_at
               FROM {table_name} c
               WHERE c.workspace = $1
+                AND c.org_id = $4
                 AND c.content_vector <=> '[{embedding_string}]'::{vector_cast} < $2
               ORDER BY c.content_vector <=> '[{embedding_string}]'::{vector_cast}
               LIMIT $3;
@@ -6544,14 +6622,15 @@ SQL_TEMPLATES = {
                      EXTRACT(EPOCH FROM c.create_time)::BIGINT AS created_at
               FROM {table_name} c
               WHERE c.workspace = $1
+                AND c.org_id = $4
                 AND c.content_vector <=> '[{embedding_string}]'::{vector_cast} < $2
                 AND (
                     CASE jsonb_typeof(c.metadata)
                         WHEN 'array' THEN EXISTS (
                             SELECT 1 FROM jsonb_array_elements(c.metadata) elem
-                            WHERE elem @> $4::jsonb
+                            WHERE elem @> $5::jsonb
                         )
-                        WHEN 'object' THEN c.metadata @> $4::jsonb
+                        WHEN 'object' THEN c.metadata @> $5::jsonb
                         ELSE false
                     END
                 )
@@ -6563,14 +6642,15 @@ SQL_TEMPLATES = {
                        EXTRACT(EPOCH FROM e.create_time)::BIGINT AS created_at
                 FROM {table_name} e
                 WHERE e.workspace = $1
+                  AND e.org_id = $4
                   AND e.content_vector <=> '[{embedding_string}]'::{vector_cast} < $2
                   AND (
                       CASE jsonb_typeof(e.metadata)
                           WHEN 'array' THEN EXISTS (
                               SELECT 1 FROM jsonb_array_elements(e.metadata) elem
-                              WHERE elem @> $4::jsonb
+                              WHERE elem @> $5::jsonb
                           )
-                          WHEN 'object' THEN e.metadata @> $4::jsonb
+                          WHEN 'object' THEN e.metadata @> $5::jsonb
                           ELSE false
                       END
                   )
@@ -6583,14 +6663,15 @@ SQL_TEMPLATES = {
                             EXTRACT(EPOCH FROM r.create_time)::BIGINT AS created_at
                      FROM {table_name} r
                      WHERE r.workspace = $1
+                       AND r.org_id = $4
                        AND r.content_vector <=> '[{embedding_string}]'::{vector_cast} < $2
                        AND (
                            CASE jsonb_typeof(r.metadata)
                                WHEN 'array' THEN EXISTS (
                                    SELECT 1 FROM jsonb_array_elements(r.metadata) elem
-                                   WHERE elem @> $4::jsonb
+                                   WHERE elem @> $5::jsonb
                                )
-                               WHEN 'object' THEN r.metadata @> $4::jsonb
+                               WHEN 'object' THEN r.metadata @> $5::jsonb
                                ELSE false
                            END
                        )
