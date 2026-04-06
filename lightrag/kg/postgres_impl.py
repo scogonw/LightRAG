@@ -3270,20 +3270,18 @@ class PGVectorStorage(BaseVectorStorage):
             upsert_sql = SQL_TEMPLATES["upsert_chunk"].format(
                 table_name=self.table_name
             )
-            metadata = item.get("metadata")
-            org_id = metadata.get("org_id", "") if isinstance(metadata, dict) else ""
             # Return tuple in the exact order of SQL parameters ($1, $2, ...)
             values: tuple[Any, ...] = (
                 self.workspace,  # $1
                 item["__id__"],  # $2
-                org_id,  # $3
+                item.get("org_id", ""),  # $3
                 item["tokens"],  # $4
                 item["chunk_order_index"],  # $5
                 item["full_doc_id"],  # $6
                 item["content"],  # $7
                 item["__vector__"],  # $8 - numpy array, handled by pgvector codec
                 item["file_path"],  # $9
-                json.dumps(metadata) if metadata else None,  # $10
+                json.dumps(item.get("metadata")) if item.get("metadata") else None,  # $10
                 current_time,  # $11
                 current_time,  # $12
             )
@@ -3310,19 +3308,17 @@ class PGVectorStorage(BaseVectorStorage):
         else:
             chunk_ids = [source_id]
 
-        metadata = item.get("metadata")
-        org_id = metadata.get("org_id", "") if isinstance(metadata, dict) else ""
         # Return tuple in the exact order of SQL parameters ($1, $2, ...)
         values: tuple[Any, ...] = (
             self.workspace,  # $1
             item["__id__"],  # $2
-            org_id,  # $3
+            item.get("org_id", ""),  # $3
             item["entity_name"],  # $4
             item["content"],  # $5
             item["__vector__"],  # $6 - numpy array, handled by pgvector codec
             chunk_ids,  # $7
             item.get("file_path", None),  # $8
-            json.dumps(metadata) if metadata else None,  # $9
+            json.dumps(item.get("metadata")) if item.get("metadata") else None,  # $9
             current_time,  # $10
             current_time,  # $11
         )
@@ -3345,20 +3341,18 @@ class PGVectorStorage(BaseVectorStorage):
         else:
             chunk_ids = [source_id]
 
-        metadata = item.get("metadata")
-        org_id = metadata.get("org_id", "") if isinstance(metadata, dict) else ""
         # Return tuple in the exact order of SQL parameters ($1, $2, ...)
         values: tuple[Any, ...] = (
             self.workspace,  # $1
             item["__id__"],  # $2
-            org_id,  # $3
+            item.get("org_id", ""),  # $3
             item["src_id"],  # $4
             item["tgt_id"],  # $5
             item["content"],  # $6
             item["__vector__"],  # $7 - numpy array, handled by pgvector codec
             chunk_ids,  # $8
             item.get("file_path", None),  # $9
-            json.dumps(metadata) if metadata else None,  # $10
+            json.dumps(item.get("metadata")) if item.get("metadata") else None,  # $10
             current_time,  # $11
             current_time,  # $12
         )
@@ -3485,7 +3479,8 @@ class PGVectorStorage(BaseVectorStorage):
 
     #################### query method ###############
     async def query(
-        self, query: str, top_k: int, query_embedding: list[float] = None, metadata_filter: dict[str, Any] | None = None
+        self, query: str, top_k: int, query_embedding: list[float] = None,
+        metadata_filter: dict[str, Any] | None = None, org_id: str | None = None
     ) -> list[dict[str, Any]]:
         if query_embedding is not None:
             embedding = query_embedding
@@ -3503,14 +3498,8 @@ class PGVectorStorage(BaseVectorStorage):
             else "vector"
         )
 
-        # Extract org_id from metadata_filter for column-level filtering
-        org_id = ""
+        # Build SQL with optional metadata filter
         if metadata_filter:
-            org_id = metadata_filter.pop("org_id", "")
-
-        # Build SQL with optional metadata filter (after org_id extraction)
-        remaining_metadata = metadata_filter if metadata_filter else None
-        if remaining_metadata:
             sql_key = self.namespace + "_with_metadata"
             sql = SQL_TEMPLATES[sql_key].format(
                 embedding_string=embedding_string,
@@ -3521,8 +3510,8 @@ class PGVectorStorage(BaseVectorStorage):
                 "workspace": self.workspace,
                 "closer_than_threshold": 1 - self.cosine_better_than_threshold,
                 "top_k": top_k,
-                "org_id": org_id,
-                "metadata_filter": json.dumps(remaining_metadata),
+                "org_id": org_id or "",
+                "metadata_filter": json.dumps(metadata_filter),
             }
         else:
             sql = SQL_TEMPLATES[self.namespace].format(
@@ -3534,7 +3523,7 @@ class PGVectorStorage(BaseVectorStorage):
                 "workspace": self.workspace,
                 "closer_than_threshold": 1 - self.cosine_better_than_threshold,
                 "top_k": top_k,
-                "org_id": org_id,
+                "org_id": org_id or "",
             }
         results = await self.db.query(sql, params=list(params.values()), multirows=True)
         return results
@@ -4492,13 +4481,11 @@ class PGDocStatusStorage(DocStatusStorage):
         batch_build_start = time.perf_counter()
         for i, (k, v) in enumerate(data.items(), start=1):
             try:
-                metadata = v.get("metadata", {})
-                org_id = metadata.get("org_id", "") if isinstance(metadata, dict) else ""
                 batch.append(
                     (
                         self.workspace,
                         k,
-                        org_id,
+                        v.get("org_id", ""),
                         v["content_summary"],
                         v["content_length"],
                         v.get("chunks_count", -1),
@@ -4506,7 +4493,7 @@ class PGDocStatusStorage(DocStatusStorage):
                         v["file_path"],
                         json.dumps(v.get("chunks_list", [])),
                         v.get("track_id"),
-                        json.dumps(metadata),
+                        json.dumps(v.get("metadata", {})),
                         v.get("error_msg"),
                         _parse_doc_status_datetime(
                             v.get("created_at"),

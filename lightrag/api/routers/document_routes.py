@@ -1242,7 +1242,7 @@ def _extract_xlsx(file_bytes: bytes) -> str:
 
 
 async def pipeline_enqueue_file(
-    rag: LightRAG, file_path: Path, track_id: str = None, metadata: dict = None
+    rag: LightRAG, file_path: Path, track_id: str = None, org_id: str = None
 ) -> tuple[bool, str]:
     """Add a file to the queue for processing
 
@@ -1250,7 +1250,7 @@ async def pipeline_enqueue_file(
         rag: LightRAG instance
         file_path: Path to the saved file
         track_id: Optional tracking ID, if not provided will be generated
-        metadata: Optional metadata to associate with the document
+        org_id: Optional organization ID for multi-tenancy
     Returns:
         tuple: (success: bool, track_id: str)
     """
@@ -1616,7 +1616,7 @@ async def pipeline_enqueue_file(
 
             try:
                 await rag.apipeline_enqueue_documents(
-                    content, file_paths=file_path.name, track_id=track_id, metadata=metadata
+                    content, file_paths=file_path.name, track_id=track_id, org_id=org_id
                 )
 
                 logger.info(
@@ -1700,18 +1700,18 @@ async def pipeline_enqueue_file(
                 logger.error(f"Error deleting file {file_path}: {str(e)}")
 
 
-async def pipeline_index_file(rag: LightRAG, file_path: Path, track_id: str = None, metadata: dict = None):
+async def pipeline_index_file(rag: LightRAG, file_path: Path, track_id: str = None, org_id: str = None):
     """Index a file with track_id
 
     Args:
         rag: LightRAG instance
         file_path: Path to the saved file
         track_id: Optional tracking ID
-        metadata: Optional metadata to associate with the document
+        org_id: Optional organization ID for multi-tenancy
     """
     try:
         success, returned_track_id = await pipeline_enqueue_file(
-            rag, file_path, track_id, metadata=metadata
+            rag, file_path, track_id, org_id=org_id
         )
         if success:
             await rag.apipeline_process_enqueue_documents()
@@ -1761,6 +1761,7 @@ async def pipeline_index_texts(
     file_sources: List[str] = None,
     track_id: str = None,
     metadata: dict = None,
+    org_id: str = None,
 ):
     """Index a list of texts with track_id
 
@@ -1770,6 +1771,7 @@ async def pipeline_index_texts(
         file_sources: Sources of the texts
         track_id: Optional tracking ID
         metadata: Optional metadata to associate with the documents
+        org_id: Optional organization ID for multi-tenancy
     """
     if not texts:
         return
@@ -1787,7 +1789,7 @@ async def pipeline_index_texts(
             )
 
     await rag.apipeline_enqueue_documents(
-        input=texts, file_paths=normalized_file_sources, track_id=track_id, metadata=metadata
+        input=texts, file_paths=normalized_file_sources, track_id=track_id, metadata=metadata, org_id=org_id
     )
     await rag.apipeline_process_enqueue_documents()
 
@@ -2286,7 +2288,7 @@ def create_document_routes(
             track_id = generate_track_id("upload")
 
             # Add to background tasks and get track_id
-            background_tasks.add_task(pipeline_index_file, rag, file_path, track_id, metadata={"org_id": x_org_id})
+            background_tasks.add_task(pipeline_index_file, rag, file_path, track_id, org_id=x_org_id)
 
             return InsertResponse(
                 status="success",
@@ -2364,17 +2366,14 @@ def create_document_routes(
             # Generate track_id for text insertion
             track_id = generate_track_id("insert")
 
-            # Inject org_id into metadata for multi-tenancy
-            metadata = request.metadata.copy() if request.metadata else {}
-            metadata["org_id"] = x_org_id
-
             background_tasks.add_task(
                 pipeline_index_texts,
                 rag,
                 [request.text],
                 file_sources=[request.file_source],
                 track_id=track_id,
-                metadata=metadata,
+                metadata=request.metadata,
+                org_id=x_org_id,
             )
 
             return InsertResponse(
@@ -2454,17 +2453,14 @@ def create_document_routes(
             # Generate track_id for texts insertion
             track_id = generate_track_id("insert")
 
-            # Inject org_id into metadata for multi-tenancy
-            metadata = request.metadata.copy() if request.metadata else {}
-            metadata["org_id"] = x_org_id
-
             background_tasks.add_task(
                 pipeline_index_texts,
                 rag,
                 request.texts,
                 file_sources=request.file_sources,
                 track_id=track_id,
-                metadata=metadata,
+                metadata=request.metadata,
+                org_id=x_org_id,
             )
 
             return InsertResponse(

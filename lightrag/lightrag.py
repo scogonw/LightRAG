@@ -1348,6 +1348,7 @@ class LightRAG:
         file_paths: str | list[str] | None = None,
         track_id: str | None = None,
         metadata: dict | None = None,
+        org_id: str | None = None,
     ) -> str:
         """
         Pipeline for Processing Documents
@@ -1411,7 +1412,7 @@ class LightRAG:
 
             # Reconstruct contents with unique content
             contents = {
-                id_: {"content": content, "file_path": file_path, "metadata": metadata}
+                id_: {"content": content, "file_path": file_path, "metadata": metadata, "org_id": org_id or ""}
                 for content, (id_, file_path) in unique_contents.items()
             }
         else:
@@ -1428,6 +1429,7 @@ class LightRAG:
                     "content": content,
                     "file_path": path,
                     "metadata": metadata,
+                    "org_id": org_id or "",
                 }
                 for content, path in unique_content_with_paths.items()
             }
@@ -1444,6 +1446,7 @@ class LightRAG:
                     "file_path"
                 ],  # Store file path in document status
                 "track_id": track_id,  # Store track_id in document status
+                "org_id": org_id or "",
             }
             for id_, content_data in contents.items()
         }
@@ -1984,6 +1987,7 @@ class LightRAG:
                                     "file_path": file_path,  # Add file path to each chunk
                                     "llm_cache_list": [],  # Initialize empty LLM cache list for each chunk
                                     "metadata": content_data.get("metadata") if content_data else None,
+                                    "org_id": content_data.get("org_id", "") if content_data else "",
                                 }
                                 for dp in chunking_result
                             }

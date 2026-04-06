@@ -389,6 +389,7 @@ def _handle_single_entity_extraction(
     timestamp: int,
     file_path: str = "unknown_source",
     metadata: dict | None = None,
+    org_id: str = "",
 ):
     if len(record_attributes) != 4 or "entity" not in record_attributes[0]:
         if len(record_attributes) > 1 and "entity" in record_attributes[0]:
@@ -458,6 +459,7 @@ def _handle_single_entity_extraction(
             file_path=file_path,
             timestamp=timestamp,
             metadata=metadata,
+            org_id=org_id,
         )
 
     except ValueError as e:
@@ -478,6 +480,7 @@ def _handle_single_relationship_extraction(
     timestamp: int,
     file_path: str = "unknown_source",
     metadata: dict | None = None,
+    org_id: str = "",
 ):
     if (
         len(record_attributes) != 5 or "relation" not in record_attributes[0]
@@ -547,6 +550,7 @@ def _handle_single_relationship_extraction(
             file_path=file_path,
             timestamp=timestamp,
             metadata=metadata,
+            org_id=org_id,
         )
 
     except ValueError as e:
@@ -946,6 +950,7 @@ async def _process_extraction_result(
     tuple_delimiter: str = "<|#|>",
     completion_delimiter: str = "<|COMPLETE|>",
     metadata: dict | None = None,
+    org_id: str = "",
 ) -> tuple[dict, dict]:
     """Process a single extraction result (either initial or gleaning)
     Args:
@@ -1028,7 +1033,7 @@ async def _process_extraction_result(
 
         # Try to parse as entity
         entity_data = _handle_single_entity_extraction(
-            record_attributes, chunk_key, timestamp, file_path, metadata=metadata
+            record_attributes, chunk_key, timestamp, file_path, metadata=metadata, org_id=org_id
         )
         if entity_data is not None:
             truncated_name = _truncate_entity_identifier(
@@ -1044,7 +1049,7 @@ async def _process_extraction_result(
 
         # Try to parse as relationship
         relationship_data = _handle_single_relationship_extraction(
-            record_attributes, chunk_key, timestamp, file_path, metadata=metadata
+            record_attributes, chunk_key, timestamp, file_path, metadata=metadata, org_id=org_id
         )
         if relationship_data is not None:
             truncated_source = _truncate_entity_identifier(
@@ -1096,6 +1101,7 @@ async def _rebuild_from_extraction_result(
         if chunk_data
         else None
     )
+    chunk_org_id = chunk_data.get("org_id", "") if chunk_data else ""
 
     # Call the shared processing function
     return await _process_extraction_result(
@@ -1106,6 +1112,7 @@ async def _rebuild_from_extraction_result(
         tuple_delimiter=PROMPTS["DEFAULT_TUPLE_DELIMITER"],
         completion_delimiter=PROMPTS["DEFAULT_COMPLETION_DELIMITER"],
         metadata=chunk_metadata,
+        org_id=chunk_org_id,
     )
 
 
@@ -1164,6 +1171,7 @@ async def _rebuild_single_entity(
                     "entity_type": entity_type,
                     "file_path": updated_entity_data["file_path"],
                     "metadata": current_entity.get("metadata"),
+                    "org_id": current_entity.get("org_id", ""),
                 }
             }
 
@@ -1556,6 +1564,7 @@ async def _rebuild_single_relationship(
                         "entity_type": "UNKNOWN",
                         "file_path": node_file_path,
                         "metadata": current_relationship.get("metadata"),
+                        "org_id": current_relationship.get("org_id", ""),
                     }
                 }
                 await safe_vdb_operation_with_exception(
@@ -1597,6 +1606,7 @@ async def _rebuild_single_relationship(
                 "weight": weight,
                 "file_path": updated_relationship_data["file_path"],
                 "metadata": current_relationship.get("metadata"),
+                "org_id": current_relationship.get("org_id", ""),
             }
         }
 
@@ -1963,6 +1973,10 @@ async def _merge_nodes_then_upsert(
         if entity_vdb is not None:
             entity_vdb_id = compute_mdhash_id(str(entity_name), prefix="ent-")
             entity_content = f"{entity_name}\n{description}"
+            # Get org_id from first node data or existing entity
+            entity_org_id = nodes_data[0].get("org_id", "") if nodes_data else ""
+            if not entity_org_id and already_node:
+                entity_org_id = already_node.get("org_id", "")
             data_for_vdb = {
                 entity_vdb_id: {
                     "entity_name": entity_name,
@@ -1971,6 +1985,7 @@ async def _merge_nodes_then_upsert(
                     "source_id": source_id,
                     "file_path": file_path,
                     "metadata": metadata,
+                    "org_id": entity_org_id,
                 }
             }
             await safe_vdb_operation_with_exception(
@@ -2140,6 +2155,10 @@ async def _merge_edges_then_upsert(
                         seen_metadata.add(key)
                         metadata_list.append(existing_meta)
         metadata = metadata_list if metadata_list else None
+        # Get org_id from edges data or existing edge
+        edge_org_id = edges_data[0].get("org_id", "") if edges_data else ""
+        if not edge_org_id and already_edge:
+            edge_org_id = already_edge.get("org_id", "")
 
         # 5. Check if we need to skip summary due to source_ids limit
         if (
@@ -2368,6 +2387,7 @@ async def _merge_edges_then_upsert(
                             "entity_type": "UNKNOWN",
                             "file_path": file_path,
                             "metadata": metadata,
+                            "org_id": edge_org_id,
                         }
                     }
                     await safe_vdb_operation_with_exception(
@@ -2479,6 +2499,7 @@ async def _merge_edges_then_upsert(
                                     "file_path", "unknown_source"
                                 ),
                                 "metadata": metadata,
+                                "org_id": edge_org_id,
                             }
                         }
                         await safe_vdb_operation_with_exception(
@@ -2554,6 +2575,7 @@ async def _merge_edges_then_upsert(
                     "weight": weight,
                     "file_path": file_path,
                     "metadata": metadata,
+                    "org_id": edge_org_id,
                 }
             }
             await safe_vdb_operation_with_exception(
@@ -3015,9 +3037,10 @@ async def extract_entities(
         chunk_key = chunk_key_dp[0]
         chunk_dp = chunk_key_dp[1]
         content = chunk_dp["content"]
-        # Get file path and metadata from chunk data or use defaults
+        # Get file path, metadata, and org_id from chunk data or use defaults
         file_path = chunk_dp.get("file_path", "unknown_source")
         chunk_metadata = chunk_dp.get("metadata")
+        chunk_org_id = chunk_dp.get("org_id", "")
 
         # Create cache keys collector for batch processing
         cache_keys_collector = []
@@ -3058,6 +3081,7 @@ async def extract_entities(
             tuple_delimiter=context_base["tuple_delimiter"],
             completion_delimiter=context_base["completion_delimiter"],
             metadata=chunk_metadata,
+            org_id=chunk_org_id,
         )
 
         # Process additional gleaning results only 1 time when entity_extract_max_gleaning is greater than zero.
@@ -3102,6 +3126,7 @@ async def extract_entities(
                     tuple_delimiter=context_base["tuple_delimiter"],
                     completion_delimiter=context_base["completion_delimiter"],
                     metadata=chunk_metadata,
+                    org_id=chunk_org_id,
                 )
 
                 # Merge results - compare description lengths to choose better version
@@ -3284,14 +3309,8 @@ async def kg_query(
     if not query:
         return QueryResult(content=PROMPTS["fail_response"])
 
-    # Inject org_id into metadata_filter for multi-tenancy scoping
-    if query_param.org_id:
-        if query_param.metadata_filter is None:
-            query_param.metadata_filter = {}
-        query_param.metadata_filter["org_id"] = query_param.org_id
-
     logger.info(
-        f"[kg_query] mode={query_param.mode} metadata_filter={query_param.metadata_filter}"
+        f"[kg_query] mode={query_param.mode} metadata_filter={query_param.metadata_filter} org_id={query_param.org_id}"
     )
 
     if query_param.model_func:
@@ -3636,7 +3655,7 @@ async def _get_vector_context(
         )
         results = await chunks_vdb.query(
             query, top_k=search_top_k, query_embedding=query_embedding,
-            metadata_filter=query_param.metadata_filter
+            metadata_filter=query_param.metadata_filter, org_id=query_param.org_id
         )
         logger.info(
             f"[_get_vector_context] VDB returned {len(results) if results else 0} chunks"
@@ -4481,7 +4500,7 @@ async def _get_node_data(
     )
     results = await entities_vdb.query(
         query, top_k=query_param.top_k, query_embedding=query_embedding,
-        metadata_filter=query_param.metadata_filter
+        metadata_filter=query_param.metadata_filter, org_id=query_param.org_id
     )
     logger.info(
         f"[_get_node_data] VDB returned {len(results)} entities"
@@ -4791,7 +4810,7 @@ async def _get_edge_data(
 
     results = await relationships_vdb.query(
         keywords, top_k=query_param.top_k, query_embedding=query_embedding,
-        metadata_filter=query_param.metadata_filter
+        metadata_filter=query_param.metadata_filter, org_id=query_param.org_id
     )
     logger.info(
         f"[_get_edge_data] VDB returned {len(results)} relations"
@@ -5160,12 +5179,6 @@ async def naive_query(
 
     if not query:
         return QueryResult(content=PROMPTS["fail_response"])
-
-    # Inject org_id into metadata_filter for multi-tenancy scoping
-    if query_param.org_id:
-        if query_param.metadata_filter is None:
-            query_param.metadata_filter = {}
-        query_param.metadata_filter["org_id"] = query_param.org_id
 
     if query_param.model_func:
         use_model_func = query_param.model_func

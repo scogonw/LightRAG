@@ -272,7 +272,8 @@ class BaseVectorStorage(StorageNameSpace, ABC):
 
     @abstractmethod
     async def query(
-        self, query: str, top_k: int, query_embedding: list[float] = None, metadata_filter: dict[str, Any] | None = None
+        self, query: str, top_k: int, query_embedding: list[float] = None,
+        metadata_filter: dict[str, Any] | None = None, org_id: str | None = None
     ) -> list[dict[str, Any]]:
         """Query the vector storage and retrieve top_k results.
 
@@ -284,6 +285,8 @@ class BaseVectorStorage(StorageNameSpace, ABC):
             metadata_filter: Optional metadata filter. Only returns results whose stored
                            metadata contains all key-value pairs specified here (exact match).
                            Example: {"department": "engineering", "year": 2024}
+            org_id: Optional organization ID for multi-tenancy filtering.
+                   When provided, only returns results belonging to this org.
         """
 
     @abstractmethod
