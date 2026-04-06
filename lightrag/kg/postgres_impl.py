@@ -2527,7 +2527,9 @@ class PGKVStorage(BaseKVStorage):
             upsert_sql = SQL_TEMPLATES["upsert_doc_full"]
             for i, (k, v) in enumerate(data.items(), start=1):
                 # Tuple order must match SQL: (id, content, doc_name, workspace, meta)
-                meta = {"org_id": v.get("org_id", "")}
+                # Merge user-provided metadata with org_id into meta column
+                user_metadata = v.get("metadata") or {}
+                meta = {**user_metadata, "org_id": v.get("org_id", "")}
                 batch_values.append(
                     (k, v["content"], v.get("file_path", ""), self.workspace, json.dumps(meta))
                 )

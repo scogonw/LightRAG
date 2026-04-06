@@ -1981,19 +1981,24 @@ class LightRAG:
                                     f"got {type(chunking_result)}"
                                 )
 
-                            # Extract org_id from content_data (stored in meta column for PG)
+                            # Extract org_id and metadata from content_data
+                            # PG stores both in the meta JSONB column of LIGHTRAG_DOC_FULL
                             doc_org_id = ""
+                            doc_metadata = content_data.get("metadata") if content_data else None
                             if content_data:
                                 doc_org_id = content_data.get("org_id", "")
-                                if not doc_org_id:
-                                    meta = content_data.get("meta")
-                                    if isinstance(meta, dict):
+                                meta = content_data.get("meta")
+                                if isinstance(meta, str):
+                                    try:
+                                        meta = json.loads(meta)
+                                    except (json.JSONDecodeError, AttributeError):
+                                        meta = None
+                                if isinstance(meta, dict):
+                                    if not doc_org_id:
                                         doc_org_id = meta.get("org_id", "")
-                                    elif isinstance(meta, str):
-                                        try:
-                                            doc_org_id = json.loads(meta).get("org_id", "")
-                                        except (json.JSONDecodeError, AttributeError):
-                                            pass
+                                    if doc_metadata is None:
+                                        # Reconstruct user metadata from meta (exclude org_id)
+                                        doc_metadata = {k: v for k, v in meta.items() if k != "org_id"} or None
 
                             # Build chunks dictionary
                             chunks: dict[str, Any] = {
@@ -2002,7 +2007,7 @@ class LightRAG:
                                     "full_doc_id": doc_id,
                                     "file_path": file_path,  # Add file path to each chunk
                                     "llm_cache_list": [],  # Initialize empty LLM cache list for each chunk
-                                    "metadata": content_data.get("metadata") if content_data else None,
+                                    "metadata": doc_metadata,
                                     "org_id": doc_org_id,
                                 }
                                 for dp in chunking_result
