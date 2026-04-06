@@ -4757,7 +4757,7 @@ async def _find_related_text_unit_from_entities(
             else:
                 continue
             if any(
-                isinstance(m, dict) and all(m.get(k) == v for k, v in query_param.metadata_filter.items())
+                isinstance(m, dict) and all((m.get(k) in v if isinstance(v, list) else m.get(k) == v) for k, v in query_param.metadata_filter.items())
                 for m in meta_list
             ):
                 filtered_chunks.append(chunk)
@@ -5087,7 +5087,7 @@ async def _find_related_text_unit_from_relations(
             else:
                 continue
             if any(
-                isinstance(m, dict) and all(m.get(k) == v for k, v in query_param.metadata_filter.items())
+                isinstance(m, dict) and all((m.get(k) in v if isinstance(v, list) else m.get(k) == v) for k, v in query_param.metadata_filter.items())
                 for m in meta_list
             ):
                 filtered_chunks.append(chunk)

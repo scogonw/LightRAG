@@ -53,7 +53,7 @@ def _apply_metadata_filter(
             continue
         # Match if ANY metadata dict contains all filter key-value pairs
         matched = any(
-            isinstance(m, dict) and all(m.get(k) == v for k, v in metadata_filter.items())
+            isinstance(m, dict) and all((m.get(k) in v if isinstance(v, list) else m.get(k) == v) for k, v in metadata_filter.items())
             for m in meta_list
         )
         logger.info(

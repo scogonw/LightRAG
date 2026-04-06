@@ -37,7 +37,7 @@ def _apply_metadata_filter(
         else:
             continue
         if any(
-            isinstance(m, dict) and all(m.get(k) == v for k, v in metadata_filter.items())
+            isinstance(m, dict) and all((m.get(k) in v if isinstance(v, list) else m.get(k) == v) for k, v in metadata_filter.items())
             for m in meta_list
         ):
             filtered.append(result)
