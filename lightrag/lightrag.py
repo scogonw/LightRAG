@@ -3,6 +3,7 @@ from __future__ import annotations
 import traceback
 import asyncio
 import inspect
+import json
 import os
 import time
 import warnings
@@ -1521,6 +1522,7 @@ class LightRAG:
                 "content": contents[doc_id]["content"],
                 "file_path": contents[doc_id]["file_path"],
                 "metadata": contents[doc_id].get("metadata"),
+                "org_id": contents[doc_id].get("org_id", ""),
             }
             for doc_id in new_docs.keys()
         }
@@ -1979,6 +1981,20 @@ class LightRAG:
                                     f"got {type(chunking_result)}"
                                 )
 
+                            # Extract org_id from content_data (stored in meta column for PG)
+                            doc_org_id = ""
+                            if content_data:
+                                doc_org_id = content_data.get("org_id", "")
+                                if not doc_org_id:
+                                    meta = content_data.get("meta")
+                                    if isinstance(meta, dict):
+                                        doc_org_id = meta.get("org_id", "")
+                                    elif isinstance(meta, str):
+                                        try:
+                                            doc_org_id = json.loads(meta).get("org_id", "")
+                                        except (json.JSONDecodeError, AttributeError):
+                                            pass
+
                             # Build chunks dictionary
                             chunks: dict[str, Any] = {
                                 compute_mdhash_id(dp["content"], prefix="chunk-"): {
@@ -1987,7 +2003,7 @@ class LightRAG:
                                     "file_path": file_path,  # Add file path to each chunk
                                     "llm_cache_list": [],  # Initialize empty LLM cache list for each chunk
                                     "metadata": content_data.get("metadata") if content_data else None,
-                                    "org_id": content_data.get("org_id", "") if content_data else "",
+                                    "org_id": doc_org_id,
                                 }
                                 for dp in chunking_result
                             }
