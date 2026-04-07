@@ -106,7 +106,11 @@ class ClientManager:
         async with cls._lock:
             if cls._instances["client"] is None:
                 hosts_str = _get_opensearch_env("OPENSEARCH_HOSTS", "localhost:9200")
-                hosts = [h.strip() for h in hosts_str.split(",") if h.strip()]
+                # hosts = [h.strip() for h in hosts_str.split(",") if h.strip()]
+                hosts = [{
+                    "host": hosts_str,
+                    "port": 443
+                }]
                 username = _get_opensearch_env("OPENSEARCH_USER", "admin")
                 password = _get_opensearch_env("OPENSEARCH_PASSWORD", "admin")
                 use_ssl = _get_opensearch_env("OPENSEARCH_USE_SSL", "true").lower() in (
