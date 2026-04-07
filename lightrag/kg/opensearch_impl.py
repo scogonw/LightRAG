@@ -2491,6 +2491,7 @@ class OpenSearchVectorDBStorage(BaseVectorStorage):
                         "src_id": {"type": "keyword"},
                         "tgt_id": {"type": "keyword"},
                         "file_path": {"type": "keyword"},
+                        "org_id": {"type": "keyword"},
                         "created_at": {"type": "long"},
                     },
                     "dynamic": True,
