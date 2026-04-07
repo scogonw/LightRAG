@@ -138,6 +138,8 @@ def _build_opensearch_filter(filter_dict: dict) -> dict | None:
     if must_not_clauses:
         bool_query["must_not"] = must_not_clauses
 
+    logger.info(f"OpenSearch Query: {bool_query}")
+
     return {"bool": bool_query}
 
 
