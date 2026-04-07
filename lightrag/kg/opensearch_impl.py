@@ -110,7 +110,7 @@ class ClientManager:
                 # hosts = [h.strip() for h in hosts_str.split(",") if h.strip()]
                 hosts = [{
                     "host": hosts_str,
-                    "port": port
+                    "port": int(port)
                 }]
                 username = _get_opensearch_env("OPENSEARCH_USER", "admin")
                 password = _get_opensearch_env("OPENSEARCH_PASSWORD", "admin")
