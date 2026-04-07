@@ -746,6 +746,8 @@ class DocProcessingStatus:
     """ISO format timestamp when document was created"""
     updated_at: str
     """ISO format timestamp when document was last updated"""
+    org_id: str = ""
+    """Organization ID for multi-tenancy"""
     track_id: str | None = None
     """Tracking ID for monitoring progress"""
     chunks_count: int | None = None
