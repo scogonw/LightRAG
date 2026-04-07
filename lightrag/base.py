@@ -508,12 +508,16 @@ class BaseGraphStorage(StorageNameSpace, ABC):
             or None if the node doesn't exist
         """
 
-    async def get_nodes_batch(self, node_ids: list[str]) -> dict[str, dict]:
+    async def get_nodes_batch(self, node_ids: list[str], metadata_filter: dict | None = None) -> dict[str, dict]:
         """Get nodes as a batch using UNWIND
 
         Default implementation fetches nodes one by one.
         Override this method for better performance in storage backends
         that support batch operations.
+
+        Args:
+            node_ids: List of node IDs to fetch
+            metadata_filter: Optional MongoDB-style filter applied to node metadata
         """
         result = {}
         for node_id in node_ids:
@@ -522,12 +526,16 @@ class BaseGraphStorage(StorageNameSpace, ABC):
                 result[node_id] = node
         return result
 
-    async def node_degrees_batch(self, node_ids: list[str]) -> dict[str, int]:
+    async def node_degrees_batch(self, node_ids: list[str], metadata_filter: dict | None = None) -> dict[str, int]:
         """Node degrees as a batch using UNWIND
 
         Default implementation fetches node degrees one by one.
         Override this method for better performance in storage backends
         that support batch operations.
+
+        Args:
+            node_ids: List of node IDs
+            metadata_filter: Optional MongoDB-style filter applied to edge metadata
         """
         result = {}
         for node_id in node_ids:
@@ -536,13 +544,17 @@ class BaseGraphStorage(StorageNameSpace, ABC):
         return result
 
     async def edge_degrees_batch(
-        self, edge_pairs: list[tuple[str, str]]
+        self, edge_pairs: list[tuple[str, str]], metadata_filter: dict | None = None
     ) -> dict[tuple[str, str], int]:
         """Edge degrees as a batch using UNWIND also uses node_degrees_batch
 
         Default implementation calculates edge degrees one by one.
         Override this method for better performance in storage backends
         that support batch operations.
+
+        Args:
+            edge_pairs: List of (src_id, tgt_id) tuples
+            metadata_filter: Optional MongoDB-style filter applied to edge metadata
         """
         result = {}
         for src_id, tgt_id in edge_pairs:
@@ -551,13 +563,17 @@ class BaseGraphStorage(StorageNameSpace, ABC):
         return result
 
     async def get_edges_batch(
-        self, pairs: list[dict[str, str]]
+        self, pairs: list[dict[str, str]], metadata_filter: dict | None = None
     ) -> dict[tuple[str, str], dict]:
         """Get edges as a batch using UNWIND
 
         Default implementation fetches edges one by one.
         Override this method for better performance in storage backends
         that support batch operations.
+
+        Args:
+            pairs: List of dicts with "src" and "tgt" keys
+            metadata_filter: Optional MongoDB-style filter applied to edge metadata
         """
         result = {}
         for pair in pairs:
@@ -569,13 +585,17 @@ class BaseGraphStorage(StorageNameSpace, ABC):
         return result
 
     async def get_nodes_edges_batch(
-        self, node_ids: list[str]
+        self, node_ids: list[str], metadata_filter: dict | None = None
     ) -> dict[str, list[tuple[str, str]]]:
         """Get nodes edges as a batch using UNWIND
 
         Default implementation fetches node edges one by one.
         Override this method for better performance in storage backends
         that support batch operations.
+
+        Args:
+            node_ids: List of node IDs
+            metadata_filter: Optional MongoDB-style filter applied to edge metadata
         """
         result = {}
         for node_id in node_ids:

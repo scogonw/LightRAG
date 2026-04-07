@@ -73,6 +73,74 @@ def _apply_metadata_filter(
     return filtered
 
 
+def _build_opensearch_filter(filter_dict: dict) -> dict | None:
+    """Convert a MongoDB-style filter to OpenSearch query DSL.
+
+    Supports:
+      - $and / $or logical operators
+      - $in / $nin array operators on field values
+      - Direct value equality matching
+    Field paths are prefixed with ``metadata.`` and use ``.keyword`` suffix
+    for exact matching on text fields.
+    """
+    if not filter_dict:
+        return None
+
+    # Handle $and operator
+    if "$and" in filter_dict and isinstance(filter_dict["$and"], list):
+        clauses = [
+            c for c in (_build_opensearch_filter(cond) for cond in filter_dict["$and"]) if c
+        ]
+        if not clauses:
+            return None
+        if len(clauses) == 1:
+            return clauses[0]
+        return {"bool": {"must": clauses}}
+
+    # Handle $or operator
+    if "$or" in filter_dict and isinstance(filter_dict["$or"], list):
+        clauses = [
+            c for c in (_build_opensearch_filter(cond) for cond in filter_dict["$or"]) if c
+        ]
+        if not clauses:
+            return None
+        return {"bool": {"should": clauses, "minimum_should_match": 1}}
+
+    must_clauses: list[dict] = []
+    must_not_clauses: list[dict] = []
+
+    for key, value in filter_dict.items():
+        if key.startswith("$"):
+            continue  # Skip MongoDB operators at root level
+
+        field_path = f"metadata.{key}"
+
+        if isinstance(value, dict):
+            # Handle $in operator
+            if "$in" in value and isinstance(value["$in"], list):
+                must_clauses.append({"terms": {f"{field_path}.keyword": value["$in"]}})
+            # Handle $nin operator
+            if "$nin" in value and isinstance(value["$nin"], list):
+                must_not_clauses.append({"terms": {f"{field_path}.keyword": value["$nin"]}})
+        else:
+            # Direct value match
+            must_clauses.append({"term": {f"{field_path}.keyword": value}})
+
+    if not must_clauses and not must_not_clauses:
+        return None
+
+    if len(must_clauses) == 1 and not must_not_clauses:
+        return must_clauses[0]
+
+    bool_query: dict = {}
+    if must_clauses:
+        bool_query["must"] = must_clauses
+    if must_not_clauses:
+        bool_query["must_not"] = must_not_clauses
+
+    return {"bool": bool_query}
+
+
 def _get_opensearch_env(key, fallback):
     cfg_key = key.replace("OPENSEARCH_", "").lower()
     return os.environ.get(key, config.get("opensearch", cfg_key, fallback=fallback))
@@ -1109,6 +1177,7 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                             "source_ids": {"type": "keyword"},
                             "file_path": {"type": "keyword"},
                             "created_at": {"type": "long"},
+                            "metadata": {"type": "object", "dynamic": True},
                         },
                     },
                     "settings": {
@@ -1142,6 +1211,7 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                             "source_ids": {"type": "keyword"},
                             "file_path": {"type": "keyword"},
                             "created_at": {"type": "long"},
+                            "metadata": {"type": "object", "dynamic": True},
                         },
                     },
                     "settings": {
@@ -1362,27 +1432,45 @@ class OpenSearchGraphStorage(BaseGraphStorage):
 
     # --- Batch operations ---
 
-    async def get_nodes_batch(self, node_ids: list[str]) -> dict[str, dict]:
-        """Batch-fetch multiple nodes by ID."""
+    async def get_nodes_batch(self, node_ids: list[str], metadata_filter: dict | None = None) -> dict[str, dict]:
+        """Batch-fetch multiple nodes by ID, optionally filtered by metadata."""
         if not self._indices_ready:
             return {}
         try:
-            response = await self.client.mget(
-                index=self._nodes_index, body={"ids": node_ids}
-            )
-            result = {}
-            for doc in response["docs"]:
-                if doc.get("found"):
-                    data = doc["_source"]
-                    data["_id"] = doc["_id"]
-                    result[doc["_id"]] = data
-            return result
+            if metadata_filter:
+                # Use search with IDs + metadata filter
+                os_filter = _build_opensearch_filter(metadata_filter)
+                must_clauses = [{"ids": {"values": node_ids}}]
+                if os_filter:
+                    must_clauses.append(os_filter)
+                body = {
+                    "query": {"bool": {"must": must_clauses}},
+                    "size": len(node_ids),
+                }
+                response = await self.client.search(index=self._nodes_index, body=body)
+                result = {}
+                for hit in response["hits"]["hits"]:
+                    data = hit["_source"]
+                    data["_id"] = hit["_id"]
+                    result[hit["_id"]] = data
+                return result
+            else:
+                response = await self.client.mget(
+                    index=self._nodes_index, body={"ids": node_ids}
+                )
+                result = {}
+                for doc in response["docs"]:
+                    if doc.get("found"):
+                        data = doc["_source"]
+                        data["_id"] = doc["_id"]
+                        result[doc["_id"]] = data
+                return result
         except OpenSearchException as e:
             if _is_missing_index_error(e):
                 self._mark_indices_missing()
             return {}
 
-    async def node_degrees_batch(self, node_ids: list[str]) -> dict[str, int]:
+    async def node_degrees_batch(self, node_ids: list[str], metadata_filter: dict | None = None) -> dict[str, int]:
         """Batch-fetch edge counts for multiple nodes using aggregations."""
         if not node_ids:
             return {}
@@ -1390,16 +1478,26 @@ class OpenSearchGraphStorage(BaseGraphStorage):
             return {}
         try:
             # Use a single query with aggregations for both source and target
+            node_match = {
+                "bool": {
+                    "should": [
+                        {"terms": {"source_node_id": node_ids}},
+                        {"terms": {"target_node_id": node_ids}},
+                    ]
+                }
+            }
+            if metadata_filter:
+                os_filter = _build_opensearch_filter(metadata_filter)
+                if os_filter:
+                    query = {"bool": {"must": [node_match, os_filter]}}
+                else:
+                    query = node_match
+            else:
+                query = node_match
+
             body = {
                 "size": 0,
-                "query": {
-                    "bool": {
-                        "should": [
-                            {"terms": {"source_node_id": node_ids}},
-                            {"terms": {"target_node_id": node_ids}},
-                        ]
-                    }
-                },
+                "query": query,
                 "aggs": {
                     "source_degrees": {
                         "terms": {
@@ -1434,14 +1532,14 @@ class OpenSearchGraphStorage(BaseGraphStorage):
             return {}
 
     async def get_nodes_edges_batch(
-        self, node_ids: list[str]
+        self, node_ids: list[str], metadata_filter: dict | None = None
     ) -> dict[str, list[tuple[str, str]]]:
-        """Batch-fetch edge tuples for multiple nodes."""
+        """Batch-fetch edge tuples for multiple nodes, optionally filtered by metadata."""
         result = {nid: [] for nid in node_ids}
         if not self._indices_ready:
             return result
         try:
-            query = {
+            node_match = {
                 "bool": {
                     "should": [
                         {"terms": {"source_node_id": node_ids}},
@@ -1449,6 +1547,14 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                     ]
                 }
             }
+            if metadata_filter:
+                os_filter = _build_opensearch_filter(metadata_filter)
+                if os_filter:
+                    query = {"bool": {"must": [node_match, os_filter]}}
+                else:
+                    query = node_match
+            else:
+                query = node_match
             pit = await self.client.create_pit(
                 index=self._edges_index, params={"keep_alive": "1m"}
             )
@@ -2595,15 +2701,25 @@ class OpenSearchVectorDBStorage(BaseVectorStorage):
             embedding = await self.embedding_func([query], _priority=5)
             query_vector = embedding[0].tolist()
 
-        # Fetch extra results when filtering to compensate for filtered-out items
-        has_filter = metadata_filter or org_id
+        # Build combined filter from org_id and metadata_filter
+        filter_clauses: list[dict] = []
+        if org_id:
+            filter_clauses.append({"term": {"org_id": org_id}})
+        if metadata_filter:
+            os_filter = _build_opensearch_filter(metadata_filter)
+            if os_filter:
+                filter_clauses.append(os_filter)
+
+        has_filter = len(filter_clauses) > 0
         fetch_top_k = top_k * 3 if has_filter else top_k
 
-        knn_query = {"knn": {"vector": {"vector": query_vector, "k": fetch_top_k}}}
+        knn_query: dict = {"knn": {"vector": {"vector": query_vector, "k": fetch_top_k}}}
 
-        # Apply org_id filter at the query level
-        if org_id:
-            knn_query["knn"]["vector"]["filter"] = {"term": {"org_id": org_id}}
+        if filter_clauses:
+            if len(filter_clauses) == 1:
+                knn_query["knn"]["vector"]["filter"] = filter_clauses[0]
+            else:
+                knn_query["knn"]["vector"]["filter"] = {"bool": {"must": filter_clauses}}
 
         search_body = {
             "size": fetch_top_k,
@@ -2634,11 +2750,7 @@ class OpenSearchVectorDBStorage(BaseVectorStorage):
                 f"{max((h['_score'] for h in response['hits']['hits']), default=0):.4f}]"
             )
 
-            if metadata_filter:
-                results = _apply_metadata_filter(results, metadata_filter)
-                results = results[:top_k]
-
-            return results
+            return results[:top_k]
         except OpenSearchException as e:
             if _is_missing_index_error(e):
                 self._mark_index_missing()

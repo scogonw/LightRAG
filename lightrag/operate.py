@@ -1538,6 +1538,7 @@ async def _rebuild_single_relationship(
                 "file_path": node_file_path,
                 "created_at": node_created_at,
                 "truncate": "",
+                "metadata": current_relationship.get("metadata"),
             }
             await knowledge_graph_inst.upsert_node(node_id, node_data=node_data)
 
@@ -1964,6 +1965,7 @@ async def _merge_nodes_then_upsert(
             file_path=file_path,
             created_at=int(time.time()),
             truncate=truncation_info,
+            metadata=metadata,
         )
         await knowledge_graph_inst.upsert_node(
             entity_name,
@@ -2358,6 +2360,7 @@ async def _merge_edges_then_upsert(
                     "file_path": file_path,
                     "created_at": node_created_at,
                     "truncate": "",
+                    "metadata": metadata,
                 }
                 await knowledge_graph_inst.upsert_node(
                     need_insert_id, node_data=node_data
@@ -2535,6 +2538,7 @@ async def _merge_edges_then_upsert(
                 file_path=file_path,
                 created_at=edge_created_at,
                 truncate=truncation_info,
+                metadata=metadata,
             ),
         )
 
@@ -4518,8 +4522,8 @@ async def _get_node_data(
 
     # Call the batch node retrieval and degree functions concurrently.
     nodes_dict, degrees_dict = await asyncio.gather(
-        knowledge_graph_inst.get_nodes_batch(node_ids),
-        knowledge_graph_inst.node_degrees_batch(node_ids),
+        knowledge_graph_inst.get_nodes_batch(node_ids, metadata_filter=query_param.metadata_filter),
+        knowledge_graph_inst.node_degrees_batch(node_ids, metadata_filter=query_param.metadata_filter),
     )
 
     # Now, if you need the node data and degree in order:
@@ -4561,7 +4565,7 @@ async def _find_most_related_edges_from_entities(
     knowledge_graph_inst: BaseGraphStorage,
 ):
     node_names = [dp["entity_name"] for dp in node_datas]
-    batch_edges_dict = await knowledge_graph_inst.get_nodes_edges_batch(node_names)
+    batch_edges_dict = await knowledge_graph_inst.get_nodes_edges_batch(node_names, metadata_filter=query_param.metadata_filter)
 
     all_edges = []
     seen = set()
@@ -4582,8 +4586,8 @@ async def _find_most_related_edges_from_entities(
 
     # Call the batched functions concurrently.
     edge_data_dict, edge_degrees_dict = await asyncio.gather(
-        knowledge_graph_inst.get_edges_batch(edge_pairs_dicts),
-        knowledge_graph_inst.edge_degrees_batch(edge_pairs_tuples),
+        knowledge_graph_inst.get_edges_batch(edge_pairs_dicts, metadata_filter=query_param.metadata_filter),
+        knowledge_graph_inst.edge_degrees_batch(edge_pairs_tuples, metadata_filter=query_param.metadata_filter),
     )
 
     # Reconstruct edge_datas list in the same order as the deduplicated results.
@@ -4826,7 +4830,7 @@ async def _get_edge_data(
     # Prepare edge pairs in two forms:
     # For the batch edge properties function, use dicts.
     edge_pairs_dicts = [{"src": r["src_id"], "tgt": r["tgt_id"]} for r in results]
-    edge_data_dict = await knowledge_graph_inst.get_edges_batch(edge_pairs_dicts)
+    edge_data_dict = await knowledge_graph_inst.get_edges_batch(edge_pairs_dicts, metadata_filter=query_param.metadata_filter)
 
     # Reconstruct edge_datas list in the same order as results.
     edge_datas = []
@@ -4881,7 +4885,7 @@ async def _find_most_related_entities_from_relationships(
             seen.add(e["tgt_id"])
 
     # Only get nodes data, no need for node degrees
-    nodes_dict = await knowledge_graph_inst.get_nodes_batch(entity_names)
+    nodes_dict = await knowledge_graph_inst.get_nodes_batch(entity_names, metadata_filter=query_param.metadata_filter)
 
     # Rebuild the list in the same order as entity_names
     node_datas = []
