@@ -282,7 +282,8 @@ export const RequireApiKeError = 'API Key required'
 const axiosInstance = axios.create({
   baseURL: backendBaseUrl,
   headers: {
-    'Content-Type': 'application/json'
+    'Content-Type': 'application/json',
+    'x-org-id': 'TEST'
   }
 })
 
@@ -523,6 +524,7 @@ export const queryTextStream = async (
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
     'Accept': 'application/x-ndjson',
+    'x-org-id': 'TEST',
   };
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
