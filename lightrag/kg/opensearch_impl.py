@@ -2578,7 +2578,8 @@ class OpenSearchVectorDBStorage(BaseVectorStorage):
             raise
 
     async def query(
-        self, query: str, top_k: int, query_embedding: list[float] = None, metadata_filter: dict[str, Any] | None = None
+        self, query: str, top_k: int, query_embedding: list[float] = None,
+        metadata_filter: dict[str, Any] | None = None, org_id: str | None = None
     ) -> list[dict[str, Any]]:
         """k-NN similarity search with cosine score conversion for lucene engine."""
         if not self._index_ready:
@@ -2594,11 +2595,18 @@ class OpenSearchVectorDBStorage(BaseVectorStorage):
             query_vector = embedding[0].tolist()
 
         # Fetch extra results when filtering to compensate for filtered-out items
-        fetch_top_k = top_k * 3 if metadata_filter else top_k
+        has_filter = metadata_filter or org_id
+        fetch_top_k = top_k * 3 if has_filter else top_k
+
+        knn_query = {"knn": {"vector": {"vector": query_vector, "k": fetch_top_k}}}
+
+        # Apply org_id filter at the query level
+        if org_id:
+            knn_query["knn"]["vector"]["filter"] = {"term": {"org_id": org_id}}
 
         search_body = {
             "size": fetch_top_k,
-            "query": {"knn": {"vector": {"vector": query_vector, "k": fetch_top_k}}},
+            "query": knn_query,
             "_source": {"excludes": ["vector"]},
         }
         try:
