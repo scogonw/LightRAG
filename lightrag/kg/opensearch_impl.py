@@ -11,6 +11,7 @@ Requirements:
 
 import os
 import re
+import json
 import ssl as ssl_module
 import time
 import asyncio
@@ -222,7 +223,6 @@ def _build_knowledgebase_filter(
 
     # Condition 2: team knowledgebase access
     if user_id and team_kb_ids and len(team_kb_ids) > 0:
-        resource_access_levels.append("TEAM_MEMBERS")
         conditions.append(
             {
                 "bool": {
@@ -230,7 +230,7 @@ def _build_knowledgebase_filter(
                         {"terms": {"metadata.knowledgebase_id.keyword": team_kb_ids}},
                         {
                             "terms": {
-                                "metadata.access_level.keyword": resource_access_levels
+                                "metadata.access_level.keyword": [*resource_access_levels, "TEAM_MEMBERS"]
                             }
                         },
                     ]
@@ -261,7 +261,7 @@ def _build_knowledgebase_filter(
             "bool": {"should": conditions, "minimum_should_match": 1}
         }
 
-    logger.info(f"OpenSearch knowledgebase filter: {kb_filter}")
+    print(json.dumps(kb_filter, indent=2))
     return kb_filter
 
 
