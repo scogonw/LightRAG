@@ -173,7 +173,7 @@ def _build_knowledgebase_filter(
     if not metadata_filter:
         # Fallback: if only org_id is provided, filter by it directly
         if org_id:
-            return {"term": {"org_id": org_id}}
+            return {"term": {"org_id.keyword": org_id}}
         return None
 
     agent_kb_ids = metadata_filter.get("agent_kb_ids")
@@ -181,13 +181,13 @@ def _build_knowledgebase_filter(
     user_kb_ids = metadata_filter.get("user_kb_ids")
     team_kb_ids = metadata_filter.get("team_kb_ids")
 
-    # Check if any knowledgebase params are present
+    # This line checks if at least one of the knowledgebase-related parameters is present and non-empty/True.
     has_kb_params = any([agent_kb_ids, user_id, user_kb_ids, team_kb_ids])
 
     if not has_kb_params:
         # No knowledgebase params — fall back to org_id filter only
         if org_id:
-            return {"term": {"org_id": org_id}}
+            return {"term": {"org_id.keyword": org_id}}
         return None
 
     # --- Agent knowledgebase path ---
@@ -195,8 +195,8 @@ def _build_knowledgebase_filter(
         kb_filter = {
             "bool": {
                 "must": [
-                    {"terms": {"knowledgebase_id": agent_kb_ids}},
-                    {"term": {"access_levels": "CHAT_WIDGET"}},
+                    {"terms": {"metadata.knowledgebase_id.keyword": agent_kb_ids}},
+                    {"term": {"metadata.access_level.keyword": "CHAT_WIDGET"}},
                 ]
             }
         }
@@ -213,8 +213,8 @@ def _build_knowledgebase_filter(
             {
                 "bool": {
                     "must": [
-                        {"term": {"org_id": org_id}},
-                        {"terms": {"access_levels": resource_access_levels}},
+                        {"term": {"org_id.keyword": org_id}},
+                        {"terms": {"metadata.access_level.keyword": resource_access_levels}},
                     ]
                 }
             }
@@ -222,15 +222,15 @@ def _build_knowledgebase_filter(
 
     # Condition 2: team knowledgebase access
     if user_id and team_kb_ids and len(team_kb_ids) > 0:
+        resource_access_levels.append("TEAM_MEMBERS")
         conditions.append(
             {
                 "bool": {
                     "must": [
-                        {"terms": {"knowledgebase_id": team_kb_ids}},
+                        {"terms": {"metadata.knowledgebase_id.keyword": team_kb_ids}},
                         {
                             "terms": {
-                                "access_levels": resource_access_levels
-                                + ["TEAM_MEMBERS"]
+                                "metadata.access_level.keyword": resource_access_levels
                             }
                         },
                     ]
@@ -244,8 +244,8 @@ def _build_knowledgebase_filter(
             {
                 "bool": {
                     "must": [
-                        {"terms": {"knowledgebase_id": user_kb_ids}},
-                        {"terms": {"access_levels": ["ONLY_ME"]}},
+                        {"terms": {"metadata.knowledgebase_id.keyword": user_kb_ids}},
+                        {"terms": {"metadata.access_level.keyword": ["ONLY_ME"]}},
                     ]
                 }
             }
