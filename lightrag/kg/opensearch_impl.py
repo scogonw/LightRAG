@@ -2773,6 +2773,7 @@ class OpenSearchVectorDBStorage(BaseVectorStorage):
             "query": knn_query,
             "_source": {"excludes": ["vector"]},
         }
+        logger.info(f"Search Body: ${search_body}")
         try:
             response = await self.client.search(
                 index=self._index_name, body=search_body
