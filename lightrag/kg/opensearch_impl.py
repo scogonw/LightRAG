@@ -104,7 +104,7 @@ def _build_knowledgebase_filter(
     if not metadata_filter:
         # Fallback: if only org_id is provided, filter by it directly
         if org_id:
-            return {"term": {"org_id.keyword": org_id}}
+            return {"term": {"org_id": org_id}}
         return None
 
     agent_kb_ids = metadata_filter.get("agent_kb_ids")
@@ -118,7 +118,7 @@ def _build_knowledgebase_filter(
     if not has_kb_params:
         # No knowledgebase params — fall back to org_id filter only
         if org_id:
-            return {"term": {"org_id.keyword": org_id}}
+            return {"term": {"org_id": org_id}}
         return None
 
     # --- Agent knowledgebase path ---
@@ -144,7 +144,7 @@ def _build_knowledgebase_filter(
             {
                 "bool": {
                     "must": [
-                        {"term": {"org_id.keyword": org_id}},
+                        {"term": {"org_id": org_id}},
                         {"terms": {"metadata.access_level.keyword": resource_access_levels}},
                     ]
                 }
