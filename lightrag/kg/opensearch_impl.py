@@ -143,6 +143,128 @@ def _build_opensearch_filter(filter_dict: dict) -> dict | None:
     return {"bool": bool_query}
 
 
+# Keys in metadata_filter that are consumed by the knowledgebase filter builder
+_KB_FILTER_KEYS = {"agent_kb_ids", "user_id", "user_kb_ids", "team_kb_ids"}
+
+
+def _build_knowledgebase_filter(
+    metadata_filter: dict | None, org_id: str | None = None
+) -> dict | None:
+    """Build an OpenSearch filter from knowledgebase access-control parameters.
+
+    Expects the following keys inside *metadata_filter*:
+        - ``agent_kb_ids``  – list[str] | None
+        - ``user_id``       – str | None
+        - ``user_kb_ids``   – list[str] | None
+        - ``team_kb_ids``   – list[str] | None
+
+    *org_id* is taken from the dedicated parameter (sourced from the
+    ``X-Org-Id`` header at the API layer).
+
+    Filtering logic:
+        1. If *agent_kb_ids* is non-empty, restrict to those knowledgebases
+           with ``CHAT_WIDGET`` access level.
+        2. Otherwise build an OR of:
+           a. Documents belonging to *org_id* with ORGANIZATION or CHAT_WIDGET access.
+           b. (if *user_id* and *team_kb_ids*) team knowledgebases with
+              ORGANIZATION, CHAT_WIDGET, or TEAM_MEMBERS access.
+           c. (if *user_kb_ids*) user-owned knowledgebases with ONLY_ME access.
+    """
+    if not metadata_filter:
+        # Fallback: if only org_id is provided, filter by it directly
+        if org_id:
+            return {"term": {"org_id": org_id}}
+        return None
+
+    agent_kb_ids = metadata_filter.get("agent_kb_ids")
+    user_id = metadata_filter.get("user_id")
+    user_kb_ids = metadata_filter.get("user_kb_ids")
+    team_kb_ids = metadata_filter.get("team_kb_ids")
+
+    # Check if any knowledgebase params are present
+    has_kb_params = any([agent_kb_ids, user_id, user_kb_ids, team_kb_ids])
+
+    if not has_kb_params:
+        # No knowledgebase params — fall back to org_id filter only
+        if org_id:
+            return {"term": {"org_id": org_id}}
+        return None
+
+    # --- Agent knowledgebase path ---
+    if agent_kb_ids and len(agent_kb_ids) > 0:
+        kb_filter = {
+            "bool": {
+                "must": [
+                    {"terms": {"knowledgebase_id": agent_kb_ids}},
+                    {"term": {"access_levels": "CHAT_WIDGET"}},
+                ]
+            }
+        }
+        logger.info(f"OpenSearch knowledgebase filter (agent): {kb_filter}")
+        return kb_filter
+
+    # --- User / team / org knowledgebase path ---
+    resource_access_levels = ["ORGANIZATION", "CHAT_WIDGET"]
+    conditions: list[dict] = []
+
+    # Condition 1: org-level access
+    if org_id:
+        conditions.append(
+            {
+                "bool": {
+                    "must": [
+                        {"term": {"org_id": org_id}},
+                        {"terms": {"access_levels": resource_access_levels}},
+                    ]
+                }
+            }
+        )
+
+    # Condition 2: team knowledgebase access
+    if user_id and team_kb_ids and len(team_kb_ids) > 0:
+        conditions.append(
+            {
+                "bool": {
+                    "must": [
+                        {"terms": {"knowledgebase_id": team_kb_ids}},
+                        {
+                            "terms": {
+                                "access_levels": resource_access_levels
+                                + ["TEAM_MEMBERS"]
+                            }
+                        },
+                    ]
+                }
+            }
+        )
+
+    # Condition 3: user-owned knowledgebase access
+    if user_kb_ids and len(user_kb_ids) > 0:
+        conditions.append(
+            {
+                "bool": {
+                    "must": [
+                        {"terms": {"knowledgebase_id": user_kb_ids}},
+                        {"terms": {"access_levels": ["ONLY_ME"]}},
+                    ]
+                }
+            }
+        )
+
+    if not conditions:
+        return None
+
+    if len(conditions) == 1:
+        kb_filter = conditions[0]
+    else:
+        kb_filter = {
+            "bool": {"should": conditions, "minimum_should_match": 1}
+        }
+
+    logger.info(f"OpenSearch knowledgebase filter: {kb_filter}")
+    return kb_filter
+
+
 def _get_opensearch_env(key, fallback):
     cfg_key = key.replace("OPENSEARCH_", "").lower()
     return os.environ.get(key, config.get("opensearch", cfg_key, fallback=fallback))
@@ -2600,6 +2722,8 @@ class OpenSearchVectorDBStorage(BaseVectorStorage):
                         "tgt_id": {"type": "keyword"},
                         "file_path": {"type": "keyword"},
                         "org_id": {"type": "keyword"},
+                        "knowledgebase_id": {"type": "keyword"},
+                        "access_levels": {"type": "keyword"},
                         "created_at": {"type": "long"},
                     },
                     "dynamic": True,
@@ -2703,25 +2827,16 @@ class OpenSearchVectorDBStorage(BaseVectorStorage):
             embedding = await self.embedding_func([query], _priority=5)
             query_vector = embedding[0].tolist()
 
-        # Build combined filter from org_id and metadata_filter
-        filter_clauses: list[dict] = []
-        if org_id:
-            filter_clauses.append({"term": {"org_id": org_id}})
-        if metadata_filter:
-            os_filter = _build_opensearch_filter(metadata_filter)
-            if os_filter:
-                filter_clauses.append(os_filter)
+        # Build knowledgebase access-control filter from metadata_filter + org_id
+        os_filter = _build_knowledgebase_filter(metadata_filter, org_id)
 
-        has_filter = len(filter_clauses) > 0
+        has_filter = os_filter is not None
         fetch_top_k = top_k * 3 if has_filter else top_k
 
         knn_query: dict = {"knn": {"vector": {"vector": query_vector, "k": fetch_top_k}}}
 
-        if filter_clauses:
-            if len(filter_clauses) == 1:
-                knn_query["knn"]["vector"]["filter"] = filter_clauses[0]
-            else:
-                knn_query["knn"]["vector"]["filter"] = {"bool": {"must": filter_clauses}}
+        if os_filter:
+            knn_query["knn"]["vector"]["filter"] = os_filter
 
         search_body = {
             "size": fetch_top_k,
