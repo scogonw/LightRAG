@@ -74,76 +74,6 @@ def _apply_metadata_filter(
     return filtered
 
 
-def _build_opensearch_filter(filter_dict: dict) -> dict | None:
-    """Convert a MongoDB-style filter to OpenSearch query DSL.
-
-    Supports:
-      - $and / $or logical operators
-      - $in / $nin array operators on field values
-      - Direct value equality matching
-    Field paths are prefixed with ``metadata.`` and use ``.keyword`` suffix
-    for exact matching on text fields.
-    """
-    if not filter_dict:
-        return None
-
-    # Handle $and operator
-    if "$and" in filter_dict and isinstance(filter_dict["$and"], list):
-        clauses = [
-            c for c in (_build_opensearch_filter(cond) for cond in filter_dict["$and"]) if c
-        ]
-        if not clauses:
-            return None
-        if len(clauses) == 1:
-            return clauses[0]
-        return {"bool": {"must": clauses}}
-
-    # Handle $or operator
-    if "$or" in filter_dict and isinstance(filter_dict["$or"], list):
-        clauses = [
-            c for c in (_build_opensearch_filter(cond) for cond in filter_dict["$or"]) if c
-        ]
-        if not clauses:
-            return None
-        return {"bool": {"should": clauses, "minimum_should_match": 1}}
-
-    must_clauses: list[dict] = []
-    must_not_clauses: list[dict] = []
-
-    for key, value in filter_dict.items():
-        if key.startswith("$"):
-            continue  # Skip MongoDB operators at root level
-
-        field_path = f"metadata.{key}"
-
-        if isinstance(value, dict):
-            # Handle $in operator
-            if "$in" in value and isinstance(value["$in"], list):
-                must_clauses.append({"terms": {f"{field_path}.keyword": value["$in"]}})
-            # Handle $nin operator
-            if "$nin" in value and isinstance(value["$nin"], list):
-                must_not_clauses.append({"terms": {f"{field_path}.keyword": value["$nin"]}})
-        else:
-            # Direct value match
-            must_clauses.append({"term": {f"{field_path}.keyword": value}})
-
-    if not must_clauses and not must_not_clauses:
-        return None
-
-    if len(must_clauses) == 1 and not must_not_clauses:
-        return must_clauses[0]
-
-    bool_query: dict = {}
-    if must_clauses:
-        bool_query["must"] = must_clauses
-    if must_not_clauses:
-        bool_query["must_not"] = must_not_clauses
-
-    logger.info(f"OpenSearch Query: {bool_query}")
-
-    return {"bool": bool_query}
-
-
 # Keys in metadata_filter that are consumed by the knowledgebase filter builder
 _KB_FILTER_KEYS = {"agent_kb_ids", "user_id", "user_kb_ids", "team_kb_ids"}
 
@@ -261,7 +191,7 @@ def _build_knowledgebase_filter(
             "bool": {"should": conditions, "minimum_should_match": 1}
         }
 
-    print(json.dumps(kb_filter, indent=2))
+    logger.info(f"OpenSearch knowledgebase filter: {kb_filter}")
     return kb_filter
 
 
@@ -1556,14 +1486,14 @@ class OpenSearchGraphStorage(BaseGraphStorage):
 
     # --- Batch operations ---
 
-    async def get_nodes_batch(self, node_ids: list[str], metadata_filter: dict | None = None) -> dict[str, dict]:
+    async def get_nodes_batch(self, node_ids: list[str], metadata_filter: dict | None = None, org_id: str | None = None) -> dict[str, dict]:
         """Batch-fetch multiple nodes by ID, optionally filtered by metadata."""
         if not self._indices_ready:
             return {}
         try:
             if metadata_filter:
                 # Use search with IDs + metadata filter
-                os_filter = _build_opensearch_filter(metadata_filter)
+                os_filter = _build_knowledgebase_filter(metadata_filter, org_id)
                 must_clauses = [{"ids": {"values": node_ids}}]
                 if os_filter:
                     must_clauses.append(os_filter)
@@ -1594,7 +1524,7 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                 self._mark_indices_missing()
             return {}
 
-    async def node_degrees_batch(self, node_ids: list[str], metadata_filter: dict | None = None) -> dict[str, int]:
+    async def node_degrees_batch(self, node_ids: list[str], metadata_filter: dict | None = None, org_id: str | None = None) -> dict[str, int]:
         """Batch-fetch edge counts for multiple nodes using aggregations."""
         if not node_ids:
             return {}
@@ -1611,7 +1541,7 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                 }
             }
             if metadata_filter:
-                os_filter = _build_opensearch_filter(metadata_filter)
+                os_filter = _build_knowledgebase_filter(metadata_filter, org_id)
                 if os_filter:
                     query = {"bool": {"must": [node_match, os_filter]}}
                 else:
@@ -1656,7 +1586,7 @@ class OpenSearchGraphStorage(BaseGraphStorage):
             return {}
 
     async def get_nodes_edges_batch(
-        self, node_ids: list[str], metadata_filter: dict | None = None
+        self, node_ids: list[str], metadata_filter: dict | None = None, org_id: str | None = None
     ) -> dict[str, list[tuple[str, str]]]:
         """Batch-fetch edge tuples for multiple nodes, optionally filtered by metadata."""
         result = {nid: [] for nid in node_ids}
@@ -1672,7 +1602,7 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                 }
             }
             if metadata_filter:
-                os_filter = _build_opensearch_filter(metadata_filter)
+                os_filter = _build_knowledgebase_filter(metadata_filter, org_id)
                 if os_filter:
                     query = {"bool": {"must": [node_match, os_filter]}}
                 else:
