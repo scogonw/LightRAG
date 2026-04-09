@@ -8,7 +8,7 @@ import { useTranslation } from 'react-i18next'
 import { Card, CardContent, CardHeader } from '@/components/ui/Card'
 import Input from '@/components/ui/Input'
 import Button from '@/components/ui/Button'
-import { ZapIcon } from 'lucide-react'
+import { EyeIcon, EyeOffIcon } from 'lucide-react'
 import AppSettings from '@/components/AppSettings'
 
 const LoginPage = () => {
@@ -18,6 +18,7 @@ const LoginPage = () => {
   const [loading, setLoading] = useState(false)
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [checkingAuth, setCheckingAuth] = useState(true)
   const authCheckRef = useRef(false); // Prevent duplicate calls in Vite dev mode
 
@@ -153,11 +154,10 @@ const LoginPage = () => {
         <CardHeader className="flex items-center justify-center space-y-2 pb-8 pt-6">
           <div className="flex flex-col items-center space-y-4">
             <div className="flex items-center gap-3">
-              <img src="logo.svg" alt="LightRAG Logo" className="h-12 w-12" />
-              <ZapIcon className="size-10 text-emerald-400" aria-hidden="true" />
+              <img src="logo.png" alt="SiaRAG Logo" className="h-12 w-12" />
             </div>
             <div className="text-center space-y-2">
-              <h1 className="text-3xl font-bold tracking-tight">LightRAG</h1>
+              <h1 className="text-3xl font-bold tracking-tight">SiaRAG</h1>
               <p className="text-muted-foreground text-sm">
                 {t('login.description')}
               </p>
@@ -183,15 +183,25 @@ const LoginPage = () => {
               <label htmlFor="password-input" className="text-sm font-medium w-16 shrink-0">
                 {t('login.password')}
               </label>
-              <Input
-                id="password-input"
-                type="password"
-                placeholder={t('login.passwordPlaceholder')}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                className="h-11 flex-1"
-              />
+              <div className="relative flex-1">
+                <Input
+                  id="password-input"
+                  type={showPassword ? 'text' : 'password'}
+                  placeholder={t('login.passwordPlaceholder')}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  className="h-11 w-full pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  tabIndex={-1}
+                >
+                  {showPassword ? <EyeOffIcon className="size-4" /> : <EyeIcon className="size-4" />}
+                </button>
+              </div>
             </div>
             <Button
               type="submit"
