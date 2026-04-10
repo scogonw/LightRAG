@@ -7,6 +7,8 @@ FROM --platform=$BUILDPLATFORM oven/bun:1 AS frontend-builder
 
 WORKDIR /app
 
+ARG VITE_VIEW_ONLY=false
+
 # Copy frontend source code
 COPY lightrag_webui/ ./lightrag_webui/
 
@@ -14,7 +16,7 @@ COPY lightrag_webui/ ./lightrag_webui/
 RUN --mount=type=cache,target=/root/.bun/install/cache \
     cd lightrag_webui \
     && bun install --frozen-lockfile \
-    && bun run build
+    && VITE_VIEW_ONLY=${VITE_VIEW_ONLY} bun run build
 
 # Python build stage - using uv for faster package installation
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS builder
