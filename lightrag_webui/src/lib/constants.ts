@@ -3,6 +3,8 @@ import { ButtonVariantType } from '@/components/ui/Button'
 export const backendBaseUrl = ''
 export const webuiPrefix = '/webui/'
 
+export const isViewOnly = import.meta.env.VITE_VIEW_ONLY === 'true'
+
 export const controlButtonVariant: ButtonVariantType = 'ghost'
 
 export const labelColorDarkTheme = '#FFFFFF'

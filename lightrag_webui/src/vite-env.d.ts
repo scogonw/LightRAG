@@ -4,6 +4,7 @@ interface ImportMetaEnv {
   readonly VITE_API_PROXY: string
   readonly VITE_API_ENDPOINTS: string
   readonly VITE_BACKEND_URL: string
+  readonly VITE_VIEW_ONLY: string
 }
 
 interface ImportMeta {
