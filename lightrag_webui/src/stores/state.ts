@@ -33,13 +33,15 @@ interface AuthState {
   username: string | null; // login username
   webuiTitle: string | null; // Custom title
   webuiDescription: string | null; // Title description
+  viewOnly: boolean; // View-only mode flag
   lastTokenRenewal: string | null; // Human-readable local time of last token renewal (for debugging and monitoring)
   tokenExpiresAt: number | null; // Token expiration timestamp (extracted from JWT)
 
-  login: (token: string, isGuest?: boolean, coreVersion?: string | null, apiVersion?: string | null, webuiTitle?: string | null, webuiDescription?: string | null) => void;
+  login: (token: string, isGuest?: boolean, coreVersion?: string | null, apiVersion?: string | null, webuiTitle?: string | null, webuiDescription?: string | null, viewOnly?: boolean) => void;
   logout: () => void;
   setVersion: (coreVersion: string | null, apiVersion: string | null) => void;
   setCustomTitle: (webuiTitle: string | null, webuiDescription: string | null) => void;
+  setViewOnly: (viewOnly: boolean) => void;
   setTokenRenewal: (renewalTime: number, expiresAt: number) => void; // Track token renewal
 }
 
@@ -71,6 +73,11 @@ const useBackendStateStoreBase = create<BackendState>()((set, get) => ({
           'webui_title' in health ? (health.webui_title ?? null) : null,
           'webui_description' in health ? (health.webui_description ?? null) : null
         );
+      }
+
+      // Update view-only mode if health check returns it
+      if ('view_only' in health) {
+        useAuthStore.getState().setViewOnly(health.view_only ?? false);
       }
 
       // Extract and store backend max graph nodes limit
@@ -199,12 +206,13 @@ const getTokenExpiresAt = (token: string): number | null => {
   return payload.exp ? payload.exp * 1000 : null; // Convert to milliseconds
 };
 
-const initAuthState = (): { isAuthenticated: boolean; isGuestMode: boolean; coreVersion: string | null; apiVersion: string | null; username: string | null; webuiTitle: string | null; webuiDescription: string | null; lastTokenRenewal: string | null; tokenExpiresAt: number | null } => {
+const initAuthState = (): { isAuthenticated: boolean; isGuestMode: boolean; coreVersion: string | null; apiVersion: string | null; username: string | null; webuiTitle: string | null; webuiDescription: string | null; viewOnly: boolean; lastTokenRenewal: string | null; tokenExpiresAt: number | null } => {
   const token = localStorage.getItem('LIGHTRAG-API-TOKEN');
   const coreVersion = localStorage.getItem('LIGHTRAG-CORE-VERSION');
   const apiVersion = localStorage.getItem('LIGHTRAG-API-VERSION');
   const webuiTitle = localStorage.getItem('LIGHTRAG-WEBUI-TITLE');
   const webuiDescription = localStorage.getItem('LIGHTRAG-WEBUI-DESCRIPTION');
+  const viewOnly = localStorage.getItem('LIGHTRAG-VIEW-ONLY') === 'true';
   const lastTokenRenewal = localStorage.getItem('LIGHTRAG-LAST-TOKEN-RENEWAL');
   const username = token ? getUsernameFromToken(token) : null;
   const tokenExpiresAt = token ? getTokenExpiresAt(token) : null;
@@ -218,6 +226,7 @@ const initAuthState = (): { isAuthenticated: boolean; isGuestMode: boolean; core
       username: null,
       webuiTitle: webuiTitle,
       webuiDescription: webuiDescription,
+      viewOnly: viewOnly,
       lastTokenRenewal: null,
       tokenExpiresAt: null,
     };
@@ -231,6 +240,7 @@ const initAuthState = (): { isAuthenticated: boolean; isGuestMode: boolean; core
     username: username,
     webuiTitle: webuiTitle,
     webuiDescription: webuiDescription,
+    viewOnly: viewOnly,
     lastTokenRenewal: lastTokenRenewal,
     tokenExpiresAt: tokenExpiresAt,
   };
@@ -248,10 +258,11 @@ export const useAuthStore = create<AuthState>(set => {
     username: initialState.username,
     webuiTitle: initialState.webuiTitle,
     webuiDescription: initialState.webuiDescription,
+    viewOnly: initialState.viewOnly,
     lastTokenRenewal: initialState.lastTokenRenewal,
     tokenExpiresAt: initialState.tokenExpiresAt,
 
-    login: (token, isGuest = false, coreVersion = null, apiVersion = null, webuiTitle = null, webuiDescription = null) => {
+    login: (token, isGuest = false, coreVersion = null, apiVersion = null, webuiTitle = null, webuiDescription = null, viewOnly = false) => {
       localStorage.setItem('LIGHTRAG-API-TOKEN', token);
 
       if (coreVersion) {
@@ -273,6 +284,8 @@ export const useAuthStore = create<AuthState>(set => {
         localStorage.removeItem('LIGHTRAG-WEBUI-DESCRIPTION');
       }
 
+      localStorage.setItem('LIGHTRAG-VIEW-ONLY', String(viewOnly));
+
       const username = getUsernameFromToken(token);
       const tokenExpiresAt = getTokenExpiresAt(token);
       const now = Date.now();
@@ -289,6 +302,7 @@ export const useAuthStore = create<AuthState>(set => {
         apiVersion: apiVersion,
         webuiTitle: webuiTitle,
         webuiDescription: webuiDescription,
+        viewOnly: viewOnly ?? false,
         tokenExpiresAt: tokenExpiresAt,
         lastTokenRenewal: formattedTime,
       });
@@ -351,6 +365,11 @@ export const useAuthStore = create<AuthState>(set => {
         webuiTitle: webuiTitle,
         webuiDescription: webuiDescription
       });
+    },
+
+    setViewOnly: (viewOnly) => {
+      localStorage.setItem('LIGHTRAG-VIEW-ONLY', String(viewOnly));
+      set({ viewOnly });
     },
 
     setTokenRenewal: (renewalTime, expiresAt) => {

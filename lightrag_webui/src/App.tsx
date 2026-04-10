@@ -3,7 +3,7 @@ import ThemeProvider from '@/components/ThemeProvider'
 import TabVisibilityProvider from '@/contexts/TabVisibilityProvider'
 import ApiKeyAlert from '@/components/ApiKeyAlert'
 import StatusIndicator from '@/components/status/StatusIndicator'
-import { SiteInfo, webuiPrefix, isViewOnly } from '@/lib/constants'
+import { SiteInfo, webuiPrefix } from '@/lib/constants'
 import { useBackendState, useAuthStore } from '@/stores/state'
 import { useSettingsStore } from '@/stores/settings'
 import { getAuthStatus } from '@/api/lightrag'
@@ -22,6 +22,7 @@ function App() {
   const message = useBackendState.use.message()
   const enableHealthCheck = useSettingsStore.use.enableHealthCheck()
   const currentTab = useSettingsStore.use.currentTab()
+  const { viewOnly } = useAuthStore()
   const [apiKeyAlertOpen, setApiKeyAlertOpen] = useState(false)
   const [initializing, setInitializing] = useState(true) // Add initializing state
   const versionCheckRef = useRef(false); // Prevent duplicate calls in Vite dev mode
@@ -120,7 +121,8 @@ function App() {
             status.core_version,
             status.api_version,
             status.webui_title || null,
-            status.webui_description || null
+            status.webui_description || null,
+            status.view_only ?? false
           );
         } else if (token && (status.core_version || status.api_version || status.webui_title || status.webui_description)) {
           // Otherwise use the old token (if it exists)
@@ -131,7 +133,8 @@ function App() {
             status.core_version,
             status.api_version,
             status.webui_title || null,
-            status.webui_description || null
+            status.webui_description || null,
+            status.view_only ?? false
           );
         }
 
@@ -210,12 +213,12 @@ function App() {
                 <TabsContent value="knowledge-graph" className="absolute top-0 right-0 bottom-0 left-0 overflow-hidden">
                   <GraphViewer />
                 </TabsContent>
-                {!isViewOnly && (
+                {!viewOnly && (
                   <TabsContent value="retrieval" className="absolute top-0 right-0 bottom-0 left-0 overflow-hidden">
                     <RetrievalTesting />
                   </TabsContent>
                 )}
-                {!isViewOnly && (
+                {!viewOnly && (
                   <TabsContent value="api" className="absolute top-0 right-0 bottom-0 left-0 overflow-hidden">
                     <ApiSite />
                   </TabsContent>

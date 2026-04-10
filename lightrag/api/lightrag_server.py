@@ -1308,6 +1308,7 @@ def create_app(args):
                 "api_version": api_version_display,
                 "webui_title": webui_title,
                 "webui_description": webui_description,
+                "view_only": view_only,
             }
         except Exception as e:
             logger.error(f"Error getting health status: {str(e)}")

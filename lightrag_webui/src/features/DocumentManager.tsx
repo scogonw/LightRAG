@@ -30,11 +30,11 @@ import {
 } from '@/api/lightrag'
 import { errorMessage } from '@/lib/utils'
 import { toast } from 'sonner'
-import { useBackendState } from '@/stores/state'
+import { useBackendState, useAuthStore } from '@/stores/state'
 
 import { RefreshCwIcon, ActivityIcon, ArrowUpIcon, ArrowDownIcon, RotateCcwIcon, CheckSquareIcon, XIcon, AlertTriangle, Info } from 'lucide-react'
 import PipelineStatusDialog from '@/components/documents/PipelineStatusDialog'
-import { isViewOnly } from '@/lib/constants'
+
 
 type StatusFilter = DocStatus | 'all';
 
@@ -218,6 +218,7 @@ type RefreshRequest =
   };
 
 export default function DocumentManager() {
+  const { viewOnly } = useAuthStore()
   // Track component mount status
   const isMountedRef = useRef(true);
 
@@ -1183,7 +1184,7 @@ export default function DocumentManager() {
       <CardContent className="flex-1 flex flex-col min-h-0 overflow-auto">
         <div className="flex justify-between items-center gap-2 mb-2">
           <div className="flex gap-2">
-            {!isViewOnly && (
+            {!viewOnly && (
               <Button
                 variant="outline"
                 onClick={scanDocuments}
@@ -1194,7 +1195,7 @@ export default function DocumentManager() {
                 <RefreshCwIcon /> {t('documentPanel.documentManager.scanButton')}
               </Button>
             )}
-            {!isViewOnly && (
+            {!viewOnly && (
               <Button
                 variant="outline"
                 onClick={() => setShowPipelineStatus(true)}
@@ -1225,13 +1226,13 @@ export default function DocumentManager() {
           )}
 
           <div className="flex gap-2">
-            {!isViewOnly && isSelectionMode && (
+            {!viewOnly && isSelectionMode && (
               <DeleteDocumentsDialog
                 selectedDocIds={selectedDocIds}
                 onDocumentsDeleted={handleDocumentsDeleted}
               />
             )}
-            {!isViewOnly && isSelectionMode && hasCurrentPageSelection ? (
+            {!viewOnly && isSelectionMode && hasCurrentPageSelection ? (
               (() => {
                 const buttonProps = getSelectionButtonProps();
                 const IconComponent = buttonProps.icon;
@@ -1248,10 +1249,10 @@ export default function DocumentManager() {
                   </Button>
                 );
               })()
-            ) : !isViewOnly && !isSelectionMode ? (
+            ) : !viewOnly && !isSelectionMode ? (
               <ClearDocumentsDialog onDocumentsCleared={handleDocumentsCleared} />
             ) : null}
-            {!isViewOnly && (
+            {!viewOnly && (
               <UploadDocumentsDialog onDocumentsUploaded={() => handleIntelligentRefresh(undefined, false, 120000)} />
             )}
             <PipelineStatusDialog
@@ -1435,7 +1436,7 @@ export default function DocumentManager() {
                             )}
                           </div>
                         </TableHead>
-                        {!isViewOnly && (
+                        {!viewOnly && (
                           <TableHead className="w-16 text-center">
                             {t('documentPanel.documentManager.columns.select')}
                           </TableHead>
@@ -1528,7 +1529,7 @@ export default function DocumentManager() {
                           <TableCell className="truncate">
                             {new Date(doc.updated_at).toLocaleString()}
                           </TableCell>
-                          {!isViewOnly && (
+                          {!viewOnly && (
                             <TableCell className="text-center">
                               <Checkbox
                                 checked={selectedDocIds.includes(doc.id)}

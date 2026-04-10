@@ -1,5 +1,5 @@
 import Button from '@/components/ui/Button'
-import { SiteInfo, webuiPrefix, isViewOnly } from '@/lib/constants'
+import { SiteInfo, webuiPrefix } from '@/lib/constants'
 import AppSettings from '@/components/AppSettings'
 import { TabsList, TabsTrigger } from '@/components/ui/Tabs'
 import { useSettingsStore } from '@/stores/settings'
@@ -32,6 +32,7 @@ function NavigationTab({ value, currentTab, children }: NavigationTabProps) {
 
 function TabsNavigation() {
   const currentTab = useSettingsStore.use.currentTab()
+  const { viewOnly } = useAuthStore()
   const { t } = useTranslation()
 
   return (
@@ -43,12 +44,12 @@ function TabsNavigation() {
         <NavigationTab value="knowledge-graph" currentTab={currentTab}>
           {t('header.knowledgeGraph')}
         </NavigationTab>
-        {!isViewOnly && (
+        {!viewOnly && (
           <NavigationTab value="retrieval" currentTab={currentTab}>
             {t('header.retrieval')}
           </NavigationTab>
         )}
-        {!isViewOnly && (
+        {!viewOnly && (
           <NavigationTab value="api" currentTab={currentTab}>
             {t('header.api')}
           </NavigationTab>
@@ -60,7 +61,7 @@ function TabsNavigation() {
 
 export default function SiteHeader() {
   const { t } = useTranslation()
-  const { isGuestMode, coreVersion, apiVersion, username, webuiTitle, webuiDescription } = useAuthStore()
+  const { isGuestMode, coreVersion, apiVersion, username, webuiTitle, webuiDescription, viewOnly } = useAuthStore()
 
   const versionDisplay = (coreVersion && apiVersion)
     ? `${coreVersion}/${apiVersion}`
@@ -129,7 +130,7 @@ export default function SiteHeader() {
               </Tooltip>
             </TooltipProvider>
           )}
-          {!isViewOnly && (
+          {!viewOnly && (
             <Button variant="ghost" size="icon" side="bottom" tooltip={t('header.projectRepository')}>
               <a href={SiteInfo.github} target="_blank" rel="noopener noreferrer">
                 <GithubIcon className="size-4" aria-hidden="true" />

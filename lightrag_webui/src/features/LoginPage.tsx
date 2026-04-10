@@ -53,7 +53,7 @@ const LoginPage = () => {
 
         if (!status.auth_configured && status.access_token) {
           // If auth is not configured, use the guest token and redirect
-          login(status.access_token, true, status.core_version, status.api_version, status.webui_title || null, status.webui_description || null)
+          login(status.access_token, true, status.core_version, status.api_version, status.webui_title || null, status.webui_description || null, status.view_only ?? false)
           if (status.message) {
             toast.info(status.message)
           }
@@ -116,7 +116,7 @@ const LoginPage = () => {
 
       // Check authentication mode
       const isGuestMode = response.auth_mode === 'disabled'
-      login(response.access_token, isGuestMode, response.core_version, response.api_version, response.webui_title || null, response.webui_description || null)
+      login(response.access_token, isGuestMode, response.core_version, response.api_version, response.webui_title || null, response.webui_description || null, response.view_only ?? false)
 
       // Set session flag for version check
       if (response.core_version || response.api_version) {
