@@ -72,6 +72,7 @@ load_dotenv(dotenv_path=".env", override=False)
 
 webui_title = os.getenv("WEBUI_TITLE")
 webui_description = os.getenv("WEBUI_DESCRIPTION")
+view_only = os.getenv("VIEW_ONLY", "false").lower() == "true"
 
 # Global authentication configuration
 auth_configured = bool(auth_handler.accounts)
@@ -1156,6 +1157,7 @@ def create_app(args):
                 "api_version": api_version_display,
                 "webui_title": webui_title,
                 "webui_description": webui_description,
+                "view_only": view_only,
             }
 
         return {
@@ -1165,6 +1167,7 @@ def create_app(args):
             "api_version": api_version_display,
             "webui_title": webui_title,
             "webui_description": webui_description,
+            "view_only": view_only,
         }
 
     @app.post("/login")
@@ -1183,6 +1186,7 @@ def create_app(args):
                 "api_version": api_version_display,
                 "webui_title": webui_title,
                 "webui_description": webui_description,
+                "view_only": view_only,
             }
         username = form_data.username
         if not auth_handler.verify_password(username, form_data.password):
@@ -1200,6 +1204,7 @@ def create_app(args):
             "api_version": api_version_display,
             "webui_title": webui_title,
             "webui_description": webui_description,
+            "view_only": view_only,
         }
 
     @app.get(
