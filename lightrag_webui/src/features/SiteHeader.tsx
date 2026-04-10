@@ -1,5 +1,5 @@
 import Button from '@/components/ui/Button'
-import { SiteInfo, webuiPrefix } from '@/lib/constants'
+import { SiteInfo, webuiPrefix, isViewOnly } from '@/lib/constants'
 import AppSettings from '@/components/AppSettings'
 import { TabsList, TabsTrigger } from '@/components/ui/Tabs'
 import { useSettingsStore } from '@/stores/settings'
@@ -43,12 +43,16 @@ function TabsNavigation() {
         <NavigationTab value="knowledge-graph" currentTab={currentTab}>
           {t('header.knowledgeGraph')}
         </NavigationTab>
-        <NavigationTab value="retrieval" currentTab={currentTab}>
-          {t('header.retrieval')}
-        </NavigationTab>
-        <NavigationTab value="api" currentTab={currentTab}>
-          {t('header.api')}
-        </NavigationTab>
+        {!isViewOnly && (
+          <NavigationTab value="retrieval" currentTab={currentTab}>
+            {t('header.retrieval')}
+          </NavigationTab>
+        )}
+        {!isViewOnly && (
+          <NavigationTab value="api" currentTab={currentTab}>
+            {t('header.api')}
+          </NavigationTab>
+        )}
       </TabsList>
     </div>
   )
@@ -125,11 +129,13 @@ export default function SiteHeader() {
               </Tooltip>
             </TooltipProvider>
           )}
-          <Button variant="ghost" size="icon" side="bottom" tooltip={t('header.projectRepository')}>
-            <a href={SiteInfo.github} target="_blank" rel="noopener noreferrer">
-              <GithubIcon className="size-4" aria-hidden="true" />
-            </a>
-          </Button>
+          {!isViewOnly && (
+            <Button variant="ghost" size="icon" side="bottom" tooltip={t('header.projectRepository')}>
+              <a href={SiteInfo.github} target="_blank" rel="noopener noreferrer">
+                <GithubIcon className="size-4" aria-hidden="true" />
+              </a>
+            </Button>
+          )}
           <AppSettings />
           {!isGuestMode && (
             <Button

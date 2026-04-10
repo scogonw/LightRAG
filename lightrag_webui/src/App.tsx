@@ -3,7 +3,7 @@ import ThemeProvider from '@/components/ThemeProvider'
 import TabVisibilityProvider from '@/contexts/TabVisibilityProvider'
 import ApiKeyAlert from '@/components/ApiKeyAlert'
 import StatusIndicator from '@/components/status/StatusIndicator'
-import { SiteInfo, webuiPrefix } from '@/lib/constants'
+import { SiteInfo, webuiPrefix, isViewOnly } from '@/lib/constants'
 import { useBackendState, useAuthStore } from '@/stores/state'
 import { useSettingsStore } from '@/stores/settings'
 import { getAuthStatus } from '@/api/lightrag'
@@ -210,12 +210,16 @@ function App() {
                 <TabsContent value="knowledge-graph" className="absolute top-0 right-0 bottom-0 left-0 overflow-hidden">
                   <GraphViewer />
                 </TabsContent>
-                <TabsContent value="retrieval" className="absolute top-0 right-0 bottom-0 left-0 overflow-hidden">
-                  <RetrievalTesting />
-                </TabsContent>
-                <TabsContent value="api" className="absolute top-0 right-0 bottom-0 left-0 overflow-hidden">
-                  <ApiSite />
-                </TabsContent>
+                {!isViewOnly && (
+                  <TabsContent value="retrieval" className="absolute top-0 right-0 bottom-0 left-0 overflow-hidden">
+                    <RetrievalTesting />
+                  </TabsContent>
+                )}
+                {!isViewOnly && (
+                  <TabsContent value="api" className="absolute top-0 right-0 bottom-0 left-0 overflow-hidden">
+                    <ApiSite />
+                  </TabsContent>
+                )}
               </div>
             </Tabs>
             {enableHealthCheck && <StatusIndicator />}
