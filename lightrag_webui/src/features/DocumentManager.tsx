@@ -34,6 +34,7 @@ import { useBackendState } from '@/stores/state'
 
 import { RefreshCwIcon, ActivityIcon, ArrowUpIcon, ArrowDownIcon, RotateCcwIcon, CheckSquareIcon, XIcon, AlertTriangle, Info } from 'lucide-react'
 import PipelineStatusDialog from '@/components/documents/PipelineStatusDialog'
+import { isViewOnly } from '@/lib/constants'
 
 type StatusFilter = DocStatus | 'all';
 
@@ -1182,27 +1183,31 @@ export default function DocumentManager() {
       <CardContent className="flex-1 flex flex-col min-h-0 overflow-auto">
         <div className="flex justify-between items-center gap-2 mb-2">
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              onClick={scanDocuments}
-              side="bottom"
-              tooltip={t('documentPanel.documentManager.scanTooltip')}
-              size="sm"
-            >
-              <RefreshCwIcon /> {t('documentPanel.documentManager.scanButton')}
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => setShowPipelineStatus(true)}
-              side="bottom"
-              tooltip={t('documentPanel.documentManager.pipelineStatusTooltip')}
-              size="sm"
-              className={cn(
-                pipelineBusy && 'pipeline-busy'
-              )}
-            >
-              <ActivityIcon /> {t('documentPanel.documentManager.pipelineStatusButton')}
-            </Button>
+            {!isViewOnly && (
+              <Button
+                variant="outline"
+                onClick={scanDocuments}
+                side="bottom"
+                tooltip={t('documentPanel.documentManager.scanTooltip')}
+                size="sm"
+              >
+                <RefreshCwIcon /> {t('documentPanel.documentManager.scanButton')}
+              </Button>
+            )}
+            {!isViewOnly && (
+              <Button
+                variant="outline"
+                onClick={() => setShowPipelineStatus(true)}
+                side="bottom"
+                tooltip={t('documentPanel.documentManager.pipelineStatusTooltip')}
+                size="sm"
+                className={cn(
+                  pipelineBusy && 'pipeline-busy'
+                )}
+              >
+                <ActivityIcon /> {t('documentPanel.documentManager.pipelineStatusButton')}
+              </Button>
+            )}
           </div>
 
           {/* Pagination Controls in the middle */}
@@ -1220,13 +1225,13 @@ export default function DocumentManager() {
           )}
 
           <div className="flex gap-2">
-            {isSelectionMode && (
+            {!isViewOnly && isSelectionMode && (
               <DeleteDocumentsDialog
                 selectedDocIds={selectedDocIds}
                 onDocumentsDeleted={handleDocumentsDeleted}
               />
             )}
-            {isSelectionMode && hasCurrentPageSelection ? (
+            {!isViewOnly && isSelectionMode && hasCurrentPageSelection ? (
               (() => {
                 const buttonProps = getSelectionButtonProps();
                 const IconComponent = buttonProps.icon;
@@ -1243,10 +1248,12 @@ export default function DocumentManager() {
                   </Button>
                 );
               })()
-            ) : !isSelectionMode ? (
+            ) : !isViewOnly && !isSelectionMode ? (
               <ClearDocumentsDialog onDocumentsCleared={handleDocumentsCleared} />
             ) : null}
-            <UploadDocumentsDialog onDocumentsUploaded={() => handleIntelligentRefresh(undefined, false, 120000)} />
+            {!isViewOnly && (
+              <UploadDocumentsDialog onDocumentsUploaded={() => handleIntelligentRefresh(undefined, false, 120000)} />
+            )}
             <PipelineStatusDialog
               open={showPipelineStatus}
               onOpenChange={setShowPipelineStatus}
@@ -1428,9 +1435,11 @@ export default function DocumentManager() {
                             )}
                           </div>
                         </TableHead>
-                        <TableHead className="w-16 text-center">
-                          {t('documentPanel.documentManager.columns.select')}
-                        </TableHead>
+                        {!isViewOnly && (
+                          <TableHead className="w-16 text-center">
+                            {t('documentPanel.documentManager.columns.select')}
+                          </TableHead>
+                        )}
                       </TableRow>
                     </TableHeader>
                     <TableBody className="text-sm overflow-auto">
@@ -1519,14 +1528,16 @@ export default function DocumentManager() {
                           <TableCell className="truncate">
                             {new Date(doc.updated_at).toLocaleString()}
                           </TableCell>
-                          <TableCell className="text-center">
-                            <Checkbox
-                              checked={selectedDocIds.includes(doc.id)}
-                              onCheckedChange={(checked) => handleDocumentSelect(doc.id, checked === true)}
-                              // disabled={doc.status !== 'processed'}
-                              className="mx-auto"
-                            />
-                          </TableCell>
+                          {!isViewOnly && (
+                            <TableCell className="text-center">
+                              <Checkbox
+                                checked={selectedDocIds.includes(doc.id)}
+                                onCheckedChange={(checked) => handleDocumentSelect(doc.id, checked === true)}
+                                // disabled={doc.status !== 'processed'}
+                                className="mx-auto"
+                              />
+                            </TableCell>
+                          )}
                         </TableRow>
                       ))}
                     </TableBody>
