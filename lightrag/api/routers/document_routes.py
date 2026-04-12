@@ -2957,6 +2957,47 @@ def create_document_routes(
             logger.error(traceback.format_exc())
             raise HTTPException(status_code=500, detail=error_msg)
 
+    class CheckDeletionStatusResponse(BaseModel):
+        """Response model for checking document deletion status."""
+
+        doc_id: str = Field(description="The document ID that was checked")
+        deleted: bool = Field(
+            description="True if the document no longer exists (deletion complete), False if it still exists"
+        )
+
+    @router.get(
+        "/deletion_status/{doc_id}",
+        response_model=CheckDeletionStatusResponse,
+        dependencies=[Depends(combined_auth)],
+        summary="Check whether a document has been deleted.",
+    )
+    async def check_deletion_status(doc_id: str) -> CheckDeletionStatusResponse:
+        """
+        Check whether a document has been deleted by looking up its status.
+
+        Returns deleted=True if the document no longer exists in the doc status
+        storage (i.e., deletion is complete), and deleted=False if it still exists.
+
+        Args:
+            doc_id: The unique identifier of the document to check.
+
+        Returns:
+            CheckDeletionStatusResponse: Whether the document has been deleted.
+
+        Raises:
+            HTTPException: 500 if an unexpected error occurs.
+        """
+        try:
+            existing_doc = await rag.doc_status.get_by_id(doc_id)
+            return CheckDeletionStatusResponse(
+                doc_id=doc_id,
+                deleted=existing_doc is None,
+            )
+        except Exception as e:
+            logger.error(f"Error checking deletion status for {doc_id}: {str(e)}")
+            logger.error(traceback.format_exc())
+            raise HTTPException(status_code=500, detail=str(e))
+
     @router.post(
         "/clear_cache",
         response_model=ClearCacheResponse,
