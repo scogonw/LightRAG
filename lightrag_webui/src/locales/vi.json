@@ -131,6 +131,8 @@
         "status": "Trạng Thái",
         "length": "Độ Dài",
         "chunks": "Đoạn",
+        "llmTokens": "Token LLM",
+        "embeddingTokens": "Token nhúng",
         "created": "Ngày Tạo",
         "updated": "Ngày Cập Nhật",
         "metadata": "Siêu Dữ Liệu",

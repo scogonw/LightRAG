@@ -131,6 +131,8 @@
         "status": "الحالة",
         "length": "الطول",
         "chunks": "الأجزاء",
+        "llmTokens": "رموز LLM",
+        "embeddingTokens": "رموز التضمين",
         "created": "تم الإنشاء",
         "updated": "تم التحديث",
         "metadata": "البيانات الوصفية",

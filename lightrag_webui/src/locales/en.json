@@ -131,6 +131,8 @@
         "status": "Status",
         "length": "Length",
         "chunks": "Chunks",
+        "llmTokens": "LLM Tokens",
+        "embeddingTokens": "Embed Tokens",
         "created": "Created",
         "updated": "Updated",
         "metadata": "Metadata",
