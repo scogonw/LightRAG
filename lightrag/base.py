@@ -835,6 +835,8 @@ class DocProcessingStatus:
     """Whether the document has been soft-deleted"""
     deleted_at: str | None = None
     """ISO format timestamp when document was soft-deleted"""
+    token_usage: dict[str, Any] | None = None
+    """Token usage accumulated during document ingestion, broken down by stage"""
 
     def __post_init__(self):
         """
