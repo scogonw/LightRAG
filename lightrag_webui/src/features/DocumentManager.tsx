@@ -36,7 +36,7 @@ import { RefreshCwIcon, ActivityIcon, ArrowUpIcon, ArrowDownIcon, RotateCcwIcon,
 import PipelineStatusDialog from '@/components/documents/PipelineStatusDialog'
 
 
-type StatusFilter = DocStatus | 'all';
+type StatusFilter = DocStatus | 'all' | 'deleted';
 
 // Utility functions defined outside component for better performance and to avoid dependency issues
 const getCountValue = (counts: Record<string, number>, ...keys: string[]): number => {
@@ -264,6 +264,7 @@ export default function DocumentManager() {
     has_prev: false
   })
   const [statusCounts, setStatusCounts] = useState<Record<string, number>>({ all: 0 })
+  const [deletedCount, setDeletedCount] = useState(0)
   const [isRefreshing, setIsRefreshing] = useState(false)
 
   // Sort state
@@ -281,6 +282,7 @@ export default function DocumentManager() {
     processing: 1,
     pending: 1,
     failed: 1,
+    deleted: 1,
   });
 
   // State for document selection
@@ -599,11 +601,12 @@ export default function DocumentManager() {
     query: QuerySnapshot,
     page: number = query.page
   ): DocumentsRequest => ({
-    status_filter: query.statusFilter === 'all' ? null : query.statusFilter,
+    status_filter: query.statusFilter === 'all' || query.statusFilter === 'deleted' ? null : query.statusFilter,
     page,
     page_size: query.pageSize,
     sort_field: query.sortField,
-    sort_direction: query.sortDirection
+    sort_direction: query.sortDirection,
+    is_deleted: query.statusFilter === 'deleted',
   }), [])
 
   // Utility function to update component state
@@ -611,6 +614,9 @@ export default function DocumentManager() {
     setPagination(response.pagination);
     setCurrentPageDocs(response.documents);
     setStatusCounts(response.status_counts);
+    if (typeof response.deleted_count === 'number') {
+      setDeletedCount(response.deleted_count);
+    }
 
     // Update legacy docs state for backward compatibility
     const legacyDocs: DocsStatusesResponse = {
@@ -747,6 +753,9 @@ export default function DocumentManager() {
           setPagination(response.pagination);
           setCurrentPageDocs(response.documents);
           setStatusCounts(response.status_counts);
+          if (typeof response.deleted_count === 'number') {
+            setDeletedCount(response.deleted_count);
+          }
 
           const legacyDocs: DocsStatusesResponse = {
             statuses: {
@@ -1226,13 +1235,13 @@ export default function DocumentManager() {
           )}
 
           <div className="flex gap-2">
-            {!viewOnly && isSelectionMode && (
+            {!viewOnly && statusFilter !== 'deleted' && isSelectionMode && (
               <DeleteDocumentsDialog
                 selectedDocIds={selectedDocIds}
                 onDocumentsDeleted={handleDocumentsDeleted}
               />
             )}
-            {!viewOnly && isSelectionMode && hasCurrentPageSelection ? (
+            {!viewOnly && statusFilter !== 'deleted' && isSelectionMode && hasCurrentPageSelection ? (
               (() => {
                 const buttonProps = getSelectionButtonProps();
                 const IconComponent = buttonProps.icon;
@@ -1249,10 +1258,10 @@ export default function DocumentManager() {
                   </Button>
                 );
               })()
-            ) : !viewOnly && !isSelectionMode ? (
+            ) : !viewOnly && statusFilter !== 'deleted' && !isSelectionMode ? (
               <ClearDocumentsDialog onDocumentsCleared={handleDocumentsCleared} />
             ) : null}
-            {!viewOnly && (
+            {!viewOnly && statusFilter !== 'deleted' && (
               <UploadDocumentsDialog onDocumentsUploaded={() => handleIntelligentRefresh(undefined, false, 120000)} />
             )}
             <PipelineStatusDialog
@@ -1338,6 +1347,18 @@ export default function DocumentManager() {
                     )}
                   >
                     {t('documentPanel.documentManager.status.failed')} ({failedCount})
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={statusFilter === 'deleted' ? 'secondary' : 'outline'}
+                    onClick={() => handleStatusFilterChange('deleted')}
+                    disabled={isRefreshing}
+                    className={cn(
+                      deletedCount > 0 ? 'text-gray-500' : 'text-gray-400',
+                      statusFilter === 'deleted' && 'bg-gray-200 dark:bg-gray-800 font-medium border border-gray-400 dark:border-gray-500 shadow-sm'
+                    )}
+                  >
+                    {t('documentPanel.documentManager.status.deleted', 'Deleted')} ({deletedCount})
                   </Button>
                 </div>
                 <Button
@@ -1428,7 +1449,9 @@ export default function DocumentManager() {
                           className="cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-800 select-none"
                         >
                           <div className="flex items-center">
-                            {t('documentPanel.documentManager.columns.updated')}
+                            {statusFilter === 'deleted'
+                              ? t('documentPanel.documentManager.columns.deletedAt', 'Deleted At')
+                              : t('documentPanel.documentManager.columns.updated')}
                             {sortField === 'updated_at' && (
                               <span className="ml-1">
                                 {sortDirection === 'asc' ? <ArrowUpIcon size={14} /> : <ArrowDownIcon size={14} />}
@@ -1436,7 +1459,7 @@ export default function DocumentManager() {
                             )}
                           </div>
                         </TableHead>
-                        {!viewOnly && (
+                        {!viewOnly && statusFilter !== 'deleted' && (
                           <TableHead className="w-16 text-center">
                             {t('documentPanel.documentManager.columns.select')}
                           </TableHead>
@@ -1522,9 +1545,11 @@ export default function DocumentManager() {
                             {new Date(doc.created_at).toLocaleString()}
                           </TableCell>
                           <TableCell className="truncate">
-                            {new Date(doc.updated_at).toLocaleString()}
+                            {statusFilter === 'deleted' && doc.deleted_at
+                              ? new Date(doc.deleted_at).toLocaleString()
+                              : new Date(doc.updated_at).toLocaleString()}
                           </TableCell>
-                          {!viewOnly && (
+                          {!viewOnly && statusFilter !== 'deleted' && (
                             <TableCell className="text-center">
                               <Checkbox
                                 checked={selectedDocIds.includes(doc.id)}

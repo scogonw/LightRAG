@@ -654,6 +654,8 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
         data.setdefault("metadata", {})
         data.setdefault("error_msg", None)
         data.setdefault("org_id", "")
+        data.setdefault("is_deleted", False)
+        data.setdefault("deleted_at", None)
         if "error" in data:
             if not data.get("error_msg"):
                 data["error_msg"] = data.pop("error")
@@ -700,6 +702,8 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
                             "org_id": {"type": "keyword"},
                             "created_at": {"type": "date"},
                             "updated_at": {"type": "date"},
+                            "is_deleted": {"type": "boolean"},
+                            "deleted_at": {"type": "date"},
                         },
                     },
                     "settings": {
@@ -815,6 +819,11 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
         try:
             body = {
                 "size": 0,
+                "query": {
+                    "bool": {
+                        "must_not": [{"term": {"is_deleted": True}}],
+                    }
+                },
                 "aggs": {"status_counts": {"terms": {"field": "status", "size": 100}}},
             }
             response = await self.client.search(index=self._index_name, body=body)
@@ -896,7 +905,14 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
         if not statuses:
             return {}
         status_values = [s.value for s in statuses]
-        return await self._search_all_docs({"terms": {"status": status_values}})
+        return await self._search_all_docs(
+            {
+                "bool": {
+                    "must": [{"terms": {"status": status_values}}],
+                    "must_not": [{"term": {"is_deleted": True}}],
+                }
+            }
+        )
 
     async def get_docs_by_track_id(
         self, track_id: str
@@ -911,6 +927,7 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
         page_size: int = 50,
         sort_field: str = "updated_at",
         sort_direction: str = "desc",
+        is_deleted: bool = False,
     ) -> tuple[list[tuple[str, DocProcessingStatus]], int]:
         """Get documents with pagination using PIT + search_after."""
         if not self._index_ready:
@@ -923,9 +940,10 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
             sort_field = "updated_at"
         sort_order = "asc" if sort_direction.lower() == "asc" else "desc"
 
-        query = {"match_all": {}}
+        must_clauses = [{"term": {"is_deleted": is_deleted}}]
         if status_filter is not None:
-            query = {"term": {"status": status_filter.value}}
+            must_clauses.append({"term": {"status": status_filter.value}})
+        query = {"bool": {"must": must_clauses}}
 
         skip_count = (page - 1) * page_size
 
@@ -996,12 +1014,20 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
             return [], 0
 
     async def get_all_status_counts(self) -> dict[str, int]:
-        """Get document counts for all statuses including an 'all' total."""
+        """Get document counts for all statuses including an 'all' total.
+
+        Excludes soft-deleted documents from all counts.
+        """
         if not self._index_ready:
             return {}
         try:
             body = {
                 "size": 0,
+                "query": {
+                    "bool": {
+                        "must_not": [{"term": {"is_deleted": True}}],
+                    }
+                },
                 "aggs": {"status_counts": {"terms": {"field": "status", "size": 100}}},
             }
             response = await self.client.search(index=self._index_name, body=body)
@@ -1018,6 +1044,29 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
                 return {}
             logger.error(f"[{self.workspace}] Error getting all status counts: {e}")
             return {}
+
+    async def get_deleted_count(self) -> int:
+        """Count documents where is_deleted is True."""
+        if not self._index_ready:
+            return 0
+        try:
+            body = {
+                "query": {
+                    "bool": {
+                        "must": [{"term": {"is_deleted": True}}],
+                    }
+                }
+            }
+            response = await self.client.count(
+                index=self._index_name, body=body
+            )
+            return response.get("count", 0)
+        except OpenSearchException as e:
+            if _is_missing_index_error(e):
+                self._mark_index_missing()
+                return 0
+            logger.error(f"[{self.workspace}] Error getting deleted count: {e}")
+            return 0
 
     async def get_doc_by_file_path(self, file_path: str) -> Union[dict[str, Any], None]:
         """Find a document status record by its file_path field."""

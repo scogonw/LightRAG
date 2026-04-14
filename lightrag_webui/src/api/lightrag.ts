@@ -198,6 +198,8 @@ export type DocStatusResponse = {
   metadata?: Record<string, any>
   file_path: string
   org_id?: string
+  is_deleted: boolean
+  deleted_at?: string | null
 }
 
 export type DocsStatusesResponse = {
@@ -217,6 +219,7 @@ export type DocumentsRequest = {
   page_size: number
   sort_field: 'created_at' | 'updated_at' | 'id' | 'file_path'
   sort_direction: 'asc' | 'desc'
+  is_deleted?: boolean
 }
 
 export type PaginationInfo = {
@@ -232,6 +235,7 @@ export type PaginatedDocsResponse = {
   documents: DocStatusResponse[]
   pagination: PaginationInfo
   status_counts: Record<string, number>
+  deleted_count: number
 }
 
 export type StatusCountsResponse = {

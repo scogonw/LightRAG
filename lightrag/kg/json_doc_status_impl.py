@@ -92,12 +92,14 @@ class JsonDocStatusStorage(DocStatusStorage):
         return ordered_results
 
     async def get_status_counts(self) -> dict[str, int]:
-        """Get counts of documents in each status"""
+        """Get counts of documents in each status (excludes soft-deleted)"""
         counts = {status.value: 0 for status in DocStatus}
         if self._storage_lock is None:
             raise StorageNotInitializedError("JsonDocStatusStorage")
         async with self._storage_lock:
             for doc in self._data.values():
+                if doc.get("is_deleted", False):
+                    continue
                 counts[doc["status"]] += 1
         return counts
 
@@ -123,6 +125,8 @@ class JsonDocStatusStorage(DocStatusStorage):
         result = {}
         async with self._storage_lock:
             for k, v in self._data.items():
+                if v.get("is_deleted", False):
+                    continue
                 if v["status"] not in status_values:
                     continue
                 try:
@@ -246,6 +250,7 @@ class JsonDocStatusStorage(DocStatusStorage):
         page_size: int = 50,
         sort_field: str = "updated_at",
         sort_direction: str = "desc",
+        is_deleted: bool = False,
     ) -> tuple[list[tuple[str, DocProcessingStatus]], int]:
         """Get documents with pagination support
 
@@ -255,6 +260,7 @@ class JsonDocStatusStorage(DocStatusStorage):
             page_size: Number of documents per page (10-200)
             sort_field: Field to sort by ('created_at', 'updated_at', 'id')
             sort_direction: Sort direction ('asc' or 'desc')
+            is_deleted: If True, return only soft-deleted docs; if False, exclude them
 
         Returns:
             Tuple of (list of (doc_id, DocProcessingStatus) tuples, total_count)
@@ -278,6 +284,10 @@ class JsonDocStatusStorage(DocStatusStorage):
 
         async with self._storage_lock:
             for doc_id, doc_data in self._data.items():
+                # Apply soft-delete filter
+                if doc_data.get("is_deleted", False) != is_deleted:
+                    continue
+
                 # Apply status filter
                 if (
                     status_filter is not None
@@ -349,6 +359,17 @@ class JsonDocStatusStorage(DocStatusStorage):
         counts["all"] = total_count
 
         return counts
+
+    async def get_deleted_count(self) -> int:
+        """Get count of soft-deleted documents"""
+        if self._storage_lock is None:
+            raise StorageNotInitializedError("JsonDocStatusStorage")
+        count = 0
+        async with self._storage_lock:
+            for doc in self._data.values():
+                if doc.get("is_deleted", False):
+                    count += 1
+        return count
 
     async def delete(self, doc_ids: list[str]) -> None:
         """Delete specific records from storage by their IDs

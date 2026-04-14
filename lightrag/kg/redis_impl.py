@@ -707,11 +707,13 @@ class RedisDocStatusStorage(DocStatusStorage):
                             pipe.get(key)
                         values = await pipe.execute()
 
-                        # Count statuses
+                        # Count statuses (exclude soft-deleted docs)
                         for value in values:
                             if value:
                                 try:
                                     doc_data = json.loads(value)
+                                    if doc_data.get("is_deleted", False):
+                                        continue
                                     status = doc_data.get("status")
                                     if status in counts:
                                         counts[status] += 1
@@ -764,6 +766,8 @@ class RedisDocStatusStorage(DocStatusStorage):
                                 continue
                             try:
                                 doc_data = json.loads(value)
+                                if doc_data.get("is_deleted", False):
+                                    continue
                                 if doc_data.get("status") not in status_values:
                                     continue
                                 doc_id = key.split(":", 1)[1]
@@ -929,6 +933,7 @@ class RedisDocStatusStorage(DocStatusStorage):
         page_size: int = 50,
         sort_field: str = "updated_at",
         sort_direction: str = "desc",
+        is_deleted: bool = False,
     ) -> tuple[list[tuple[str, DocProcessingStatus]], int]:
         """Get documents with pagination support
 
@@ -980,6 +985,10 @@ class RedisDocStatusStorage(DocStatusStorage):
                             if value:
                                 try:
                                     doc_data = json.loads(value)
+
+                                    # Filter by is_deleted field
+                                    if doc_data.get("is_deleted", False) != is_deleted:
+                                        continue
 
                                     # Apply status filter
                                     if (
@@ -1057,6 +1066,40 @@ class RedisDocStatusStorage(DocStatusStorage):
         counts["all"] = total_count
 
         return counts
+
+    async def get_deleted_count(self) -> int:
+        """Get count of soft-deleted documents"""
+        count = 0
+        async with self._get_redis_connection() as redis:
+            try:
+                cursor = 0
+                while True:
+                    cursor, keys = await redis.scan(
+                        cursor, match=f"{self.final_namespace}:*", count=1000
+                    )
+                    if keys:
+                        pipe = redis.pipeline()
+                        for key in keys:
+                            pipe.get(key)
+                        values = await pipe.execute()
+
+                        for value in values:
+                            if value:
+                                try:
+                                    doc_data = json.loads(value)
+                                    if doc_data.get("is_deleted", False):
+                                        count += 1
+                                except json.JSONDecodeError:
+                                    continue
+
+                    if cursor == 0:
+                        break
+            except Exception as e:
+                logger.error(
+                    f"[{self.workspace}] Error getting deleted count: {e}"
+                )
+
+        return count
 
     async def get_doc_by_file_path(self, file_path: str) -> Union[dict[str, Any], None]:
         """Get document by file path

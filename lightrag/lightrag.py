@@ -3471,12 +3471,16 @@ class LightRAG:
                         ) from cache_err
 
                 try:
-                    # Still need to delete the doc status and full doc.
-                    # Delete doc_status first: if full_docs.delete fails on retry, the
-                    # doc_status record is already gone so the retry finds no record and
-                    # treats the document as already deleted rather than creating a zombie.
+                    # Soft-delete the doc status record and hard-delete full doc content.
                     deletion_stage = "delete_doc_entries"
-                    await self.doc_status.delete([doc_id])
+                    soft_delete_data = {
+                        doc_id: {
+                            **doc_status_data,
+                            "is_deleted": True,
+                            "deleted_at": datetime.now(timezone.utc).isoformat(),
+                        }
+                    }
+                    await self.doc_status.upsert(soft_delete_data)
                     await self.full_docs.delete([doc_id])
                 except Exception as e:
                     logger.error(
@@ -4062,14 +4066,18 @@ class LightRAG:
                     f"Failed to delete from full_entities/full_relations: {e}"
                 ) from e
 
-            # 11. Delete original document and status.
-            # doc_status is deleted first so that if full_docs.delete fails, a retry
-            # finds no doc_status record and treats the document as already gone,
-            # rather than finding a doc_status that points to a missing full_docs entry.
+            # 11. Soft-delete original document status and hard-delete full doc content.
             try:
                 deletion_stage = "delete_doc_entries"
                 in_final_delete_stage = True
-                await self.doc_status.delete([doc_id])
+                soft_delete_data = {
+                    doc_id: {
+                        **doc_status_data,
+                        "is_deleted": True,
+                        "deleted_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                }
+                await self.doc_status.upsert(soft_delete_data)
                 await self.full_docs.delete([doc_id])
             except Exception as e:
                 logger.error(f"Failed to delete document and status: {e}")
