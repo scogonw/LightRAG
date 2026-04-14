@@ -1490,6 +1490,7 @@ class LightRAG:
                     "updated_at": datetime.now(timezone.utc).isoformat(),
                     "file_path": file_path,
                     "track_id": track_id,  # Use current track_id for tracking
+                    "org_id": org_id or "",
                     "error_msg": f"Content already exists. Original doc_id: {doc_id}, Status: {existing_status}",
                     "metadata": {
                         "is_duplicate": True,
@@ -1541,6 +1542,7 @@ class LightRAG:
         self,
         error_files: list[dict[str, Any]],
         track_id: str | None = None,
+        org_id: str | None = None,
     ) -> None:
         """
         Record file extraction errors in doc_status storage.
@@ -1595,6 +1597,7 @@ class LightRAG:
                 "updated_at": current_time,
                 "file_path": file_path,
                 "track_id": track_id,
+                "org_id": org_id or "",
                 "metadata": {
                     "error_type": "file_extraction_error",
                 },
@@ -1724,6 +1727,7 @@ class LightRAG:
                         "updated_at": datetime.now(timezone.utc).isoformat(),
                         "file_path": resolved_file_path,
                         "track_id": getattr(status_doc, "track_id", ""),
+                        "org_id": status_doc.org_id,
                         # Clear any error messages and processing metadata
                         "error_msg": "",
                         "metadata": {},
@@ -2044,6 +2048,7 @@ class LightRAG:
                                             ).isoformat(),
                                             "file_path": file_path,
                                             "track_id": status_doc.track_id,  # Preserve existing track_id
+                                            "org_id": status_doc.org_id,
                                             "metadata": {
                                                 "processing_start_time": processing_start_time
                                             },
@@ -2142,6 +2147,7 @@ class LightRAG:
                                         ).isoformat(),
                                         "file_path": file_path,
                                         "track_id": status_doc.track_id,  # Preserve existing track_id
+                                        "org_id": status_doc.org_id,
                                         "metadata": {
                                             "processing_start_time": processing_start_time,
                                             "processing_end_time": processing_end_time,
@@ -2199,6 +2205,7 @@ class LightRAG:
                                             ).isoformat(),
                                             "file_path": file_path,
                                             "track_id": status_doc.track_id,  # Preserve existing track_id
+                                            "org_id": status_doc.org_id,
                                             "metadata": {
                                                 "processing_start_time": processing_start_time,
                                                 "processing_end_time": processing_end_time,
@@ -2274,6 +2281,7 @@ class LightRAG:
                                             ).isoformat(),
                                             "file_path": file_path,
                                             "track_id": status_doc.track_id,  # Preserve existing track_id
+                                            "org_id": status_doc.org_id,
                                             "metadata": {
                                                 "processing_start_time": processing_start_time,
                                                 "processing_end_time": processing_end_time,
