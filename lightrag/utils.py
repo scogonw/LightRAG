@@ -2614,6 +2614,46 @@ class TokenTracker:
         )
 
 
+class DocumentTokenTracker:
+    """Track token usage per document, broken down by stage.
+
+    Composes multiple TokenTracker instances, one per stage
+    (e.g. entity_extraction, graph_summary, embedding).
+    """
+
+    def __init__(self):
+        self.stages: dict[str, TokenTracker] = {}
+
+    def get_stage(self, stage: str) -> TokenTracker:
+        """Get or create a TokenTracker for a specific stage."""
+        if stage not in self.stages:
+            self.stages[stage] = TokenTracker()
+        return self.stages[stage]
+
+    def get_usage(self) -> dict[str, Any]:
+        """Return usage dict with per-stage breakdown + total."""
+        result = {}
+        total_prompt = 0
+        total_completion = 0
+        total_total = 0
+        for stage, tracker in self.stages.items():
+            usage = tracker.get_usage()
+            result[stage] = {
+                "prompt_tokens": usage["prompt_tokens"],
+                "completion_tokens": usage["completion_tokens"],
+                "total_tokens": usage["total_tokens"],
+            }
+            total_prompt += usage["prompt_tokens"]
+            total_completion += usage["completion_tokens"]
+            total_total += usage["total_tokens"]
+        result["total"] = {
+            "prompt_tokens": total_prompt,
+            "completion_tokens": total_completion,
+            "total_tokens": total_total,
+        }
+        return result
+
+
 async def apply_rerank_if_enabled(
     query: str,
     retrieved_docs: list[dict],
