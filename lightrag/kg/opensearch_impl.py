@@ -653,6 +653,7 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
             data["file_path"] = "no-file-path"
         data.setdefault("metadata", {})
         data.setdefault("error_msg", None)
+        data.setdefault("org_id", "")
         if "error" in data:
             if not data.get("error_msg"):
                 data["error_msg"] = data.pop("error")
@@ -696,6 +697,7 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
                             "status": {"type": "keyword"},
                             "file_path": {"type": "keyword"},
                             "track_id": {"type": "keyword"},
+                            "org_id": {"type": "keyword"},
                             "created_at": {"type": "date"},
                             "updated_at": {"type": "date"},
                         },
