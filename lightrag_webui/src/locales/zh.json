@@ -131,6 +131,7 @@
         "status": "状态",
         "length": "长度",
         "chunks": "分块",
+        "tokens": "总令牌数",
         "created": "创建时间",
         "updated": "更新时间",
         "metadata": "元数据",

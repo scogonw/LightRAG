@@ -131,6 +131,7 @@
         "status": "Trạng Thái",
         "length": "Độ Dài",
         "chunks": "Đoạn",
+        "tokens": "Tổng Token",
         "created": "Ngày Tạo",
         "updated": "Ngày Cập Nhật",
         "metadata": "Siêu Dữ Liệu",

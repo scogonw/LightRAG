@@ -200,6 +200,7 @@ export type DocStatusResponse = {
   org_id?: string
   is_deleted: boolean
   deleted_at?: string | null
+  token_usage?: Record<string, any> | null
 }
 
 export type DocsStatusesResponse = {

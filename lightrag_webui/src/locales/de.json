@@ -131,6 +131,7 @@
         "status": "Status",
         "length": "Länge",
         "chunks": "Chunks",
+        "tokens": "Tokens Gesamt",
         "created": "Erstellt",
         "updated": "Aktualisiert",
         "metadata": "Metadaten",

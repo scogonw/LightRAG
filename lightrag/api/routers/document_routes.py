@@ -498,6 +498,10 @@ class DocStatusResponse(BaseModel):
     deleted_at: Optional[str] = Field(
         default=None, description="Deletion timestamp (ISO format string)"
     )
+    token_usage: Optional[dict[str, Any]] = Field(
+        default=None,
+        description="Token usage accumulated during document ingestion, broken down by stage",
+    )
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -2872,6 +2876,7 @@ def create_document_routes(
                             metadata=doc_status.metadata,
                             file_path=normalize_file_path(doc_status.file_path),
                             org_id=doc_status.org_id or None,
+                            token_usage=doc_status.token_usage,
                         )
                     )
 
@@ -3176,6 +3181,7 @@ def create_document_routes(
                         metadata=doc_status.metadata,
                         file_path=normalize_file_path(doc_status.file_path),
                         org_id=doc_status.org_id or None,
+                        token_usage=doc_status.token_usage,
                     )
                 )
 
@@ -3336,6 +3342,7 @@ def create_document_routes(
                         org_id=doc.org_id or None,
                         is_deleted=doc.is_deleted,
                         deleted_at=format_datetime(doc.deleted_at) if doc.deleted_at else None,
+                        token_usage=doc.token_usage,
                     )
                 )
 

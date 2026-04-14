@@ -101,6 +101,16 @@ const formatMetadata = (metadata: Record<string, any>): string => {
     .join('\n');
 };
 
+const formatTokenUsage = (tokenUsage: Record<string, any>): string => {
+  const lines: string[] = [];
+  for (const [stage, usage] of Object.entries(tokenUsage)) {
+    if (stage === 'total') continue;
+    const u = usage as Record<string, number>;
+    lines.push(`${stage}: ${(u.total_tokens ?? 0).toLocaleString()}`);
+  }
+  return lines.join('\n');
+};
+
 const pulseStyle = `
 /* Tooltip styles */
 .tooltip-container {
@@ -1431,6 +1441,7 @@ export default function DocumentManager() {
                         <TableHead>{t('documentPanel.documentManager.columns.status')}</TableHead>
                         <TableHead>{t('documentPanel.documentManager.columns.length')}</TableHead>
                         <TableHead>{t('documentPanel.documentManager.columns.chunks')}</TableHead>
+                        <TableHead>{t('documentPanel.documentManager.columns.tokens')}</TableHead>
                         <TableHead
                           onClick={() => handleSort('created_at')}
                           className="cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-800 select-none"
@@ -1541,6 +1552,16 @@ export default function DocumentManager() {
                           </TableCell>
                           <TableCell>{doc.content_length ?? '-'}</TableCell>
                           <TableCell>{doc.chunks_count ?? '-'}</TableCell>
+                          <TableCell>
+                            {doc.token_usage?.total ? (
+                              <div className="group relative overflow-visible tooltip-container">
+                                <span>{doc.token_usage.total.total_tokens?.toLocaleString() ?? '-'}</span>
+                                <div className="invisible group-hover:visible tooltip">
+                                  <pre>{formatTokenUsage(doc.token_usage)}</pre>
+                                </div>
+                              </div>
+                            ) : '-'}
+                          </TableCell>
                           <TableCell className="truncate">
                             {new Date(doc.created_at).toLocaleString()}
                           </TableCell>
