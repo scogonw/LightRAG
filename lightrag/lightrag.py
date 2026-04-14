@@ -113,6 +113,7 @@ from lightrag.utils import (
     subtract_source_ids,
     make_relation_chunk_key,
     normalize_source_ids_limit_method,
+    DocumentTokenTracker,
 )
 from lightrag.types import KnowledgeGraph
 from dotenv import load_dotenv
@@ -2023,6 +2024,7 @@ class LightRAG:
 
                             # Record processing start time
                             processing_start_time = int(time.time())
+                            doc_token_tracker = DocumentTokenTracker()
 
                             # Check for cancellation before entity extraction
                             async with pipeline_status_lock:
@@ -2057,7 +2059,7 @@ class LightRAG:
                                 )
                             )
                             chunks_vdb_task = asyncio.create_task(
-                                self.chunks_vdb.upsert(chunks)
+                                self.chunks_vdb.upsert(chunks, token_tracker=doc_token_tracker.get_stage("embedding"))
                             )
                             text_chunks_task = asyncio.create_task(
                                 self.text_chunks.upsert(chunks)
@@ -2077,7 +2079,8 @@ class LightRAG:
                             # Stage 2: Process entity relation graph (after text_chunks are saved)
                             entity_relation_task = asyncio.create_task(
                                 self._process_extract_entities(
-                                    chunks, pipeline_status, pipeline_status_lock
+                                    chunks, pipeline_status, pipeline_status_lock,
+                                    token_tracker=doc_token_tracker.get_stage("entity_extraction"),
                                 )
                             )
                             chunk_results = await entity_relation_task
@@ -2186,6 +2189,7 @@ class LightRAG:
                                     current_file_number=current_file_number,
                                     total_files=total_files,
                                     file_path=file_path,
+                                    token_tracker=doc_token_tracker,
                                 )
 
                                 # Record processing end time
@@ -2210,6 +2214,7 @@ class LightRAG:
                                                 "processing_start_time": processing_start_time,
                                                 "processing_end_time": processing_end_time,
                                             },
+                                            "token_usage": doc_token_tracker.get_usage(),
                                         }
                                     }
                                 )
@@ -2354,7 +2359,7 @@ class LightRAG:
                 pipeline_status["history_messages"].append(log_message)
 
     async def _process_extract_entities(
-        self, chunk: dict[str, Any], pipeline_status=None, pipeline_status_lock=None
+        self, chunk: dict[str, Any], pipeline_status=None, pipeline_status_lock=None, token_tracker=None
     ) -> list:
         try:
             chunk_results = await extract_entities(
@@ -2364,6 +2369,7 @@ class LightRAG:
                 pipeline_status_lock=pipeline_status_lock,
                 llm_response_cache=self.llm_response_cache,
                 text_chunks_storage=self.text_chunks,
+                token_tracker=token_tracker,
             )
             return chunk_results
         except Exception as e:
