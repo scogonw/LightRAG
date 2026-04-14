@@ -131,6 +131,8 @@
         "status": "Статус",
         "length": "Довжина",
         "chunks": "Чанки",
+        "llmTokens": "Токени LLM",
+        "embeddingTokens": "Токени ембед.",
         "created": "Створено",
         "updated": "Оновлено",
         "metadata": "Метадані",

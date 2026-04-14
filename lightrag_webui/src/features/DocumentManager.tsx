@@ -75,6 +75,19 @@ const getDisplayFileName = (doc: DocStatusResponse, maxLength: number = 20): str
     : fileName;
 };
 
+const formatTokenCount = (count: number | undefined | null): string => {
+  if (count == null) return '-'
+  if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`
+  if (count >= 1_000) return `${(count / 1_000).toFixed(1)}K`
+  return count.toLocaleString()
+}
+
+const getTokenUsage = (doc: DocStatusResponse, key: string): number | null => {
+  if (!doc.metadata) return null
+  const val = doc.metadata[key]
+  return typeof val === 'number' ? val : null
+}
+
 const formatMetadata = (metadata: Record<string, any>): string => {
   const formattedMetadata = { ...metadata };
 
@@ -1410,6 +1423,8 @@ export default function DocumentManager() {
                         <TableHead>{t('documentPanel.documentManager.columns.status')}</TableHead>
                         <TableHead>{t('documentPanel.documentManager.columns.length')}</TableHead>
                         <TableHead>{t('documentPanel.documentManager.columns.chunks')}</TableHead>
+                        <TableHead>{t('documentPanel.documentManager.columns.llmTokens')}</TableHead>
+                        <TableHead>{t('documentPanel.documentManager.columns.embeddingTokens')}</TableHead>
                         <TableHead
                           onClick={() => handleSort('created_at')}
                           className="cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-800 select-none"
@@ -1518,6 +1533,26 @@ export default function DocumentManager() {
                           </TableCell>
                           <TableCell>{doc.content_length ?? '-'}</TableCell>
                           <TableCell>{doc.chunks_count ?? '-'}</TableCell>
+                          <TableCell className="font-mono text-right">
+                            <div className="group relative overflow-visible tooltip-container">
+                              {formatTokenCount(getTokenUsage(doc, 'llm_tokens'))}
+                              {getTokenUsage(doc, 'llm_tokens') != null && (
+                                <div className="invisible group-hover:visible tooltip">
+                                  {getTokenUsage(doc, 'llm_tokens')!.toLocaleString()} tokens
+                                </div>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="font-mono text-right">
+                            <div className="group relative overflow-visible tooltip-container">
+                              {formatTokenCount(getTokenUsage(doc, 'embedding_tokens'))}
+                              {getTokenUsage(doc, 'embedding_tokens') != null && (
+                                <div className="invisible group-hover:visible tooltip">
+                                  {getTokenUsage(doc, 'embedding_tokens')!.toLocaleString()} tokens
+                                </div>
+                              )}
+                            </div>
+                          </TableCell>
                           <TableCell className="truncate">
                             {new Date(doc.created_at).toLocaleString()}
                           </TableCell>

@@ -131,6 +131,8 @@
         "status": "Statut",
         "length": "Longueur",
         "chunks": "Fragments",
+        "llmTokens": "Tokens LLM",
+        "embeddingTokens": "Tokens embed.",
         "created": "Créé",
         "updated": "Mis à jour",
         "metadata": "Métadonnées",

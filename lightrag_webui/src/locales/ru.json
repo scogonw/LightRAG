@@ -131,6 +131,8 @@
         "status": "Статус",
         "length": "Длина",
         "chunks": "Фрагменты",
+        "llmTokens": "Токены LLM",
+        "embeddingTokens": "Токены эмбед.",
         "created": "Создан",
         "updated": "Обновлён",
         "metadata": "Метаданные",

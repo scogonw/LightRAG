@@ -131,6 +131,8 @@
         "status": "상태",
         "length": "길이",
         "chunks": "청크",
+        "llmTokens": "LLM 토큰",
+        "embeddingTokens": "임베딩 토큰",
         "created": "생성일",
         "updated": "수정일",
         "metadata": "메타데이터",

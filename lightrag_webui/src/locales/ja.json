@@ -131,6 +131,8 @@
         "status": "ステータス",
         "length": "長さ",
         "chunks": "チャンク",
+        "llmTokens": "LLMトークン",
+        "embeddingTokens": "埋め込みトークン",
         "created": "作成日時",
         "updated": "更新日時",
         "metadata": "メタデータ",
