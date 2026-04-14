@@ -171,6 +171,7 @@ async def _handle_entity_relation_summary(
     separator: str,
     global_config: dict,
     llm_response_cache: BaseKVStorage | None = None,
+    token_tracker=None,
 ) -> tuple[str, bool]:
     """Handle entity relation description summary using map-reduce approach.
 
@@ -237,6 +238,7 @@ async def _handle_entity_relation_summary(
                     current_list,
                     global_config,
                     llm_response_cache,
+                    token_tracker=token_tracker,
                 )
                 return final_summary, True  # LLM was used for final summarization
 
@@ -293,6 +295,7 @@ async def _handle_entity_relation_summary(
                     chunk,
                     global_config,
                     llm_response_cache,
+                    token_tracker=token_tracker,
                 )
                 new_summaries.append(summary)
                 llm_was_used = True  # Mark that LLM was used in reduce phase
@@ -307,6 +310,7 @@ async def _summarize_descriptions(
     description_list: list[str],
     global_config: dict,
     llm_response_cache: BaseKVStorage | None = None,
+    token_tracker=None,
 ) -> str:
     """Helper function to summarize a list of descriptions using LLM.
 
@@ -365,6 +369,7 @@ async def _summarize_descriptions(
         use_llm_func,
         llm_response_cache=llm_response_cache,
         cache_type="summary",
+        token_tracker=token_tracker,
     )
 
     # Check summary token length against embedding limit
@@ -1655,6 +1660,7 @@ async def _merge_nodes_then_upsert(
     pipeline_status_lock=None,
     llm_response_cache: BaseKVStorage | None = None,
     entity_chunks_storage: BaseKVStorage | None = None,
+    token_tracker=None,
 ):
     """Get existing nodes from knowledge graph use name,if exists, merge data, else create, then upsert."""
     timing_start = time.perf_counter()
@@ -1828,6 +1834,7 @@ async def _merge_nodes_then_upsert(
             GRAPH_FIELD_SEP,
             global_config,
             llm_response_cache,
+            token_tracker=token_tracker.get_stage("graph_summary") if token_tracker else None,
         )
 
         # 9. Build file_path within MAX_FILE_PATHS
@@ -1991,7 +1998,7 @@ async def _merge_nodes_then_upsert(
                 }
             }
             await safe_vdb_operation_with_exception(
-                operation=lambda payload=data_for_vdb: entity_vdb.upsert(payload),
+                operation=lambda payload=data_for_vdb: entity_vdb.upsert(payload, token_tracker=token_tracker.get_stage("embedding") if token_tracker else None),
                 operation_name="entity_upsert",
                 entity_name=entity_name,
                 max_retries=3,
@@ -2020,6 +2027,7 @@ async def _merge_edges_then_upsert(
     added_entities: list = None,  # New parameter to track entities added during edge processing
     relation_chunks_storage: BaseKVStorage | None = None,
     entity_chunks_storage: BaseKVStorage | None = None,
+    token_tracker=None,
 ):
     timing_start = time.perf_counter()
     timing_relation = f"`{src_id}`~`{tgt_id}`"
@@ -2246,6 +2254,7 @@ async def _merge_edges_then_upsert(
             GRAPH_FIELD_SEP,
             global_config,
             llm_response_cache,
+            token_tracker=token_tracker.get_stage("graph_summary") if token_tracker else None,
         )
 
         # 9. Build file_path within MAX_FILE_PATHS limit
@@ -2394,7 +2403,7 @@ async def _merge_edges_then_upsert(
                         }
                     }
                     await safe_vdb_operation_with_exception(
-                        operation=lambda payload=vdb_data: entity_vdb.upsert(payload),
+                        operation=lambda payload=vdb_data: entity_vdb.upsert(payload, token_tracker=token_tracker.get_stage("embedding") if token_tracker else None),
                         operation_name="added_entity_upsert",
                         entity_name=need_insert_id,
                         max_retries=3,
@@ -2507,7 +2516,7 @@ async def _merge_edges_then_upsert(
                         }
                         await safe_vdb_operation_with_exception(
                             operation=lambda payload=vdb_data: entity_vdb.upsert(
-                                payload
+                                payload, token_tracker=token_tracker.get_stage("embedding") if token_tracker else None
                             ),
                             operation_name="existing_entity_update",
                             entity_name=need_insert_id,
@@ -2583,7 +2592,7 @@ async def _merge_edges_then_upsert(
                 }
             }
             await safe_vdb_operation_with_exception(
-                operation=lambda payload=vdb_data: relationships_vdb.upsert(payload),
+                operation=lambda payload=vdb_data: relationships_vdb.upsert(payload, token_tracker=token_tracker.get_stage("embedding") if token_tracker else None),
                 operation_name="relationship_upsert",
                 entity_name=f"{src_id}-{tgt_id}",
                 max_retries=3,
@@ -2616,6 +2625,7 @@ async def merge_nodes_and_edges(
     current_file_number: int = 0,
     total_files: int = 0,
     file_path: str = "unknown_source",
+    token_tracker=None,
 ) -> None:
     """Two-phase merge: process all entities first, then all relationships
 
@@ -2711,6 +2721,7 @@ async def merge_nodes_and_edges(
                         pipeline_status_lock,
                         llm_response_cache,
                         entity_chunks_storage,
+                        token_tracker=token_tracker,
                     )
 
                     return entity_data
@@ -2826,6 +2837,7 @@ async def merge_nodes_and_edges(
                         added_entities,  # Pass list to collect added entities
                         relation_chunks_storage,
                         entity_chunks_storage,  # Add entity_chunks_storage parameter
+                        token_tracker=token_tracker,
                     )
 
                     if edge_data is None:
@@ -2988,6 +3000,7 @@ async def extract_entities(
     pipeline_status_lock=None,
     llm_response_cache: BaseKVStorage | None = None,
     text_chunks_storage: BaseKVStorage | None = None,
+    token_tracker=None,
 ) -> list:
     # Check for cancellation at the start of entity extraction
     if pipeline_status is not None and pipeline_status_lock is not None:
@@ -3070,6 +3083,7 @@ async def extract_entities(
             cache_type="extract",
             chunk_id=chunk_key,
             cache_keys_collector=cache_keys_collector,
+            token_tracker=token_tracker,
         )
 
         history = pack_user_ass_to_openai_messages(
@@ -3119,6 +3133,7 @@ async def extract_entities(
                     cache_type="extract",
                     chunk_id=chunk_key,
                     cache_keys_collector=cache_keys_collector,
+                    token_tracker=token_tracker,
                 )
 
                 # Process gleaning result separately with file path
