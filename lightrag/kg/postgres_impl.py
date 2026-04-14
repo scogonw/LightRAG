@@ -1328,6 +1328,37 @@ class PostgreSQLDB:
                 f"Failed to add is_deleted/deleted_at columns to LIGHTRAG_DOC_STATUS: {e}"
             )
 
+    async def _migrate_doc_status_add_token_usage(self):
+        """Add token_usage column to LIGHTRAG_DOC_STATUS table if it doesn't exist"""
+        try:
+            check_token_usage_sql = """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name = 'lightrag_doc_status'
+            AND column_name = 'token_usage'
+            """
+
+            token_usage_info = await self.query(check_token_usage_sql)
+            if not token_usage_info:
+                logger.info("Adding token_usage column to LIGHTRAG_DOC_STATUS table")
+                add_token_usage_sql = """
+                ALTER TABLE LIGHTRAG_DOC_STATUS
+                ADD COLUMN token_usage JSONB NULL
+                """
+                await self.execute(add_token_usage_sql)
+                logger.info(
+                    "Successfully added token_usage column to LIGHTRAG_DOC_STATUS table"
+                )
+            else:
+                logger.info(
+                    "token_usage column already exists in LIGHTRAG_DOC_STATUS table"
+                )
+
+        except Exception as e:
+            logger.warning(
+                f"Failed to add token_usage column to LIGHTRAG_DOC_STATUS: {e}"
+            )
+
     async def _migrate_field_lengths(self):
         """Migrate database field lengths: entity_name, source_id, target_id, and file_path"""
         # Define the field changes needed
@@ -1630,6 +1661,14 @@ class PostgreSQLDB:
         except Exception as e:
             logger.error(
                 f"PostgreSQL, Failed to migrate doc status soft-delete fields: {e}"
+            )
+
+        # Migrate doc status to add token_usage field if needed
+        try:
+            await self._migrate_doc_status_add_token_usage()
+        except Exception as e:
+            logger.error(
+                f"PostgreSQL, Failed to migrate doc status token_usage field: {e}"
             )
 
         # Create pagination optimization indexes for LIGHTRAG_DOC_STATUS
@@ -4168,6 +4207,7 @@ class PGDocStatusStorage(DocStatusStorage):
                 error_msg=element.get("error_msg"),
                 track_id=element.get("track_id"),
                 org_id=element.get("org_id", ""),
+                token_usage=element.get("token_usage"),
             )
 
         return docs_by_status
@@ -4231,6 +4271,7 @@ class PGDocStatusStorage(DocStatusStorage):
                     error_msg=element.get("error_msg"),
                     track_id=element.get("track_id"),
                     org_id=element.get("org_id", ""),
+                    token_usage=element.get("token_usage"),
                 )
             except (KeyError, TypeError) as e:
                 doc_id_hint = element.get("id", "<unknown>") if element else "<unknown>"
@@ -4293,6 +4334,7 @@ class PGDocStatusStorage(DocStatusStorage):
                 metadata=metadata,
                 error_msg=element.get("error_msg"),
                 org_id=element.get("org_id", ""),
+                token_usage=element.get("token_usage"),
             )
 
         return docs_by_track_id
@@ -4459,6 +4501,7 @@ class PGDocStatusStorage(DocStatusStorage):
                 metadata=metadata,
                 error_msg=element.get("error_msg"),
                 org_id=element.get("org_id", ""),
+                token_usage=element.get("token_usage"),
             )
             documents.append((doc_id, doc_status))
 
@@ -4614,8 +4657,8 @@ class PGDocStatusStorage(DocStatusStorage):
             len(data),
         )
 
-        sql = """insert into LIGHTRAG_DOC_STATUS(workspace,id,org_id,content_summary,content_length,chunks_count,status,file_path,chunks_list,track_id,metadata,error_msg,created_at,updated_at)
-                 values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+        sql = """insert into LIGHTRAG_DOC_STATUS(workspace,id,org_id,content_summary,content_length,chunks_count,status,file_path,chunks_list,track_id,metadata,error_msg,created_at,updated_at,token_usage)
+                 values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
                   on conflict(id,workspace) do update set
                   org_id = EXCLUDED.org_id,
                   content_summary = EXCLUDED.content_summary,
@@ -4628,11 +4671,12 @@ class PGDocStatusStorage(DocStatusStorage):
                   metadata = EXCLUDED.metadata,
                   error_msg = EXCLUDED.error_msg,
                   created_at = EXCLUDED.created_at,
-                  updated_at = EXCLUDED.updated_at"""
+                  updated_at = EXCLUDED.updated_at,
+                  token_usage = EXCLUDED.token_usage"""
 
         # Tuple order must match SQL: (workspace, id, org_id, content_summary, content_length,
         #   chunks_count, status, file_path, chunks_list, track_id, metadata,
-        #   error_msg, created_at, updated_at)
+        #   error_msg, created_at, updated_at, token_usage)
         batch: list[tuple] = []
         skipped: list[str] = []
         batch_build_start = time.perf_counter()
@@ -4660,6 +4704,7 @@ class PGDocStatusStorage(DocStatusStorage):
                             v.get("updated_at"),
                             f"[{self.workspace}] doc {k} updated_at",
                         ),
+                        json.dumps(v.get("token_usage")) if v.get("token_usage") else None,
                     )
                 )
             except (KeyError, TypeError, ValueError) as e:
