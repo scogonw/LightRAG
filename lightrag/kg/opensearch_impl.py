@@ -940,10 +940,15 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
             sort_field = "updated_at"
         sort_order = "asc" if sort_direction.lower() == "asc" else "desc"
 
-        must_clauses = [{"term": {"is_deleted": is_deleted}}]
+        must_clauses = []
+        must_not_clauses = []
+        if is_deleted:
+            must_clauses.append({"term": {"is_deleted": True}})
+        else:
+            must_not_clauses.append({"term": {"is_deleted": True}})
         if status_filter is not None:
             must_clauses.append({"term": {"status": status_filter.value}})
-        query = {"bool": {"must": must_clauses}}
+        query = {"bool": {"must": must_clauses, "must_not": must_not_clauses}}
 
         skip_count = (page - 1) * page_size
 
