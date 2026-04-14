@@ -2155,6 +2155,7 @@ class LightRAG:
                                             "processing_start_time": processing_start_time,
                                             "processing_end_time": processing_end_time,
                                         },
+                                        "token_usage": doc_token_tracker.get_usage(),
                                     }
                                 }
                             )
@@ -2291,6 +2292,7 @@ class LightRAG:
                                                 "processing_start_time": processing_start_time,
                                                 "processing_end_time": processing_end_time,
                                             },
+                                            "token_usage": doc_token_tracker.get_usage(),
                                         }
                                     }
                                 )

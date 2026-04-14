@@ -2646,7 +2646,7 @@ class PGKVStorage(BaseKVStorage):
             raise
 
     ################ INSERT METHODS ################
-    async def upsert(self, data: dict[str, dict[str, Any]], token_tracker=None) -> None:
+    async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
         logger.debug(f"[{self.workspace}] Inserting {len(data)} to {self.namespace}")
         if not data:
             return

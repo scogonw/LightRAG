@@ -509,6 +509,12 @@ class EmbeddingFunc:
             if "max_token_size" in sig.parameters:
                 kwargs["max_token_size"] = self.max_token_size
 
+        # Only pass token_tracker if the underlying function explicitly accepts it
+        if "token_tracker" in kwargs:
+            sig = inspect.signature(self.func)
+            if "token_tracker" not in sig.parameters:
+                kwargs.pop("token_tracker")
+
         # Call the actual embedding function
         result = await self.func(*args, **kwargs)
 
@@ -1981,6 +1987,20 @@ def remove_think_tags(text: str) -> str:
     return text.strip()
 
 
+def _func_accepts_token_tracker(func: callable) -> bool:
+    """Check if a function (possibly wrapped with partial/@wraps) explicitly accepts token_tracker.
+
+    Only checks for an explicit `token_tracker` parameter, NOT **kwargs,
+    because some providers accept **kwargs but pass them through to external
+    clients that would crash on unexpected arguments.
+    """
+    try:
+        sig = inspect.signature(func)
+        return "token_tracker" in sig.parameters
+    except (ValueError, TypeError):
+        return False
+
+
 async def use_llm_func_with_cache(
     user_prompt: str,
     use_llm_func: callable,
@@ -2075,7 +2095,8 @@ async def use_llm_func_with_cache(
         if max_tokens is not None:
             kwargs["max_tokens"] = max_tokens
         if token_tracker is not None:
-            kwargs["token_tracker"] = token_tracker
+            if _func_accepts_token_tracker(use_llm_func):
+                kwargs["token_tracker"] = token_tracker
 
         res: str = await use_llm_func(
             safe_user_prompt, system_prompt=safe_system_prompt, **kwargs
@@ -2111,7 +2132,8 @@ async def use_llm_func_with_cache(
     if max_tokens is not None:
         kwargs["max_tokens"] = max_tokens
     if token_tracker is not None:
-        kwargs["token_tracker"] = token_tracker
+        if _func_accepts_token_tracker(use_llm_func):
+            kwargs["token_tracker"] = token_tracker
 
     try:
         res = await use_llm_func(
