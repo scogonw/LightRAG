@@ -4039,6 +4039,7 @@ class PGDocStatusStorage(DocStatusStorage):
                 metadata=metadata,
                 error_msg=element.get("error_msg"),
                 track_id=element.get("track_id"),
+                org_id=element.get("org_id", ""),
             )
 
         return docs_by_status
@@ -4100,6 +4101,7 @@ class PGDocStatusStorage(DocStatusStorage):
                     metadata=metadata,
                     error_msg=element.get("error_msg"),
                     track_id=element.get("track_id"),
+                    org_id=element.get("org_id", ""),
                 )
             except (KeyError, TypeError) as e:
                 doc_id_hint = element.get("id", "<unknown>") if element else "<unknown>"
@@ -4161,6 +4163,7 @@ class PGDocStatusStorage(DocStatusStorage):
                 track_id=element.get("track_id"),
                 metadata=metadata,
                 error_msg=element.get("error_msg"),
+                org_id=element.get("org_id", ""),
             )
 
         return docs_by_track_id
@@ -4267,7 +4270,7 @@ class PGDocStatusStorage(DocStatusStorage):
             paged AS (
                 SELECT id, workspace, content_summary, content_length, chunks_count,
                        status, file_path, track_id, metadata, error_msg,
-                       created_at, updated_at
+                       created_at, updated_at, org_id
                 FROM LIGHTRAG_DOC_STATUS
                 {where_clause}
                 {order_clause}
@@ -4319,6 +4322,7 @@ class PGDocStatusStorage(DocStatusStorage):
                 track_id=element.get("track_id"),
                 metadata=metadata,
                 error_msg=element.get("error_msg"),
+                org_id=element.get("org_id", ""),
             )
             documents.append((doc_id, doc_status))
 
