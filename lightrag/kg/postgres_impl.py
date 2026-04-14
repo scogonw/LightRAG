@@ -2607,7 +2607,7 @@ class PGKVStorage(BaseKVStorage):
             raise
 
     ################ INSERT METHODS ################
-    async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
+    async def upsert(self, data: dict[str, dict[str, Any]], token_tracker=None) -> None:
         logger.debug(f"[{self.workspace}] Inserting {len(data)} to {self.namespace}")
         if not data:
             return
@@ -3482,7 +3482,7 @@ class PGVectorStorage(BaseVectorStorage):
         )
         return upsert_sql, values
 
-    async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
+    async def upsert(self, data: dict[str, dict[str, Any]], token_tracker=None) -> None:
         logger.debug(f"[{self.workspace}] Inserting {len(data)} to {self.namespace}")
         if not data:
             return
@@ -3527,7 +3527,10 @@ class PGVectorStorage(BaseVectorStorage):
             len(batches),
         )
 
-        embedding_tasks = [self.embedding_func(batch) for batch in batches]
+        embedding_kwargs = {}
+        if token_tracker is not None:
+            embedding_kwargs["token_tracker"] = token_tracker
+        embedding_tasks = [self.embedding_func(batch, **embedding_kwargs) for batch in batches]
         embedding_generation_start = time.perf_counter()
         embeddings_list = await asyncio.gather(*embedding_tasks)
         performance_timing_log(

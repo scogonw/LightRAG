@@ -2891,7 +2891,7 @@ class OpenSearchVectorDBStorage(BaseVectorStorage):
             await ClientManager.release_client(self.client)
             self.client = None
 
-    async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
+    async def upsert(self, data: dict[str, dict[str, Any]], token_tracker=None) -> None:
         """Generate embeddings and upsert vectors in batches."""
         if not data:
             return
@@ -2917,8 +2917,11 @@ class OpenSearchVectorDBStorage(BaseVectorStorage):
             contents[i : i + self._max_batch_size]
             for i in range(0, len(contents), self._max_batch_size)
         ]
+        embedding_kwargs = {}
+        if token_tracker is not None:
+            embedding_kwargs["token_tracker"] = token_tracker
         embeddings_list = await asyncio.gather(
-            *[self.embedding_func(batch) for batch in batches]
+            *[self.embedding_func(batch, **embedding_kwargs) for batch in batches]
         )
         embeddings = np.concatenate(embeddings_list)
         assert len(embeddings) == len(

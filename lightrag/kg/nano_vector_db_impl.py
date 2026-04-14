@@ -139,7 +139,7 @@ class NanoVectorDBStorage(BaseVectorStorage):
 
             return self._client
 
-    async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
+    async def upsert(self, data: dict[str, dict[str, Any]], token_tracker=None) -> None:
         """
         Importance notes:
         1. Changes will be persisted to disk during the next index_done_callback
@@ -166,7 +166,10 @@ class NanoVectorDBStorage(BaseVectorStorage):
         ]
 
         # Execute embedding outside of lock to avoid long lock times
-        embedding_tasks = [self.embedding_func(batch) for batch in batches]
+        embedding_kwargs = {}
+        if token_tracker is not None:
+            embedding_kwargs["token_tracker"] = token_tracker
+        embedding_tasks = [self.embedding_func(batch, **embedding_kwargs) for batch in batches]
         embeddings_list = await asyncio.gather(*embedding_tasks)
 
         embeddings = np.concatenate(embeddings_list)

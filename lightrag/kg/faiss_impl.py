@@ -125,7 +125,7 @@ class FaissVectorDBStorage(BaseVectorStorage):
                 self.storage_updated.value = False
             return self._index
 
-    async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
+    async def upsert(self, data: dict[str, dict[str, Any]], token_tracker=None) -> None:
         """
         Insert or update vectors in the Faiss index.
 
@@ -166,7 +166,10 @@ class FaissVectorDBStorage(BaseVectorStorage):
             for i in range(0, len(contents), self._max_batch_size)
         ]
 
-        embedding_tasks = [self.embedding_func(batch) for batch in batches]
+        embedding_kwargs = {}
+        if token_tracker is not None:
+            embedding_kwargs["token_tracker"] = token_tracker
+        embedding_tasks = [self.embedding_func(batch, **embedding_kwargs) for batch in batches]
         embeddings_list = await asyncio.gather(*embedding_tasks)
 
         # Flatten the list of arrays

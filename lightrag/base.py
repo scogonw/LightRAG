@@ -290,7 +290,7 @@ class BaseVectorStorage(StorageNameSpace, ABC):
         """
 
     @abstractmethod
-    async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
+    async def upsert(self, data: dict[str, dict[str, Any]], token_tracker=None) -> None:
         """Insert or update vectors in the storage.
 
         Importance notes for in-memory storage:

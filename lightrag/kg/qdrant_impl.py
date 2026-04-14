@@ -652,7 +652,7 @@ class QdrantVectorDBStorage(BaseVectorStorage):
                 )
                 raise
 
-    async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
+    async def upsert(self, data: dict[str, dict[str, Any]], token_tracker=None) -> None:
         logger.debug(f"[{self.workspace}] Inserting {len(data)} to {self.namespace}")
         if not data:
             return
@@ -676,7 +676,10 @@ class QdrantVectorDBStorage(BaseVectorStorage):
             for i in range(0, len(contents), self._max_batch_size)
         ]
 
-        embedding_tasks = [self.embedding_func(batch) for batch in batches]
+        embedding_kwargs = {}
+        if token_tracker is not None:
+            embedding_kwargs["token_tracker"] = token_tracker
+        embedding_tasks = [self.embedding_func(batch, **embedding_kwargs) for batch in batches]
         embeddings_list = await asyncio.gather(*embedding_tasks)
 
         embeddings = np.concatenate(embeddings_list)
