@@ -491,6 +491,9 @@ class DocStatusResponse(BaseModel):
         default=None, description="Additional metadata about the document"
     )
     file_path: str = Field(description="Path to the document file")
+    org_id: Optional[str] = Field(
+        default=None, description="Organization ID for multi-tenancy"
+    )
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -506,6 +509,7 @@ class DocStatusResponse(BaseModel):
                 "error": None,
                 "metadata": {"author": "John Doe", "year": 2025},
                 "file_path": "research_paper.pdf",
+                "org_id": "org_abc123",
             }
         }
     )
@@ -2854,6 +2858,7 @@ def create_document_routes(
                             error_msg=doc_status.error_msg,
                             metadata=doc_status.metadata,
                             file_path=normalize_file_path(doc_status.file_path),
+                            org_id=doc_status.org_id or None,
                         )
                     )
 
@@ -3157,6 +3162,7 @@ def create_document_routes(
                         error_msg=doc_status.error_msg,
                         metadata=doc_status.metadata,
                         file_path=normalize_file_path(doc_status.file_path),
+                        org_id=doc_status.org_id or None,
                     )
                 )
 
@@ -3307,6 +3313,7 @@ def create_document_routes(
                         error_msg=doc.error_msg,
                         metadata=doc.metadata,
                         file_path=normalize_file_path(doc.file_path),
+                        org_id=doc.org_id or None,
                     )
                 )
 

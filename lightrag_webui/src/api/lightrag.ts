@@ -197,6 +197,7 @@ export type DocStatusResponse = {
   error_msg?: string
   metadata?: Record<string, any>
   file_path: string
+  org_id?: string
 }
 
 export type DocsStatusesResponse = {

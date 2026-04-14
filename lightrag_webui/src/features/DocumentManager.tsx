@@ -1406,7 +1406,7 @@ export default function DocumentManager() {
                             )}
                           </div>
                         </TableHead>
-                        <TableHead>{t('documentPanel.documentManager.columns.summary')}</TableHead>
+                        <TableHead>Org ID</TableHead>
                         <TableHead>{t('documentPanel.documentManager.columns.status')}</TableHead>
                         <TableHead>{t('documentPanel.documentManager.columns.length')}</TableHead>
                         <TableHead>{t('documentPanel.documentManager.columns.chunks')}</TableHead>
@@ -1471,13 +1471,8 @@ export default function DocumentManager() {
                             )}
                           </TableCell>
                           <TableCell className="max-w-xs min-w-45 truncate overflow-visible">
-                            <div className="group relative overflow-visible tooltip-container">
-                              <div className="truncate">
-                                {doc.content_summary}
-                              </div>
-                              <div className="invisible group-hover:visible tooltip">
-                                {doc.content_summary}
-                              </div>
+                            <div className="truncate">
+                              {doc.org_id || '-'}
                             </div>
                           </TableCell>
                           <TableCell>
