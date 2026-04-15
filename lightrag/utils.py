@@ -509,10 +509,15 @@ class EmbeddingFunc:
             if "max_token_size" in sig.parameters:
                 kwargs["max_token_size"] = self.max_token_size
 
-        # Only pass token_tracker if the underlying function explicitly accepts it
+        # Only pass token_tracker if the underlying function accepts it
         if "token_tracker" in kwargs:
             sig = inspect.signature(self.func)
-            if "token_tracker" not in sig.parameters:
+            has_token_tracker = "token_tracker" in sig.parameters
+            has_var_keyword = any(
+                p.kind == inspect.Parameter.VAR_KEYWORD
+                for p in sig.parameters.values()
+            )
+            if not has_token_tracker and not has_var_keyword:
                 kwargs.pop("token_tracker")
 
         # Call the actual embedding function
