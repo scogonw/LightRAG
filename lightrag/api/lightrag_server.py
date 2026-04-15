@@ -733,7 +733,7 @@ def create_app(args):
 
         # Step 3: Create optimized embedding function (calls underlying function directly)
         # Note: When model is None, each binding will use its own default model
-        async def optimized_embedding_function(texts, embedding_dim=None):
+        async def optimized_embedding_function(texts, embedding_dim=None, **extra_kwargs):
             try:
                 if binding == "lollms":
                     from lightrag.llm.lollms import lollms_embed
@@ -791,6 +791,8 @@ def create_app(args):
                     }
                     if model:
                         kwargs["model"] = model
+                    if "token_tracker" in extra_kwargs:
+                        kwargs["token_tracker"] = extra_kwargs["token_tracker"]
                     return await actual_func(**kwargs)
                 elif binding == "aws_bedrock":
                     from lightrag.llm.bedrock import bedrock_embed
@@ -852,6 +854,8 @@ def create_app(args):
                     }
                     if model:
                         kwargs["model"] = model
+                    if "token_tracker" in extra_kwargs:
+                        kwargs["token_tracker"] = extra_kwargs["token_tracker"]
                     return await actual_func(**kwargs)
                 else:  # openai and compatible
                     from lightrag.llm.openai import openai_embed
@@ -870,6 +874,8 @@ def create_app(args):
                     }
                     if model:
                         kwargs["model"] = model
+                    if "token_tracker" in extra_kwargs:
+                        kwargs["token_tracker"] = extra_kwargs["token_tracker"]
                     return await actual_func(**kwargs)
             except ImportError as e:
                 raise Exception(f"Failed to import {binding} embedding: {e}")
