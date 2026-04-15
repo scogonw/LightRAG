@@ -168,6 +168,7 @@ async def bedrock_complete_if_cache(
     # Region handling: prefer env, else kwarg (optional)
     region = os.environ.get("AWS_REGION") or kwargs.pop("aws_region", None)
     kwargs.pop("hashing_kv", None)
+    kwargs.pop("token_tracker", None)
     # Capture stream flag (if provided) and remove from kwargs since it's not a Bedrock API parameter
     # We'll use this to determine whether to call converse_stream or converse
     stream = bool(kwargs.pop("stream", False))

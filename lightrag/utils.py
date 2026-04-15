@@ -1988,15 +1988,19 @@ def remove_think_tags(text: str) -> str:
 
 
 def _func_accepts_token_tracker(func: callable) -> bool:
-    """Check if a function (possibly wrapped with partial/@wraps) explicitly accepts token_tracker.
+    """Check if a function accepts token_tracker, either explicitly or via **kwargs.
 
-    Only checks for an explicit `token_tracker` parameter, NOT **kwargs,
-    because some providers accept **kwargs but pass them through to external
-    clients that would crash on unexpected arguments.
+    Returns True if the function has an explicit `token_tracker` parameter,
+    or if it accepts **kwargs (which can carry token_tracker through wrapper
+    functions to the underlying provider).
     """
     try:
         sig = inspect.signature(func)
-        return "token_tracker" in sig.parameters
+        if "token_tracker" in sig.parameters:
+            return True
+        return any(
+            p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+        )
     except (ValueError, TypeError):
         return False
 

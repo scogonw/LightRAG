@@ -77,6 +77,7 @@ async def _ollama_model_if_cache(
     if timeout == 0:
         timeout = None
     kwargs.pop("hashing_kv", None)
+    kwargs.pop("token_tracker", None)
     api_key = kwargs.pop("api_key", None)
     # fallback to environment variable when not provided explicitly
     if not api_key:

@@ -95,7 +95,7 @@ async def zhipu_complete_if_cache(
 
     # Remove unsupported kwargs
     kwargs = {
-        k: v for k, v in kwargs.items() if k not in ["hashing_kv", "keyword_extraction"]
+        k: v for k, v in kwargs.items() if k not in ["hashing_kv", "keyword_extraction", "token_tracker"]
     }
     # `thinking` is an official Zhipu request field. Example:
     # {"type": "enabled"} enables reasoning output on supported models.
@@ -232,6 +232,7 @@ async def zhipu_embedding(
     if isinstance(texts, str):
         texts = [texts]
 
+    kwargs.pop("token_tracker", None)
     embeddings = []
     for text in texts:
         try:
