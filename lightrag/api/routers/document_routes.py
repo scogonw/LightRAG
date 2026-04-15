@@ -2360,15 +2360,15 @@ def create_document_routes(
                     request.file_source
                 )
                 if existing_doc_data:
+                    # Get document status and track_id from existing document
                     status = existing_doc_data.get("status", "unknown")
-                    # Only block if the document was successfully processed
-                    if status == "processed":
-                        existing_track_id = existing_doc_data.get("track_id") or ""
-                        return InsertResponse(
-                            status="duplicated",
-                            message=f"File source '{request.file_source}' already exists in document storage (Status: {status}).",
-                            track_id=existing_track_id,
-                        )
+                    # Use `or ""` to handle both missing key and None value (e.g., legacy rows without track_id)
+                    existing_track_id = existing_doc_data.get("track_id") or ""
+                    return InsertResponse(
+                        status="duplicated",
+                        message=f"File source '{request.file_source}' already exists in document storage (Status: {status}).",
+                        track_id=existing_track_id,
+                    )
 
             # Generate track_id for text insertion
             track_id = generate_track_id("insert")
@@ -2432,15 +2432,15 @@ def create_document_routes(
                             file_source
                         )
                         if existing_doc_data:
+                            # Get document status and track_id from existing document
                             status = existing_doc_data.get("status", "unknown")
-                            # Only block if the document was successfully processed
-                            if status == "processed":
-                                existing_track_id = existing_doc_data.get("track_id") or ""
-                                return InsertResponse(
-                                    status="duplicated",
-                                    message=f"File source '{file_source}' already exists in document storage (Status: {status}).",
-                                    track_id=existing_track_id,
-                                )
+                            # Use `or ""` to handle both missing key and None value (e.g., legacy rows without track_id)
+                            existing_track_id = existing_doc_data.get("track_id") or ""
+                            return InsertResponse(
+                                status="duplicated",
+                                message=f"File source '{file_source}' already exists in document storage (Status: {status}).",
+                                track_id=existing_track_id,
+                            )
 
             # Generate track_id for texts insertion
             track_id = generate_track_id("insert")
