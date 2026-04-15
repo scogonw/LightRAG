@@ -1460,37 +1460,11 @@ class LightRAG:
         # Exclude IDs of documents that are already enqueued
         unique_new_doc_ids = await self.doc_status.filter_keys(all_new_doc_ids)
 
-        # Check if any existing duplicates have failed status — allow re-ingestion
+        # Handle duplicate documents - create trackable records with current track_id
         ignored_ids = list(all_new_doc_ids - unique_new_doc_ids)
-        reprocessable_ids = []
-        true_duplicate_ids = []
         if ignored_ids:
-            for doc_id in ignored_ids:
-                existing_doc = await self.doc_status.get_by_id(doc_id)
-                existing_status = (
-                    existing_doc.get("status", "unknown") if existing_doc else "unknown"
-                )
-                if existing_status in (
-                    DocStatus.FAILED,
-                    str(DocStatus.FAILED),
-                    "failed",
-                ):
-                    reprocessable_ids.append(doc_id)
-                else:
-                    true_duplicate_ids.append(doc_id)
-
-        # Delete failed entries so they can be re-ingested
-        if reprocessable_ids:
-            await self.doc_status.delete(reprocessable_ids)
-            logger.info(
-                f"Cleared {len(reprocessable_ids)} previously failed document(s) for re-ingestion"
-            )
-            unique_new_doc_ids = unique_new_doc_ids | set(reprocessable_ids)
-
-        # Handle true duplicate documents - create trackable records with current track_id
-        if true_duplicate_ids:
             duplicate_docs: dict[str, Any] = {}
-            for doc_id in true_duplicate_ids:
+            for doc_id in ignored_ids:
                 file_path = (
                     new_docs.get(doc_id, {}).get("file_path") or "unknown_source"
                 )
@@ -1645,8 +1619,9 @@ class LightRAG:
         pipeline_status: dict,
         pipeline_status_lock: asyncio.Lock,
     ) -> dict[str, DocProcessingStatus]:
-        """Validate and fix document data consistency by deleting inconsistent entries and removing stale failed docs"""
+        """Validate and fix document data consistency by deleting inconsistent entries, but preserve failed documents"""
         inconsistent_docs = []
+        failed_docs_to_preserve = []
         successful_deletions = 0
 
         # Check each document's data consistency
@@ -1654,7 +1629,26 @@ class LightRAG:
             # Check if corresponding content exists in full_docs
             content_data = await self.full_docs.get_by_id(doc_id)
             if not content_data:
-                inconsistent_docs.append(doc_id)
+                # Check if this is a failed document that should be preserved
+                if (
+                    hasattr(status_doc, "status")
+                    and status_doc.status == DocStatus.FAILED
+                ):
+                    failed_docs_to_preserve.append(doc_id)
+                else:
+                    inconsistent_docs.append(doc_id)
+
+        # Log information about failed documents that will be preserved
+        if failed_docs_to_preserve:
+            async with pipeline_status_lock:
+                preserve_message = f"Preserving {len(failed_docs_to_preserve)} failed document entries for manual review"
+                logger.info(preserve_message)
+                pipeline_status["latest_message"] = preserve_message
+                pipeline_status["history_messages"].append(preserve_message)
+
+            # Remove failed documents from processing list but keep them in doc_status
+            for doc_id in failed_docs_to_preserve:
+                to_process_docs.pop(doc_id, None)
 
         # Delete inconsistent document entries(excluding failed documents)
         if inconsistent_docs:
