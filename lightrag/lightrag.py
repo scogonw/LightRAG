@@ -1396,7 +1396,7 @@ class LightRAG:
             # If no file paths provided, use placeholder
             file_paths = ["unknown_source"] * len(input)
 
-        # 1. Validate ids if provided or generate MD5 hash IDs and remove duplicate contents
+        # 1. Validate ids if provided or generate MD5 hash IDs
         if ids is not None:
             # Check if the number of IDs matches the number of documents
             if len(ids) != len(input):
@@ -1406,36 +1406,23 @@ class LightRAG:
             if len(ids) != len(set(ids)):
                 raise ValueError("IDs must be unique")
 
-            # Generate contents dict and remove duplicates in one pass
-            unique_contents = {}
-            for id_, doc, path in zip(ids, input, file_paths):
-                cleaned_content = sanitize_text_for_encoding(doc)
-                if cleaned_content not in unique_contents:
-                    unique_contents[cleaned_content] = (id_, path)
-
-            # Reconstruct contents with unique content
             contents = {
-                id_: {"content": content, "file_path": file_path, "metadata": metadata, "org_id": org_id or ""}
-                for content, (id_, file_path) in unique_contents.items()
+                id_: {"content": sanitize_text_for_encoding(doc), "file_path": path, "metadata": metadata, "org_id": org_id or ""}
+                for id_, doc, path in zip(ids, input, file_paths)
             }
         else:
-            # Clean input text and remove duplicates in one pass
-            unique_content_with_paths = {}
+            # Generate contents dict with IDs based on content + file_path
+            # This allows the same content to be ingested under different file sources
+            contents = {}
             for doc, path in zip(input, file_paths):
                 cleaned_content = sanitize_text_for_encoding(doc)
-                if cleaned_content not in unique_content_with_paths:
-                    unique_content_with_paths[cleaned_content] = path
-
-            # Generate contents dict of MD5 hash IDs and documents with paths
-            contents = {
-                compute_mdhash_id(content, prefix="doc-"): {
-                    "content": content,
+                doc_id = compute_mdhash_id(cleaned_content + path, prefix="doc-")
+                contents[doc_id] = {
+                    "content": cleaned_content,
                     "file_path": path,
                     "metadata": metadata,
                     "org_id": org_id or "",
                 }
-                for content, path in unique_content_with_paths.items()
-            }
 
         # 2. Generate document initial status (without content)
         new_docs: dict[str, Any] = {
