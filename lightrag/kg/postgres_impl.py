@@ -3656,8 +3656,9 @@ class PGVectorStorage(BaseVectorStorage):
             )  # higher priority for query
             embedding = embeddings[0]
 
-        embedding_string = ",".join(map(str, embedding))
-
+        # Use positional $4 parameter instead of string-interpolated literal.
+        # asyncpg sends the embedding via register_vector binary codec, avoiding
+        # per-query text serialization and PostgreSQL text-to-vector parsing.
         vector_cast = (
             "halfvec"
             if getattr(self.db, "vector_index_type", None) == "HNSW_HALFVEC"
