@@ -577,6 +577,59 @@ class RedisDocStatusStorage(DocStatusStorage):
             )
             raise
 
+    async def _migrate_drop_soft_delete_fields(self) -> None:
+        """Idempotent: delete keys with is_deleted=True, strip fields from the rest."""
+        try:
+            async with self._get_redis_connection() as redis:
+                cursor = 0
+                purged = 0
+                stripped = 0
+                while True:
+                    cursor, keys = await redis.scan(
+                        cursor, match=f"{self.final_namespace}:*", count=1000
+                    )
+                    if not keys:
+                        if cursor == 0:
+                            break
+                        continue
+                    pipe = redis.pipeline()
+                    for key in keys:
+                        pipe.get(key)
+                    values = await pipe.execute()
+                    write_pipe = redis.pipeline()
+                    dirty = False
+                    for key, value in zip(keys, values):
+                        if not value:
+                            continue
+                        try:
+                            doc_data = json.loads(value)
+                        except json.JSONDecodeError:
+                            continue
+                        if doc_data.get("is_deleted") is True:
+                            write_pipe.delete(key)
+                            purged += 1
+                            dirty = True
+                            continue
+                        if "is_deleted" in doc_data or "deleted_at" in doc_data:
+                            doc_data.pop("is_deleted", None)
+                            doc_data.pop("deleted_at", None)
+                            write_pipe.set(key, json.dumps(doc_data))
+                            stripped += 1
+                            dirty = True
+                    if dirty:
+                        await write_pipe.execute()
+                    if cursor == 0:
+                        break
+                if purged or stripped:
+                    logger.info(
+                        f"[{self.workspace}] Redis migration: purged={purged} stripped={stripped}"
+                    )
+        except Exception as e:
+            logger.error(
+                f"[{self.workspace}] MIGRATION FAILED (drop soft-delete fields): {e}. "
+                f"Rows with is_deleted=True may still exist."
+            )
+
     async def initialize(self):
         """Initialize Redis connection"""
         async with get_data_init_lock():
@@ -589,7 +642,8 @@ class RedisDocStatusStorage(DocStatusStorage):
                     logger.info(
                         f"[{self.workspace}] Connected to Redis for doc status namespace {self.namespace}"
                     )
-                    self._initialized = True
+                await self._migrate_drop_soft_delete_fields()
+                self._initialized = True
             except Exception as e:
                 logger.error(
                     f"[{self.workspace}] Failed to connect to Redis for doc status: {e}"
@@ -707,13 +761,11 @@ class RedisDocStatusStorage(DocStatusStorage):
                             pipe.get(key)
                         values = await pipe.execute()
 
-                        # Count statuses (exclude soft-deleted docs)
+                        # Count statuses
                         for value in values:
                             if value:
                                 try:
                                     doc_data = json.loads(value)
-                                    if doc_data.get("is_deleted", False):
-                                        continue
                                     status = doc_data.get("status")
                                     if status in counts:
                                         counts[status] += 1
@@ -766,13 +818,13 @@ class RedisDocStatusStorage(DocStatusStorage):
                                 continue
                             try:
                                 doc_data = json.loads(value)
-                                if doc_data.get("is_deleted", False):
-                                    continue
                                 if doc_data.get("status") not in status_values:
                                     continue
                                 doc_id = key.split(":", 1)[1]
                                 data = doc_data.copy()
                                 data.pop("content", None)
+                                data.pop("is_deleted", None)
+                                data.pop("deleted_at", None)
                                 if "file_path" not in data:
                                     data["file_path"] = "no-file-path"
                                 if "metadata" not in data:
@@ -933,7 +985,6 @@ class RedisDocStatusStorage(DocStatusStorage):
         page_size: int = 50,
         sort_field: str = "updated_at",
         sort_direction: str = "desc",
-        is_deleted: bool = False,
     ) -> tuple[list[tuple[str, DocProcessingStatus]], int]:
         """Get documents with pagination support
 
@@ -986,10 +1037,6 @@ class RedisDocStatusStorage(DocStatusStorage):
                                 try:
                                     doc_data = json.loads(value)
 
-                                    # Filter by is_deleted field
-                                    if doc_data.get("is_deleted", False) != is_deleted:
-                                        continue
-
                                     # Apply status filter
                                     if (
                                         status_filter is not None
@@ -1004,6 +1051,8 @@ class RedisDocStatusStorage(DocStatusStorage):
                                     # Prepare document data
                                     data = doc_data.copy()
                                     data.pop("content", None)
+                                    data.pop("is_deleted", None)
+                                    data.pop("deleted_at", None)
                                     if "file_path" not in data:
                                         data["file_path"] = "no-file-path"
                                     if "metadata" not in data:
@@ -1066,40 +1115,6 @@ class RedisDocStatusStorage(DocStatusStorage):
         counts["all"] = total_count
 
         return counts
-
-    async def get_deleted_count(self) -> int:
-        """Get count of soft-deleted documents"""
-        count = 0
-        async with self._get_redis_connection() as redis:
-            try:
-                cursor = 0
-                while True:
-                    cursor, keys = await redis.scan(
-                        cursor, match=f"{self.final_namespace}:*", count=1000
-                    )
-                    if keys:
-                        pipe = redis.pipeline()
-                        for key in keys:
-                            pipe.get(key)
-                        values = await pipe.execute()
-
-                        for value in values:
-                            if value:
-                                try:
-                                    doc_data = json.loads(value)
-                                    if doc_data.get("is_deleted", False):
-                                        count += 1
-                                except json.JSONDecodeError:
-                                    continue
-
-                    if cursor == 0:
-                        break
-            except Exception as e:
-                logger.error(
-                    f"[{self.workspace}] Error getting deleted count: {e}"
-                )
-
-        return count
 
     async def get_doc_by_file_path(self, file_path: str) -> Union[dict[str, Any], None]:
         """Get document by file path
