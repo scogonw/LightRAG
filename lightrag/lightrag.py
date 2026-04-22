@@ -24,6 +24,7 @@ from typing import (
     Dict,
     Union,
 )
+from uuid import uuid4
 from lightrag.prompt import PROMPTS
 from lightrag.exceptions import PipelineCancelledException
 from lightrag.constants import (
@@ -1391,10 +1392,10 @@ class LightRAG:
             file_paths = [
                 path.strip() if isinstance(path, str) else "" for path in file_paths
             ]
-            file_paths = [path if path else "unknown_source" for path in file_paths]
+            file_paths = [path if path else f"unknown_source_{uuid4()}" for path in file_paths]
         else:
             # If no file paths provided, use placeholder
-            file_paths = ["unknown_source"] * len(input)
+            file_paths = [f"unknown_source_{uuid4()}" for _ in input]
 
         # 1. Validate ids if provided or generate MD5 hash IDs
         if ids is not None:
