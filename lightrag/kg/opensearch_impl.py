@@ -654,8 +654,6 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
         data.setdefault("metadata", {})
         data.setdefault("error_msg", None)
         data.setdefault("org_id", "")
-        data.setdefault("is_deleted", False)
-        data.setdefault("deleted_at", None)
         if "error" in data:
             if not data.get("error_msg"):
                 data["error_msg"] = data.pop("error")
@@ -669,6 +667,7 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
             if self.client is None:
                 self.client = await ClientManager.get_client()
             await self._create_index_if_not_exists()
+            await self._migrate_drop_soft_delete_fields()
             self._index_ready = True
             logger.debug(
                 f"[{self.workspace}] OpenSearch DocStatus storage initialized: {self._index_name}"
@@ -702,8 +701,6 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
                             "org_id": {"type": "keyword"},
                             "created_at": {"type": "date"},
                             "updated_at": {"type": "date"},
-                            "is_deleted": {"type": "boolean"},
-                            "deleted_at": {"type": "date"},
                         },
                     },
                     "settings": {
@@ -723,6 +720,55 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
         except OpenSearchException as e:
             logger.error(f"[{self.workspace}] Error creating doc status index: {e}")
             raise
+
+    async def _migrate_drop_soft_delete_fields(self) -> None:
+        """Idempotent: delete rows with is_deleted=True, strip fields from remaining rows.
+
+        Safe to re-run — delete-by-query is a no-op when the field is absent,
+        and the update-by-query script only matches docs that still have one
+        of the fields.
+        """
+        if not await self.client.indices.exists(index=self._index_name):
+            return
+        try:
+            await self.client.delete_by_query(
+                index=self._index_name,
+                body={"query": {"term": {"is_deleted": True}}},
+                refresh=True,
+                conflicts="proceed",
+            )
+            await self.client.update_by_query(
+                index=self._index_name,
+                body={
+                    "script": {
+                        "source": (
+                            "ctx._source.remove('is_deleted'); "
+                            "ctx._source.remove('deleted_at');"
+                        )
+                    },
+                    "query": {
+                        "bool": {
+                            "should": [
+                                {"exists": {"field": "is_deleted"}},
+                                {"exists": {"field": "deleted_at"}},
+                            ],
+                            "minimum_should_match": 1,
+                        }
+                    },
+                },
+                refresh=True,
+                conflicts="proceed",
+            )
+            logger.info(
+                f"[{self.workspace}] Dropped is_deleted/deleted_at from {self._index_name}"
+            )
+        except OpenSearchException as e:
+            if _is_missing_index_error(e):
+                return
+            logger.error(
+                f"[{self.workspace}] MIGRATION FAILED (drop soft-delete fields): {e}. "
+                f"Rows with is_deleted=True may still exist in {self._index_name}."
+            )
 
     async def finalize(self):
         """Release the OpenSearch client connection."""
@@ -819,11 +865,7 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
         try:
             body = {
                 "size": 0,
-                "query": {
-                    "bool": {
-                        "must_not": [{"term": {"is_deleted": True}}],
-                    }
-                },
+                "query": {"match_all": {}},
                 "aggs": {"status_counts": {"terms": {"field": "status", "size": 100}}},
             }
             response = await self.client.search(index=self._index_name, body=body)
@@ -909,7 +951,6 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
             {
                 "bool": {
                     "must": [{"terms": {"status": status_values}}],
-                    "must_not": [{"term": {"is_deleted": True}}],
                 }
             }
         )
@@ -927,7 +968,6 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
         page_size: int = 50,
         sort_field: str = "updated_at",
         sort_direction: str = "desc",
-        is_deleted: bool = False,
     ) -> tuple[list[tuple[str, DocProcessingStatus]], int]:
         """Get documents with pagination using PIT + search_after."""
         if not self._index_ready:
@@ -941,14 +981,9 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
         sort_order = "asc" if sort_direction.lower() == "asc" else "desc"
 
         must_clauses = []
-        must_not_clauses = []
-        if is_deleted:
-            must_clauses.append({"term": {"is_deleted": True}})
-        else:
-            must_not_clauses.append({"term": {"is_deleted": True}})
         if status_filter is not None:
             must_clauses.append({"term": {"status": status_filter.value}})
-        query = {"bool": {"must": must_clauses, "must_not": must_not_clauses}}
+        query = {"bool": {"must": must_clauses}}
 
         skip_count = (page - 1) * page_size
 
@@ -1019,20 +1054,13 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
             return [], 0
 
     async def get_all_status_counts(self) -> dict[str, int]:
-        """Get document counts for all statuses including an 'all' total.
-
-        Excludes soft-deleted documents from all counts.
-        """
+        """Get document counts for all statuses including an 'all' total."""
         if not self._index_ready:
             return {}
         try:
             body = {
                 "size": 0,
-                "query": {
-                    "bool": {
-                        "must_not": [{"term": {"is_deleted": True}}],
-                    }
-                },
+                "query": {"match_all": {}},
                 "aggs": {"status_counts": {"terms": {"field": "status", "size": 100}}},
             }
             response = await self.client.search(index=self._index_name, body=body)
@@ -1049,29 +1077,6 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
                 return {}
             logger.error(f"[{self.workspace}] Error getting all status counts: {e}")
             return {}
-
-    async def get_deleted_count(self) -> int:
-        """Count documents where is_deleted is True."""
-        if not self._index_ready:
-            return 0
-        try:
-            body = {
-                "query": {
-                    "bool": {
-                        "must": [{"term": {"is_deleted": True}}],
-                    }
-                }
-            }
-            response = await self.client.count(
-                index=self._index_name, body=body
-            )
-            return response.get("count", 0)
-        except OpenSearchException as e:
-            if _is_missing_index_error(e):
-                self._mark_index_missing()
-                return 0
-            logger.error(f"[{self.workspace}] Error getting deleted count: {e}")
-            return 0
 
     async def get_doc_by_file_path(self, file_path: str) -> Union[dict[str, Any], None]:
         """Find a document status record by its file_path field."""
