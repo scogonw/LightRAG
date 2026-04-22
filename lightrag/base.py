@@ -831,10 +831,6 @@ class DocProcessingStatus:
     """Additional metadata"""
     multimodal_processed: bool | None = field(default=None, repr=False)
     """Internal field: indicates if multimodal processing is complete. Not shown in repr() but accessible for debugging."""
-    is_deleted: bool = False
-    """Whether the document has been soft-deleted"""
-    deleted_at: str | None = None
-    """ISO format timestamp when document was soft-deleted"""
     token_usage: dict[str, Any] | None = None
     """Token usage accumulated during document ingestion, broken down by stage"""
 
@@ -890,7 +886,6 @@ class DocStatusStorage(BaseKVStorage, ABC):
         page_size: int = 50,
         sort_field: str = "updated_at",
         sort_direction: str = "desc",
-        is_deleted: bool = False,
     ) -> tuple[list[tuple[str, DocProcessingStatus]], int]:
         """Get documents with pagination support
 
@@ -900,7 +895,6 @@ class DocStatusStorage(BaseKVStorage, ABC):
             page_size: Number of documents per page (10-200)
             sort_field: Field to sort by ('created_at', 'updated_at', 'id')
             sort_direction: Sort direction ('asc' or 'desc')
-            is_deleted: If True, return only soft-deleted documents; if False, exclude them
 
         Returns:
             Tuple of (list of (doc_id, DocProcessingStatus) tuples, total_count)
@@ -913,10 +907,6 @@ class DocStatusStorage(BaseKVStorage, ABC):
         Returns:
             Dictionary mapping status names to counts
         """
-
-    @abstractmethod
-    async def get_deleted_count(self) -> int:
-        """Get count of soft-deleted documents"""
 
     @abstractmethod
     async def get_doc_by_file_path(self, file_path: str) -> dict[str, Any] | None:
