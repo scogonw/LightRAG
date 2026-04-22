@@ -494,10 +494,6 @@ class DocStatusResponse(BaseModel):
     org_id: Optional[str] = Field(
         default=None, description="Organization ID for multi-tenancy"
     )
-    is_deleted: bool = Field(default=False, description="Whether the document has been soft-deleted")
-    deleted_at: Optional[str] = Field(
-        default=None, description="Deletion timestamp (ISO format string)"
-    )
     token_usage: Optional[dict[str, Any]] = Field(
         default=None,
         description="Token usage accumulated during document ingestion, broken down by stage",
@@ -518,8 +514,6 @@ class DocStatusResponse(BaseModel):
                 "metadata": {"author": "John Doe", "year": 2025},
                 "file_path": "research_paper.pdf",
                 "org_id": "org_abc123",
-                "is_deleted": False,
-                "deleted_at": None,
             }
         }
     )
@@ -659,9 +653,6 @@ class DocumentsRequest(BaseModel):
     sort_direction: Literal["asc", "desc"] = Field(
         default="desc", description="Sort direction"
     )
-    is_deleted: bool = Field(
-        default=False, description="If True, return only soft-deleted documents; if False, exclude them"
-    )
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -671,7 +662,6 @@ class DocumentsRequest(BaseModel):
                 "page_size": 50,
                 "sort_field": "updated_at",
                 "sort_direction": "desc",
-                "is_deleted": False,
             }
         }
     )
@@ -725,9 +715,6 @@ class PaginatedDocsResponse(BaseModel):
     pagination: PaginationInfo = Field(description="Pagination information")
     status_counts: Dict[str, int] = Field(
         description="Count of documents by status for all documents"
-    )
-    deleted_count: int = Field(
-        default=0, description="Count of soft-deleted documents"
     )
 
     model_config = ConfigDict(
@@ -3259,7 +3246,6 @@ def create_document_routes(
                         page_size=request.page_size,
                         sort_field=request.sort_field,
                         sort_direction=request.sort_direction,
-                        is_deleted=request.is_deleted,
                     ),
                 )
             )
@@ -3267,12 +3253,6 @@ def create_document_routes(
                 _timed_call(
                     "get_all_status_counts",
                     rag.doc_status.get_all_status_counts(),
-                )
-            )
-            deleted_count_task = asyncio.create_task(
-                _timed_call(
-                    "get_deleted_count",
-                    rag.doc_status.get_deleted_count(),
                 )
             )
             query_task_create_elapsed = time.perf_counter() - query_task_create_start
@@ -3283,8 +3263,8 @@ def create_document_routes(
             )
 
             query_await_start = time.perf_counter()
-            (documents_with_ids, total_count), status_counts, deleted_count = await asyncio.gather(
-                docs_task, status_counts_task, deleted_count_task
+            (documents_with_ids, total_count), status_counts = await asyncio.gather(
+                docs_task, status_counts_task
             )
             query_await_elapsed = time.perf_counter() - query_await_start
             performance_timing_log(
@@ -3311,8 +3291,6 @@ def create_document_routes(
                         metadata=doc.metadata,
                         file_path=normalize_file_path(doc.file_path),
                         org_id=doc.org_id or None,
-                        is_deleted=doc.is_deleted,
-                        deleted_at=format_datetime(doc.deleted_at) if doc.deleted_at else None,
                         token_usage=doc.token_usage,
                     )
                 )
@@ -3334,7 +3312,6 @@ def create_document_routes(
                 documents=doc_responses,
                 pagination=pagination,
                 status_counts=status_counts,
-                deleted_count=deleted_count,
             )
             response_assembly_elapsed = time.perf_counter() - response_assembly_start
             total_elapsed = time.perf_counter() - request_start
