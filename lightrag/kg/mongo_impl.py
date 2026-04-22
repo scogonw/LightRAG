@@ -388,6 +388,35 @@ class MongoDocStatusStorage(DocStatusStorage):
 
         self._collection_name = self.final_namespace
 
+    async def _migrate_drop_soft_delete_fields(self) -> None:
+        """Idempotent: delete docs with is_deleted=True, then unset both fields.
+
+        Safe to re-run: delete_many filters on is_deleted=True so a clean
+        collection is untouched; $unset is a no-op on absent fields.
+        """
+        try:
+            del_result = await self._data.delete_many({"is_deleted": True})
+            if del_result.deleted_count:
+                logger.info(
+                    f"[{self.workspace}] Purged {del_result.deleted_count} soft-deleted doc_status rows"
+                )
+            unset_result = await self._data.update_many(
+                {"$or": [
+                    {"is_deleted": {"$exists": True}},
+                    {"deleted_at": {"$exists": True}},
+                ]},
+                {"$unset": {"is_deleted": "", "deleted_at": ""}},
+            )
+            if unset_result.modified_count:
+                logger.info(
+                    f"[{self.workspace}] Stripped soft-delete fields from {unset_result.modified_count} rows"
+                )
+        except Exception as e:
+            logger.error(
+                f"[{self.workspace}] MIGRATION FAILED (drop soft-delete fields): {e}. "
+                f"Rows with is_deleted=True may still exist."
+            )
+
     async def initialize(self):
         async with get_data_init_lock():
             if self.db is None:
@@ -397,6 +426,7 @@ class MongoDocStatusStorage(DocStatusStorage):
 
             # Create and migrate all indexes including Chinese collation for file_path
             await self.create_and_migrate_indexes_if_not_exists()
+            await self._migrate_drop_soft_delete_fields()
 
             logger.debug(
                 f"[{self.workspace}] Use MongoDB as DocStatus {self._collection_name}"
@@ -448,9 +478,8 @@ class MongoDocStatusStorage(DocStatusStorage):
         await asyncio.gather(*update_tasks)
 
     async def get_status_counts(self) -> dict[str, int]:
-        """Get counts of documents in each status (excludes soft-deleted)"""
+        """Get counts of documents in each status"""
         pipeline = [
-            {"$match": {"$or": [{"is_deleted": {"$exists": False}}, {"is_deleted": False}]}},
             {"$group": {"_id": "$status", "count": {"$sum": 1}}},
         ]
         cursor = await self._data.aggregate(pipeline, allowDiskUse=True)
@@ -477,10 +506,7 @@ class MongoDocStatusStorage(DocStatusStorage):
         if not statuses:
             return {}
         status_values = [s.value for s in statuses]
-        cursor = self._data.find({
-            "status": {"$in": status_values},
-            "$or": [{"is_deleted": {"$exists": False}}, {"is_deleted": False}],
-        })
+        cursor = self._data.find({"status": {"$in": status_values}})
         docs = await cursor.to_list(length=None)
         result = {}
         for doc in docs:
@@ -664,7 +690,6 @@ class MongoDocStatusStorage(DocStatusStorage):
         page_size: int = 50,
         sort_field: str = "updated_at",
         sort_direction: str = "desc",
-        is_deleted: bool = False,
     ) -> tuple[list[tuple[str, DocProcessingStatus]], int]:
         """Get documents with pagination support
 
@@ -674,7 +699,6 @@ class MongoDocStatusStorage(DocStatusStorage):
             page_size: Number of documents per page (10-200)
             sort_field: Field to sort by ('created_at', 'updated_at', '_id')
             sort_direction: Sort direction ('asc' or 'desc')
-            is_deleted: If True, return only soft-deleted docs; if False, exclude them
 
         Returns:
             Tuple of (list of (doc_id, DocProcessingStatus) tuples, total_count)
@@ -695,10 +719,6 @@ class MongoDocStatusStorage(DocStatusStorage):
 
         # Build query filter
         query_filter = {}
-        if is_deleted:
-            query_filter["is_deleted"] = True
-        else:
-            query_filter["$or"] = [{"is_deleted": {"$exists": False}}, {"is_deleted": False}]
         if status_filter is not None:
             query_filter["status"] = status_filter.value
 
@@ -751,13 +771,12 @@ class MongoDocStatusStorage(DocStatusStorage):
         return documents, total_count
 
     async def get_all_status_counts(self) -> dict[str, int]:
-        """Get counts of documents in each status for non-deleted documents
+        """Get counts of documents in each status
 
         Returns:
             Dictionary mapping status names to counts, including 'all' field
         """
         pipeline = [
-            {"$match": {"$or": [{"is_deleted": {"$exists": False}}, {"is_deleted": False}]}},
             {"$group": {"_id": "$status", "count": {"$sum": 1}}},
         ]
         cursor = await self._data.aggregate(pipeline, allowDiskUse=True)
@@ -773,10 +792,6 @@ class MongoDocStatusStorage(DocStatusStorage):
         counts["all"] = total_count
 
         return counts
-
-    async def get_deleted_count(self) -> int:
-        """Get count of soft-deleted documents"""
-        return await self._data.count_documents({"is_deleted": True})
 
     async def get_doc_by_file_path(self, file_path: str) -> Union[dict[str, Any], None]:
         """Get document by file path
