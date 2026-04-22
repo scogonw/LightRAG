@@ -1272,60 +1272,52 @@ class PostgreSQLDB:
                 f"Failed to add metadata/error_msg columns to LIGHTRAG_DOC_STATUS: {e}"
             )
 
-    async def _migrate_doc_status_add_soft_delete(self):
-        """Add is_deleted and deleted_at columns to LIGHTRAG_DOC_STATUS table if they don't exist"""
+    async def _migrate_doc_status_drop_soft_delete(self):
+        """Idempotent: hard-delete rows where is_deleted=TRUE, then drop the columns.
+
+        Replaces the earlier _migrate_doc_status_add_soft_delete migration.
+        Safe to re-run: the column existence checks short-circuit subsequent boots.
+        """
         try:
-            # Check if is_deleted column exists
             check_is_deleted_sql = """
             SELECT column_name
             FROM information_schema.columns
             WHERE table_name = 'lightrag_doc_status'
             AND column_name = 'is_deleted'
             """
-
             is_deleted_info = await self.query(check_is_deleted_sql)
-            if not is_deleted_info:
-                logger.info("Adding is_deleted column to LIGHTRAG_DOC_STATUS table")
-                add_is_deleted_sql = """
-                ALTER TABLE LIGHTRAG_DOC_STATUS
-                ADD COLUMN is_deleted BOOLEAN DEFAULT FALSE
-                """
-                await self.execute(add_is_deleted_sql)
+            if is_deleted_info:
                 logger.info(
-                    "Successfully added is_deleted column to LIGHTRAG_DOC_STATUS table"
+                    "Migrating LIGHTRAG_DOC_STATUS: purging rows with is_deleted=TRUE"
                 )
-            else:
+                await self.execute(
+                    "DELETE FROM LIGHTRAG_DOC_STATUS WHERE is_deleted = TRUE"
+                )
                 logger.info(
-                    "is_deleted column already exists in LIGHTRAG_DOC_STATUS table"
+                    "Dropping is_deleted column from LIGHTRAG_DOC_STATUS"
+                )
+                await self.execute(
+                    "ALTER TABLE LIGHTRAG_DOC_STATUS DROP COLUMN IF EXISTS is_deleted"
                 )
 
-            # Check if deleted_at column exists
             check_deleted_at_sql = """
             SELECT column_name
             FROM information_schema.columns
             WHERE table_name = 'lightrag_doc_status'
             AND column_name = 'deleted_at'
             """
-
             deleted_at_info = await self.query(check_deleted_at_sql)
-            if not deleted_at_info:
-                logger.info("Adding deleted_at column to LIGHTRAG_DOC_STATUS table")
-                add_deleted_at_sql = """
-                ALTER TABLE LIGHTRAG_DOC_STATUS
-                ADD COLUMN deleted_at TEXT NULL
-                """
-                await self.execute(add_deleted_at_sql)
+            if deleted_at_info:
                 logger.info(
-                    "Successfully added deleted_at column to LIGHTRAG_DOC_STATUS table"
+                    "Dropping deleted_at column from LIGHTRAG_DOC_STATUS"
                 )
-            else:
-                logger.info(
-                    "deleted_at column already exists in LIGHTRAG_DOC_STATUS table"
+                await self.execute(
+                    "ALTER TABLE LIGHTRAG_DOC_STATUS DROP COLUMN IF EXISTS deleted_at"
                 )
-
         except Exception as e:
-            logger.warning(
-                f"Failed to add is_deleted/deleted_at columns to LIGHTRAG_DOC_STATUS: {e}"
+            logger.error(
+                f"MIGRATION FAILED (drop soft-delete from LIGHTRAG_DOC_STATUS): {e}. "
+                f"Rows with is_deleted=TRUE may still exist."
             )
 
     async def _migrate_doc_status_add_token_usage(self):
@@ -1655,9 +1647,9 @@ class PostgreSQLDB:
                 f"PostgreSQL, Failed to migrate doc status metadata/error_msg fields: {e}"
             )
 
-        # Migrate doc status to add soft-delete fields if needed
+        # Migrate doc status to drop soft-delete fields if they exist
         try:
-            await self._migrate_doc_status_add_soft_delete()
+            await self._migrate_doc_status_drop_soft_delete()
         except Exception as e:
             logger.error(
                 f"PostgreSQL, Failed to migrate doc status soft-delete fields: {e}"
@@ -4143,11 +4135,10 @@ class PGDocStatusStorage(DocStatusStorage):
             )
 
     async def get_status_counts(self) -> dict[str, int]:
-        """Get counts of documents in each status (excludes soft-deleted docs)"""
+        """Get counts of documents in each status"""
         sql = """SELECT status as "status", COUNT(1) as "count"
                    FROM LIGHTRAG_DOC_STATUS
                   WHERE workspace=$1
-                    AND (is_deleted IS NULL OR is_deleted = FALSE)
                   GROUP BY STATUS
                  """
         params = {"workspace": self.workspace}
@@ -4226,10 +4217,7 @@ class PGDocStatusStorage(DocStatusStorage):
             return {}
 
         status_values = [s.value for s in statuses]
-        sql = (
-            "SELECT * FROM LIGHTRAG_DOC_STATUS WHERE workspace=$1 AND status = ANY($2)"
-            " AND (is_deleted IS NULL OR is_deleted = FALSE)"
-        )
+        sql = "SELECT * FROM LIGHTRAG_DOC_STATUS WHERE workspace=$1 AND status = ANY($2)"
         result = await self.db.query(
             sql, [self.workspace, status_values], multirows=True
         )
@@ -4347,7 +4335,6 @@ class PGDocStatusStorage(DocStatusStorage):
         page_size: int = 50,
         sort_field: str = "updated_at",
         sort_direction: str = "desc",
-        is_deleted: bool = False,
     ) -> tuple[list[tuple[str, DocProcessingStatus]], int]:
         """Get documents with pagination support
 
@@ -4357,7 +4344,6 @@ class PGDocStatusStorage(DocStatusStorage):
             page_size: Number of documents per page (10-200)
             sort_field: Field to sort by ('created_at', 'updated_at', 'id')
             sort_direction: Sort direction ('asc' or 'desc')
-            is_deleted: If True, return only soft-deleted docs; if False, exclude them
 
         Returns:
             Tuple of (list of (doc_id, DocProcessingStatus) tuples, total_count)
@@ -4402,17 +4388,12 @@ class PGDocStatusStorage(DocStatusStorage):
         param_count = 1
 
         # Build WHERE clause with parameterized query
-        if is_deleted:
-            deleted_filter = "AND is_deleted = TRUE"
-        else:
-            deleted_filter = "AND (is_deleted IS NULL OR is_deleted = FALSE)"
-
         if status_filter is not None:
             param_count += 1
-            where_clause = f"WHERE workspace=$1 AND status=$2 {deleted_filter}"
+            where_clause = "WHERE workspace=$1 AND status=$2"
             params["status"] = status_filter.value
         else:
-            where_clause = f"WHERE workspace=$1 {deleted_filter}"
+            where_clause = "WHERE workspace=$1"
 
         # Build ORDER BY clause using validated whitelist values.
         # NULLS LAST is applied in both the inner paged CTE and the outer query so
@@ -4537,7 +4518,6 @@ class PGDocStatusStorage(DocStatusStorage):
             SELECT status, COUNT(*) as count
             FROM LIGHTRAG_DOC_STATUS
             WHERE workspace=$1
-              AND (is_deleted IS NULL OR is_deleted = FALSE)
             GROUP BY status
         """
         params = {"workspace": self.workspace}
@@ -4569,19 +4549,6 @@ class PGDocStatusStorage(DocStatusStorage):
         )
 
         return counts
-
-    async def get_deleted_count(self) -> int:
-        """Get count of soft-deleted documents in this workspace"""
-        sql = """
-            SELECT COUNT(*) as count
-            FROM LIGHTRAG_DOC_STATUS
-            WHERE workspace=$1
-              AND is_deleted = TRUE
-        """
-        result = await self.db.query(sql, [self.workspace])
-        if result:
-            return result.get("count", 0)
-        return 0
 
     async def index_done_callback(self) -> None:
         # PG handles persistence automatically
@@ -6637,8 +6604,6 @@ TABLES = {
 	               error_msg TEXT NULL,
 	               created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 	               updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-	               is_deleted BOOLEAN DEFAULT FALSE,
-	               deleted_at TEXT NULL,
 	               CONSTRAINT LIGHTRAG_DOC_STATUS_PK PRIMARY KEY (workspace, id)
 	              )"""
     },
