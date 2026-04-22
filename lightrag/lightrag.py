@@ -1416,7 +1416,7 @@ class LightRAG:
             contents = {}
             for doc, path in zip(input, file_paths):
                 cleaned_content = sanitize_text_for_encoding(doc)
-                doc_id = compute_mdhash_id(cleaned_content + path, prefix="doc-")
+                doc_id = compute_mdhash_id(path, prefix="doc-")
                 contents[doc_id] = {
                     "content": cleaned_content,
                     "file_path": path,
