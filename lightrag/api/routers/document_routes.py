@@ -2192,7 +2192,7 @@ def create_document_routes(
            - The duplicate is detected later when processing the file content
            - Use `/documents/track_status/{track_id}` to check the final result:
              - Document will have `status="FAILED"`
-             - `error_msg` contains "Content already exists. Original doc_id: xxx"
+             - `error_msg` contains "File already exists. Original doc_id: xxx"
              - `metadata.is_duplicate=true` with reference to original document
              - `metadata.original_doc_id` points to the existing document
              - `metadata.original_track_id` shows the original upload's track_id

@@ -1480,7 +1480,7 @@ class LightRAG:
                     "file_path": file_path,
                     "track_id": track_id,  # Use current track_id for tracking
                     "org_id": org_id or "",
-                    "error_msg": f"Content already exists. Original doc_id: {doc_id}, Status: {existing_status}",
+                    "error_msg": f"File already exists. Original doc_id: {doc_id}, Status: {existing_status}",
                     "metadata": {
                         "is_duplicate": True,
                         "original_doc_id": doc_id,
