@@ -3467,16 +3467,9 @@ class LightRAG:
                         ) from cache_err
 
                 try:
-                    # Soft-delete the doc status record and hard-delete full doc content.
                     deletion_stage = "delete_doc_entries"
-                    soft_delete_data = {
-                        doc_id: {
-                            **doc_status_data,
-                            "is_deleted": True,
-                            "deleted_at": datetime.now(timezone.utc).isoformat(),
-                        }
-                    }
-                    await self.doc_status.upsert(soft_delete_data)
+                    in_final_delete_stage = True
+                    await self.doc_status.delete([doc_id])
                     await self.full_docs.delete([doc_id])
                 except Exception as e:
                     logger.error(
@@ -4062,18 +4055,11 @@ class LightRAG:
                     f"Failed to delete from full_entities/full_relations: {e}"
                 ) from e
 
-            # 11. Soft-delete original document status and hard-delete full doc content.
+            # 11. Hard-delete document status and full doc content.
             try:
                 deletion_stage = "delete_doc_entries"
                 in_final_delete_stage = True
-                soft_delete_data = {
-                    doc_id: {
-                        **doc_status_data,
-                        "is_deleted": True,
-                        "deleted_at": datetime.now(timezone.utc).isoformat(),
-                    }
-                }
-                await self.doc_status.upsert(soft_delete_data)
+                await self.doc_status.delete([doc_id])
                 await self.full_docs.delete([doc_id])
             except Exception as e:
                 logger.error(f"Failed to delete document and status: {e}")
