@@ -77,6 +77,95 @@ from dotenv import load_dotenv
 load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env", override=False)
 
 
+_RESOURCE_ACCESS_LEVELS = ("ORGANIZATION", "CHAT_WIDGET")
+
+
+def _chunk_meta_matches_kb_filter(
+    meta: dict, metadata_filter: dict, org_id: str | None
+) -> bool:
+    """Check if a chunk's metadata satisfies the knowledgebase access-control filter.
+
+    Mirrors the OpenSearch filter built in ``opensearch_impl._build_knowledgebase_filter``
+    so KG-derived chunks (fetched by chunk_id rather than via OpenSearch) apply the
+    same access rules as chunks returned by a vector search.
+
+    A chunk passes if ANY of these conditions hold:
+      - agent path: ``access_level == CHAT_WIDGET`` and ``knowledgebase_id`` in ``agent_kb_ids``
+      - org path: chunk's ``org_id`` matches and ``access_level`` in {ORGANIZATION, CHAT_WIDGET}
+      - team path: ``knowledgebase_id`` in ``team_kb_ids`` and ``access_level`` in
+        {ORGANIZATION, CHAT_WIDGET, TEAM_MEMBERS} (only when ``user_id`` is set)
+      - user path: ``knowledgebase_id`` in ``user_kb_ids`` and ``access_level == ONLY_ME``
+    """
+    if not isinstance(meta, dict):
+        return False
+
+    agent_kb_ids = metadata_filter.get("agent_kb_ids") or []
+    user_id = metadata_filter.get("user_id")
+    user_kb_ids = metadata_filter.get("user_kb_ids") or []
+    team_kb_ids = metadata_filter.get("team_kb_ids") or []
+
+    has_kb_params = bool(agent_kb_ids or user_id or user_kb_ids or team_kb_ids)
+    if not has_kb_params:
+        # No KB params -> only filter by org_id when provided.
+        if org_id:
+            return meta.get("org_id") == org_id
+        return True
+
+    access_level = meta.get("access_level")
+    kb_id = meta.get("knowledgebase_id")
+    chunk_org = meta.get("org_id")
+
+    # Agent path is exclusive when set.
+    if agent_kb_ids:
+        return kb_id in agent_kb_ids and access_level == "CHAT_WIDGET"
+
+    # Org path
+    if org_id and chunk_org == org_id and access_level in _RESOURCE_ACCESS_LEVELS:
+        return True
+
+    # Team path
+    if (
+        user_id
+        and team_kb_ids
+        and kb_id in team_kb_ids
+        and access_level in (*_RESOURCE_ACCESS_LEVELS, "TEAM_MEMBERS")
+    ):
+        return True
+
+    # User-owned path
+    if user_kb_ids and kb_id in user_kb_ids and access_level == "ONLY_ME":
+        return True
+
+    return False
+
+
+def _filter_chunks_by_kb_access(
+    chunks: list[dict], metadata_filter: dict, org_id: str | None
+) -> list[dict]:
+    """Apply ``_chunk_meta_matches_kb_filter`` to a list of chunks.
+
+    A chunk's ``metadata`` may be a dict or a list of dicts (multi-source chunks).
+    The chunk is kept if any metadata entry satisfies the access rules.
+    """
+    out: list[dict] = []
+    for chunk in chunks:
+        chunk_meta = chunk.get("metadata")
+        if chunk_meta is None:
+            continue
+        if isinstance(chunk_meta, dict):
+            meta_list = [chunk_meta]
+        elif isinstance(chunk_meta, list):
+            meta_list = chunk_meta
+        else:
+            continue
+        if any(
+            _chunk_meta_matches_kb_filter(m, metadata_filter, org_id)
+            for m in meta_list
+        ):
+            out.append(chunk)
+    return out
+
+
 def _truncate_entity_identifier(
     identifier: str, limit: int, chunk_key: str, identifier_role: str
 ) -> str:
@@ -4789,22 +4878,9 @@ async def _find_related_text_unit_from_entities(
     # Step 7: Apply metadata filter to entity-related chunks
     if query_param.metadata_filter and result_chunks:
         before_count = len(result_chunks)
-        filtered_chunks = []
-        for chunk in result_chunks:
-            chunk_meta = chunk.get("metadata")
-            if chunk_meta is None:
-                continue
-            if isinstance(chunk_meta, dict):
-                meta_list = [chunk_meta]
-            elif isinstance(chunk_meta, list):
-                meta_list = chunk_meta
-            else:
-                continue
-            if any(
-                isinstance(m, dict) and all((m.get(k) in v if isinstance(v, list) else m.get(k) == v) for k, v in query_param.metadata_filter.items())
-                for m in meta_list
-            ):
-                filtered_chunks.append(chunk)
+        filtered_chunks = _filter_chunks_by_kb_access(
+            result_chunks, query_param.metadata_filter, query_param.org_id
+        )
         logger.info(
             f"[_find_related_text_unit_from_entities] Metadata filter applied: {len(filtered_chunks)}/{before_count} entity chunks passed"
         )
@@ -5119,22 +5195,9 @@ async def _find_related_text_unit_from_relations(
     # Apply metadata filter to relation-related chunks
     if query_param.metadata_filter and result_chunks:
         before_count = len(result_chunks)
-        filtered_chunks = []
-        for chunk in result_chunks:
-            chunk_meta = chunk.get("metadata")
-            if chunk_meta is None:
-                continue
-            if isinstance(chunk_meta, dict):
-                meta_list = [chunk_meta]
-            elif isinstance(chunk_meta, list):
-                meta_list = chunk_meta
-            else:
-                continue
-            if any(
-                isinstance(m, dict) and all((m.get(k) in v if isinstance(v, list) else m.get(k) == v) for k, v in query_param.metadata_filter.items())
-                for m in meta_list
-            ):
-                filtered_chunks.append(chunk)
+        filtered_chunks = _filter_chunks_by_kb_access(
+            result_chunks, query_param.metadata_filter, query_param.org_id
+        )
         logger.info(
             f"[_find_related_text_unit_from_relations] Metadata filter applied: {len(filtered_chunks)}/{before_count} relation chunks passed"
         )
