@@ -438,7 +438,8 @@ def parse_args() -> argparse.Namespace:
         "MAX_TOTAL_TOKENS", DEFAULT_MAX_TOTAL_TOKENS, int
     )
     args.cosine_threshold = get_env_value(
-        "COSINE_THRESHOLD", DEFAULT_COSINE_THRESHOLD, float
+        # "COSINE_THRESHOLD", DEFAULT_COSINE_THRESHOLD, float,
+        "COSINE_THRESHOLD", 0.5, float
     )
     args.related_chunk_number = get_env_value(
         "RELATED_CHUNK_NUMBER", DEFAULT_RELATED_CHUNK_NUMBER, int
