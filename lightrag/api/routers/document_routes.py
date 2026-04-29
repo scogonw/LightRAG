@@ -101,6 +101,24 @@ def normalize_file_path(file_path: str | None) -> str:
     return normalized
 
 
+def _shallow_merge_metadata(
+    existing: dict | None, patch: dict
+) -> dict:
+    """Shallow-merge ``patch`` into ``existing`` and return a new dict.
+
+    A key whose patch value is ``None`` is removed from the result; any other
+    value overwrites or adds. ``existing`` is treated as ``{}`` when ``None``
+    and is never mutated.
+    """
+    result = dict(existing or {})
+    for k, v in patch.items():
+        if v is None:
+            result.pop(k, None)
+        else:
+            result[k] = v
+    return result
+
+
 def sanitize_filename(filename: str, input_dir: Path) -> str:
     """
     Sanitize uploaded filename to prevent Path Traversal attacks.
