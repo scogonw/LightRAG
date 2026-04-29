@@ -235,3 +235,152 @@ async def test_patch_preserves_other_docs_metadata_on_shared_chunks(
             assert keys_present == ["A2", "B"], meta
         else:
             assert meta.get("src") == "A2", meta
+
+
+@pytest.mark.asyncio
+async def test_patch_returns_404_for_nonexistent_doc(opensearch_rag):
+    rag = opensearch_rag
+    client = _make_client(rag)
+    response = client.patch(
+        "/documents/does-not-exist/metadata",
+        headers={"X-Org-Id": "org-anything"},
+        json={"metadata": {"a": 1}},
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Document not found"
+
+
+@pytest.mark.asyncio
+async def test_patch_returns_404_for_org_mismatch(opensearch_rag):
+    rag = opensearch_rag
+    org_a = f"orgA-{uuid.uuid4().hex[:6]}"
+    org_b = f"orgB-{uuid.uuid4().hex[:6]}"
+
+    doc_id = await _ingest_one_doc(
+        rag,
+        content="Content for org-mismatch test.",
+        file_path=f"orgmismatch-{uuid.uuid4().hex[:6]}.txt",
+        org_id=org_a,
+        metadata={"x": 1},
+    )
+
+    client = _make_client(rag)
+    response = client.patch(
+        f"/documents/{doc_id}/metadata",
+        headers={"X-Org-Id": org_b},  # wrong org
+        json={"metadata": {"x": 2}},
+    )
+    assert response.status_code == 404, response.text
+    assert response.json()["detail"] == "Document not found"
+
+
+@pytest.mark.asyncio
+async def test_patch_missing_org_header_returns_422(opensearch_rag):
+    rag = opensearch_rag
+    client = _make_client(rag)
+    response = client.patch(
+        "/documents/anything/metadata",
+        json={"metadata": {"a": 1}},
+        # No X-Org-Id header
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_patch_empty_metadata_returns_no_change(opensearch_rag):
+    rag = opensearch_rag
+    org_id = f"org-{uuid.uuid4().hex[:6]}"
+    doc_id = await _ingest_one_doc(
+        rag,
+        content="Content for empty-patch test.",
+        file_path=f"empty-{uuid.uuid4().hex[:6]}.txt",
+        org_id=org_id,
+        metadata={"original": True},
+    )
+
+    client = _make_client(rag)
+    response = client.patch(
+        f"/documents/{doc_id}/metadata",
+        headers={"X-Org-Id": org_id},
+        json={"metadata": {}},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["status"] == "no_change"
+    assert body["metadata"] == {"original": True}
+
+    stored = await rag.doc_status.get_by_id(doc_id)
+    assert stored["metadata"] == {"original": True}
+
+
+@pytest.mark.asyncio
+async def test_patch_returns_busy_when_doc_processing(opensearch_rag):
+    """Force a doc into PROCESSING and confirm PATCH returns busy."""
+    rag = opensearch_rag
+    org_id = f"org-{uuid.uuid4().hex[:6]}"
+    doc_id = await _ingest_one_doc(
+        rag,
+        content="Content for busy test.",
+        file_path=f"busy-{uuid.uuid4().hex[:6]}.txt",
+        org_id=org_id,
+        metadata={"v": 1},
+    )
+
+    # Force the doc back into PROCESSING for the duration of this test.
+    stored = await rag.doc_status.get_by_id(doc_id)
+    stored = {k: v for k, v in stored.items() if k != "_id"}
+    stored["status"] = "processing"
+    await rag.doc_status.upsert({doc_id: stored})
+
+    client = _make_client(rag)
+    response = client.patch(
+        f"/documents/{doc_id}/metadata",
+        headers={"X-Org-Id": org_id},
+        json={"metadata": {"v": 2}},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["status"] == "busy"
+    # Metadata should NOT have been updated
+    after = await rag.doc_status.get_by_id(doc_id)
+    assert after["metadata"] == {"v": 1}
+
+
+@pytest.mark.asyncio
+async def test_patch_idempotent(opensearch_rag):
+    rag = opensearch_rag
+    org_id = f"org-{uuid.uuid4().hex[:6]}"
+    doc_id = await _ingest_one_doc(
+        rag,
+        content="Content for idempotency test.",
+        file_path=f"idem-{uuid.uuid4().hex[:6]}.txt",
+        org_id=org_id,
+        metadata={"v": 1},
+    )
+
+    client = _make_client(rag)
+    headers = {"X-Org-Id": org_id}
+    payload = {"metadata": {"v": 2, "tag": "x"}}
+
+    r1 = client.patch(
+        f"/documents/{doc_id}/metadata", headers=headers, json=payload
+    )
+    assert r1.status_code == 200
+    r2 = client.patch(
+        f"/documents/{doc_id}/metadata", headers=headers, json=payload
+    )
+    assert r2.status_code == 200
+
+    await asyncio.sleep(2)
+    await rag.chunks_vdb.index_done_callback()
+
+    stored = await rag.doc_status.get_by_id(doc_id)
+    assert stored["metadata"] == {"v": 2, "tag": "x"}
+
+    chunks = await rag.chunks_vdb.get_by_ids(stored["chunks_list"])
+    for chunk in chunks:
+        meta = chunk["metadata"]
+        if isinstance(meta, dict):
+            assert meta == {"v": 2, "tag": "x"}
+        elif isinstance(meta, list):
+            assert {"v": 2, "tag": "x"} in meta
