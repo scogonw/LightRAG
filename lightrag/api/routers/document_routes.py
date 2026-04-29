@@ -3689,6 +3689,64 @@ def create_document_routes(
             logger.error(traceback.format_exc())
             raise HTTPException(status_code=500, detail=str(e))
 
+    @router.get(
+        "/{doc_id}",
+        response_model=DocStatusResponse,
+        dependencies=[Depends(combined_auth)],
+        summary="Get details of a single document by ID.",
+    )
+    async def get_document_by_id(
+        doc_id: str,
+        x_org_id: str = Header(
+            ...,
+            alias="X-Org-Id",
+            description="Organization ID for multi-tenancy (required)",
+        ),
+    ) -> DocStatusResponse:
+        """
+        Retrieve the full status record for a single document.
+
+        Returns the same fields exposed by ``GET /documents`` and
+        ``POST /documents/paginated``, scoped to the caller's organization.
+
+        Args:
+            doc_id: The document ID to look up.
+
+        Returns:
+            DocStatusResponse: Document status, metadata, and ingestion info.
+
+        Raises:
+            HTTPException 404: Document not found, or it belongs to a
+                different organization.
+            HTTPException 500: Unexpected internal error.
+        """
+        try:
+            existing = await rag.doc_status.get_by_id(doc_id)
+            if existing is None or existing.get("org_id", "") != x_org_id:
+                raise HTTPException(status_code=404, detail="Document not found")
+
+            return DocStatusResponse(
+                id=doc_id,
+                content_summary=existing.get("content_summary", ""),
+                content_length=existing.get("content_length", 0),
+                status=existing.get("status"),
+                created_at=format_datetime(existing.get("created_at")),
+                updated_at=format_datetime(existing.get("updated_at")),
+                track_id=existing.get("track_id"),
+                chunks_count=existing.get("chunks_count"),
+                error_msg=existing.get("error_msg"),
+                metadata=existing.get("metadata"),
+                file_path=normalize_file_path(existing.get("file_path")),
+                org_id=existing.get("org_id") or None,
+                token_usage=existing.get("token_usage"),
+            )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error GET /documents/{doc_id}: {str(e)}")
+            logger.error(traceback.format_exc())
+            raise HTTPException(status_code=500, detail=str(e))
+
     @router.post(
         "/reprocess_failed",
         response_model=ReprocessResponse,
