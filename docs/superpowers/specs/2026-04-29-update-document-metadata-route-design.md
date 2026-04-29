@@ -115,18 +115,17 @@ PATCH /documents/{doc_id}/metadata     (X-Org-Id: <org>, body: {metadata: {...}}
 
 ### Background cascade (`cascade_metadata_to_chunks`)
 
-Calls a new method on `OpenSearchVectorDBStorage`:
+The doc-status row stores `chunks_list: list[str]` — the explicit IDs of all chunks belonging to this doc. The cascade uses these IDs directly, avoiding the need to query by `full_doc_id` (which is dynamically mapped on the chunks index and would require `.keyword` subfield handling). Calls a new method on `OpenSearchVectorDBStorage`:
 
 ```python
-await rag.chunks_vdb.update_metadata_by_full_doc_id(
-    full_doc_id=doc_id,
-    org_id=x_org_id,
+await rag.chunks_vdb.update_metadata_for_ids(
+    chunk_ids=existing["chunks_list"],
     old_metadata=old_metadata,
     new_metadata=new_metadata,
 )
 ```
 
-The method runs a single OpenSearch `update_by_query` against the chunks index (with `refresh=True`, so a separate `index_done_callback()` is unnecessary), scoped to `full_doc_id == doc_id AND org_id == x_org_id`, with a Painless script that handles three shapes the chunk's `metadata` field can take:
+The method runs a single OpenSearch bulk request — one `update` action per chunk ID, sharing the same Painless script — with `refresh=True`. The script handles three shapes the chunk's `metadata` field can take:
 
 ```painless
 def m = ctx._source.metadata;
@@ -184,7 +183,7 @@ These limitations are documented in the route's docstring so API consumers see t
 | File | Change |
 |---|---|
 | `lightrag/api/routers/document_routes.py` | Add Pydantic models `UpdateDocumentMetadataRequest` and `UpdateDocumentMetadataResponse`. Add the route handler `update_document_metadata`. Add the helper `_shallow_merge_metadata` and the background-task function `cascade_metadata_to_chunks`. Place the route near `delete_document` (around line 2862) for thematic grouping. |
-| `lightrag/kg/opensearch_impl.py` | Add `OpenSearchVectorDBStorage.update_metadata_by_full_doc_id(self, full_doc_id, org_id, old_metadata, new_metadata) -> dict`. |
+| `lightrag/kg/opensearch_impl.py` | Add `OpenSearchVectorDBStorage.update_metadata_for_ids(self, chunk_ids, old_metadata, new_metadata) -> dict`. |
 
 No changes to `lightrag/base.py`. The new method is OpenSearch-specific by design; the route guards with `isinstance` and returns 501 for other backends.
 
@@ -223,43 +222,42 @@ def _shallow_merge_metadata(existing: dict | None, patch: dict) -> dict:
 
 ```python
 # In OpenSearchVectorDBStorage
-async def update_metadata_by_full_doc_id(
+async def update_metadata_for_ids(
     self,
-    full_doc_id: str,
-    org_id: str,
+    chunk_ids: list[str],
     old_metadata: dict,
     new_metadata: dict,
 ) -> dict:
-    """Replace metadata on chunks belonging to (full_doc_id, org_id).
+    """Replace metadata on the listed chunk IDs.
 
-    Handles three metadata shapes on the chunk record:
+    Handles three metadata shapes on each chunk record:
       - missing/null      -> set to new_metadata
       - dict (single src) -> replace with new_metadata
       - list of dicts     -> replace the entry that equals old_metadata
 
-    Returns: {"updated": int, "failures": int}
+    Returns: {"updated": int, "failures": int, "not_found": int}
     """
-    body = {
-        "query": {"bool": {"must": [
-            {"term": {"full_doc_id": full_doc_id}},
-            {"term": {"org_id": org_id}},
-        ]}},
-        "script": {
-            "lang": "painless",
-            "source": "<painless source from section 4>",
-            "params": {"old": old_metadata, "new": new_metadata},
-        },
+    if not chunk_ids:
+        return {"updated": 0, "failures": 0, "not_found": 0}
+    script = {
+        "lang": "painless",
+        "source": "<painless source from section 4>",
+        "params": {"old": old_metadata, "new": new_metadata},
     }
-    response = await self.client.update_by_query(
-        index=self._index_name,
-        body=body,
-        refresh=True,
-        conflicts="proceed",
+    actions = [
+        {"_op_type": "update", "_index": self._index_name, "_id": cid, "script": script}
+        for cid in chunk_ids
+    ]
+    success, errors = await helpers.async_bulk(
+        self.client, actions, raise_on_error=False, refresh=True
     )
-    return {
-        "updated": response.get("updated", 0),
-        "failures": len(response.get("failures", [])),
-    }
+    not_found = sum(
+        1 for e in errors
+        if e.get("update", {}).get("result") == "not_found"
+        or e.get("update", {}).get("status") == 404
+    )
+    failures = len(errors) - not_found
+    return {"updated": success, "failures": failures, "not_found": not_found}
 ```
 
 ## 8. Testing
