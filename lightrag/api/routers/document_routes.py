@@ -1936,6 +1936,63 @@ async def run_scanning_process(
         logger.error(traceback.format_exc())
 
 
+async def cascade_metadata_to_chunks(
+    rag: "LightRAG",
+    doc_id: str,
+    chunk_ids: list[str],
+    old_metadata: dict,
+    new_metadata: dict,
+) -> None:
+    """Background task: propagate a metadata change to the chunks vector index.
+
+    Idempotent. Single-source chunks are overwritten outright; multi-source
+    chunks have only the entry equal to ``old_metadata`` replaced. If no
+    entry matches (drift), that chunk is left unchanged and counted in
+    ``failures``/``not_found`` for the log line.
+    """
+    # Defensive: route should already have guarded this, but if backend was
+    # swapped at runtime we still want to fail soft.
+    from lightrag.kg.opensearch_impl import OpenSearchVectorDBStorage
+
+    if not isinstance(rag.chunks_vdb, OpenSearchVectorDBStorage):
+        logger.warning(
+            f"cascade_metadata_to_chunks skipped for {doc_id}: chunks_vdb is "
+            f"not OpenSearchVectorDBStorage ({type(rag.chunks_vdb).__name__})"
+        )
+        return
+
+    if not chunk_ids:
+        logger.info(
+            f"cascade_metadata_to_chunks: doc_id={doc_id} no chunks to update"
+        )
+        return
+
+    try:
+        result = await rag.chunks_vdb.update_metadata_for_ids(
+            chunk_ids=chunk_ids,
+            old_metadata=old_metadata,
+            new_metadata=new_metadata,
+        )
+        logger.info(
+            f"cascade_metadata_to_chunks: doc_id={doc_id} "
+            f"updated={result['updated']} "
+            f"failures={result['failures']} "
+            f"not_found={result['not_found']} "
+            f"total_chunks={len(chunk_ids)}"
+        )
+        if result["failures"] > 0:
+            logger.warning(
+                f"cascade_metadata_to_chunks: doc_id={doc_id} had "
+                f"{result['failures']} failures — see prior logs for details"
+            )
+    except Exception as e:
+        # Never propagate — response was already sent. Log loudly.
+        logger.error(
+            f"cascade_metadata_to_chunks failed for doc_id={doc_id}: {e}"
+        )
+        logger.error(traceback.format_exc())
+
+
 async def background_delete_documents(
     rag: LightRAG,
     doc_manager: DocumentManager,
