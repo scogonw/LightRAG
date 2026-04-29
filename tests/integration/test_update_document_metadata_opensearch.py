@@ -153,3 +153,85 @@ async def test_patch_propagates_to_single_source_chunks(opensearch_rag):
     for chunk in chunks:
         assert chunk is not None, "chunk missing from vector store"
         assert chunk["metadata"] == {"label": "after"}, chunk
+
+
+@pytest.mark.asyncio
+async def test_patch_null_value_removes_key(opensearch_rag):
+    rag = opensearch_rag
+    org_id = f"org-{uuid.uuid4().hex[:6]}"
+    doc_id = await _ingest_one_doc(
+        rag,
+        content="Content for null-deletion test, sufficiently long.",
+        file_path=f"null-{uuid.uuid4().hex[:6]}.txt",
+        org_id=org_id,
+        metadata={"keep": "yes", "remove": "yes"},
+    )
+
+    client = _make_client(rag)
+    response = client.patch(
+        f"/documents/{doc_id}/metadata",
+        headers={"X-Org-Id": org_id},
+        json={"metadata": {"remove": None}},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["metadata"] == {"keep": "yes"}
+
+    stored = await rag.doc_status.get_by_id(doc_id)
+    assert stored["metadata"] == {"keep": "yes"}
+
+    await asyncio.sleep(2)
+    await rag.chunks_vdb.index_done_callback()
+
+    chunks = await rag.chunks_vdb.get_by_ids(stored["chunks_list"])
+    for chunk in chunks:
+        assert "remove" not in (chunk["metadata"] or {})
+        assert (chunk["metadata"] or {}).get("keep") == "yes"
+
+
+@pytest.mark.asyncio
+async def test_patch_preserves_other_docs_metadata_on_shared_chunks(
+    opensearch_rag,
+):
+    """When two docs share identical chunk content (same content hash), the
+    chunk's metadata is stored as a list of two dicts. PATCHing only doc A's
+    metadata must replace ONLY doc A's entry; doc B's entry must stay intact.
+    """
+    rag = opensearch_rag
+    org_id = f"org-{uuid.uuid4().hex[:6]}"
+
+    shared_content = (
+        "This sentence is identical across docs. "
+        "And so is this one. They will produce the same chunks."
+    )
+
+    doc_a = await _ingest_one_doc(
+        rag, content=shared_content, file_path=f"shareA-{uuid.uuid4().hex[:6]}.txt",
+        org_id=org_id, metadata={"src": "A"},
+    )
+    await _ingest_one_doc(
+        rag, content=shared_content, file_path=f"shareB-{uuid.uuid4().hex[:6]}.txt",
+        org_id=org_id, metadata={"src": "B"},
+    )
+
+    client = _make_client(rag)
+    response = client.patch(
+        f"/documents/{doc_a}/metadata",
+        headers={"X-Org-Id": org_id},
+        json={"metadata": {"src": "A2"}},
+    )
+    assert response.status_code == 200, response.text
+
+    await asyncio.sleep(2)
+    await rag.chunks_vdb.index_done_callback()
+
+    stored_a = await rag.doc_status.get_by_id(doc_a)
+    chunks = await rag.chunks_vdb.get_by_ids(stored_a["chunks_list"])
+    for chunk in chunks:
+        meta = chunk["metadata"]
+        if isinstance(meta, list):
+            keys_present = sorted(
+                m.get("src") for m in meta if isinstance(m, dict)
+            )
+            assert keys_present == ["A2", "B"], meta
+        else:
+            assert meta.get("src") == "A2", meta
