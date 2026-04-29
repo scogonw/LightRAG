@@ -1939,6 +1939,7 @@ async def run_scanning_process(
 async def cascade_metadata_to_chunks(
     rag: "LightRAG",
     doc_id: str,
+    org_id: str,
     chunk_ids: list[str],
     old_metadata: dict,
     new_metadata: dict,
@@ -1950,20 +1951,46 @@ async def cascade_metadata_to_chunks(
     entry matches (drift), that chunk is left unchanged and counted in
     ``failures``/``not_found`` for the log line.
     """
+    from lightrag.kg.opensearch_impl import OpenSearchVectorDBStorage
+    from lightrag.kg.shared_storage import (
+        get_namespace_data,
+        get_namespace_lock,
+    )
+
+    async def _record_history(message: str) -> None:
+        """Append a warning to pipeline_status history_messages."""
+        try:
+            pipeline_status = await get_namespace_data(
+                "pipeline_status", workspace=rag.workspace
+            )
+            pipeline_status_lock = get_namespace_lock(
+                "pipeline_status", workspace=rag.workspace
+            )
+            async with pipeline_status_lock:
+                history = pipeline_status.get("history_messages")
+                if history is None:
+                    history = []
+                    pipeline_status["history_messages"] = history
+                history.append(message)
+        except Exception as inner:
+            logger.error(
+                f"chunk metadata cascade: failed to record pipeline history: {inner}"
+            )
+
     # Defensive: route should already have guarded this, but if backend was
     # swapped at runtime we still want to fail soft.
-    from lightrag.kg.opensearch_impl import OpenSearchVectorDBStorage
-
     if not isinstance(rag.chunks_vdb, OpenSearchVectorDBStorage):
         logger.warning(
-            f"cascade_metadata_to_chunks skipped for {doc_id}: chunks_vdb is "
-            f"not OpenSearchVectorDBStorage ({type(rag.chunks_vdb).__name__})"
+            f"chunk metadata cascade skipped: doc_id={doc_id} org_id={org_id} "
+            f"chunks_vdb is not OpenSearchVectorDBStorage "
+            f"({type(rag.chunks_vdb).__name__})"
         )
         return
 
     if not chunk_ids:
         logger.info(
-            f"cascade_metadata_to_chunks: doc_id={doc_id} no chunks to update"
+            f"chunk metadata cascade: doc_id={doc_id} org_id={org_id} "
+            f"no chunks to update"
         )
         return
 
@@ -1974,23 +2001,36 @@ async def cascade_metadata_to_chunks(
             new_metadata=new_metadata,
         )
         logger.info(
-            f"cascade_metadata_to_chunks: doc_id={doc_id} "
+            f"chunk metadata cascade: doc_id={doc_id} org_id={org_id} "
             f"updated={result['updated']} "
             f"failures={result['failures']} "
             f"not_found={result['not_found']} "
             f"total_chunks={len(chunk_ids)}"
         )
         if result["failures"] > 0:
-            logger.warning(
-                f"cascade_metadata_to_chunks: doc_id={doc_id} had "
-                f"{result['failures']} failures — see prior logs for details"
+            warning_msg = (
+                f"chunk metadata cascade: doc_id={doc_id} org_id={org_id} "
+                f"had {result['failures']} failures — see prior logs for details"
             )
+            logger.warning(warning_msg)
+            await _record_history(warning_msg)
+        elif result["updated"] == 0 and len(chunk_ids) > 0:
+            warning_msg = (
+                f"chunk metadata cascade: doc_id={doc_id} org_id={org_id} "
+                f"updated 0 of {len(chunk_ids)} chunks (drift between "
+                f"doc-status snapshot and stored chunk metadata)"
+            )
+            logger.warning(warning_msg)
+            await _record_history(warning_msg)
     except Exception as e:
         # Never propagate — response was already sent. Log loudly.
-        logger.error(
-            f"cascade_metadata_to_chunks failed for doc_id={doc_id}: {e}"
+        error_msg = (
+            f"chunk metadata cascade failed: doc_id={doc_id} org_id={org_id} "
+            f"error={e}"
         )
+        logger.error(error_msg)
         logger.error(traceback.format_exc())
+        await _record_history(error_msg)
 
 
 async def background_delete_documents(
@@ -3140,8 +3180,8 @@ def create_document_routes(
                 detail="Document metadata updates are only supported on OpenSearch storage.",
             )
 
-        # 2. Empty-patch short-circuit (don't even read the doc — return current
-        #    metadata if we have it, else an empty dict).
+        # 2. Empty-patch short-circuit. Still verify ownership so we don't
+        #    leak doc existence cross-tenant.
         if not body.metadata:
             existing = await rag.doc_status.get_by_id(doc_id)
             if existing is None or existing.get("org_id", "") != x_org_id:
@@ -3161,12 +3201,7 @@ def create_document_routes(
 
             # 4. Pipeline race guard (target-doc only)
             current_status = existing.get("status")
-            if current_status in (
-                DocStatus.PROCESSING.value,
-                DocStatus.PREPROCESSED.value,
-                DocStatus.PROCESSING,
-                DocStatus.PREPROCESSED,
-            ):
+            if current_status in (DocStatus.PROCESSING, DocStatus.PREPROCESSED):
                 return UpdateDocumentMetadataResponse(
                     status="busy",
                     message=(
@@ -3198,6 +3233,7 @@ def create_document_routes(
                 cascade_metadata_to_chunks,
                 rag,
                 doc_id,
+                x_org_id,
                 chunk_ids,
                 old_metadata,
                 new_metadata,

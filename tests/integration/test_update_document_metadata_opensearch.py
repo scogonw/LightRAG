@@ -384,3 +384,85 @@ async def test_patch_idempotent(opensearch_rag):
             assert meta == {"v": 2, "tag": "x"}
         elif isinstance(meta, list):
             assert {"v": 2, "tag": "x"} in meta
+
+
+@pytest.mark.asyncio
+async def test_patch_busy_does_not_block_other_docs(opensearch_rag):
+    """The pipeline-busy guard is target-doc-only: PROCESSING status on doc A
+    must not prevent a successful PATCH on doc B."""
+    rag = opensearch_rag
+    org_id = f"org-{uuid.uuid4().hex[:6]}"
+
+    doc_a = await _ingest_one_doc(
+        rag,
+        content="Content for busy-doc-A.",
+        file_path=f"busyA-{uuid.uuid4().hex[:6]}.txt",
+        org_id=org_id,
+        metadata={"name": "A"},
+    )
+    doc_b = await _ingest_one_doc(
+        rag,
+        content="Different content for doc-B that should remain editable.",
+        file_path=f"busyB-{uuid.uuid4().hex[:6]}.txt",
+        org_id=org_id,
+        metadata={"name": "B"},
+    )
+
+    # Force doc A into PROCESSING.
+    stored_a = await rag.doc_status.get_by_id(doc_a)
+    stored_a = {k: v for k, v in stored_a.items() if k != "_id"}
+    stored_a["status"] = "processing"
+    await rag.doc_status.upsert({doc_a: stored_a})
+
+    client = _make_client(rag)
+
+    # PATCH on doc A -> busy
+    r_a = client.patch(
+        f"/documents/{doc_a}/metadata",
+        headers={"X-Org-Id": org_id},
+        json={"metadata": {"name": "A2"}},
+    )
+    assert r_a.status_code == 200, r_a.text
+    assert r_a.json()["status"] == "busy"
+
+    # PATCH on doc B -> succeeds
+    r_b = client.patch(
+        f"/documents/{doc_b}/metadata",
+        headers={"X-Org-Id": org_id},
+        json={"metadata": {"name": "B2"}},
+    )
+    assert r_b.status_code == 200, r_b.text
+    assert r_b.json()["status"] == "update_started"
+    assert r_b.json()["metadata"] == {"name": "B2"}
+
+    after_b = await rag.doc_status.get_by_id(doc_b)
+    assert after_b["metadata"] == {"name": "B2"}
+
+
+@pytest.mark.asyncio
+async def test_patch_unauthenticated_returns_401_or_403(opensearch_rag, monkeypatch):
+    """When auth is configured (API key required), a request without the
+    Authorization header / api key must be rejected before reaching the
+    handler.
+    """
+    rag = opensearch_rag
+
+    # Configure an API key so combined_auth enforces it.
+    monkeypatch.setenv("LIGHTRAG_API_KEY", "test-secret-key")
+
+    app = FastAPI()
+
+    class _Stub:
+        input_dir = None
+
+    app.include_router(
+        create_document_routes(rag, _Stub(), api_key="test-secret-key")
+    )
+    client = TestClient(app)
+
+    response = client.patch(
+        "/documents/any-doc-id/metadata",
+        headers={"X-Org-Id": "org-anything"},
+        json={"metadata": {"a": 1}},
+    )
+    assert response.status_code in (401, 403), response.text
