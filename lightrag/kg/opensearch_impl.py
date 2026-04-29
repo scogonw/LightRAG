@@ -3180,6 +3180,88 @@ class OpenSearchVectorDBStorage(BaseVectorStorage):
                 f"[{self.workspace}] Error deleting relations for {entity_name}: {e}"
             )
 
+    async def update_metadata_for_ids(
+        self,
+        chunk_ids: list[str],
+        old_metadata: dict,
+        new_metadata: dict,
+    ) -> dict:
+        """Replace ``metadata`` on the listed records via a Painless script.
+
+        Handles three shapes the stored ``metadata`` field can take:
+          - missing / null   -> set to ``new_metadata``
+          - dict (single src) -> replace with ``new_metadata``
+          - list of dicts    -> replace the list entry that equals
+                                ``old_metadata`` (multi-source chunks)
+
+        Args:
+            chunk_ids: Record IDs to update. Empty list is a no-op.
+            old_metadata: The doc's metadata snapshot before the patch was
+                applied. Used to find the matching list entry on
+                multi-source chunks.
+            new_metadata: The merged metadata to write.
+
+        Returns:
+            ``{"updated": int, "failures": int, "not_found": int}`` —
+            ``updated`` counts successful updates, ``not_found`` counts
+            chunk IDs that no longer exist in the index, ``failures`` counts
+            other errors.
+        """
+        if not chunk_ids:
+            return {"updated": 0, "failures": 0, "not_found": 0}
+        if not self._index_ready:
+            return {"updated": 0, "failures": 0, "not_found": len(chunk_ids)}
+
+        painless = (
+            "def m = ctx._source.metadata; "
+            "if (m == null) { ctx._source.metadata = params.new; } "
+            "else if (m instanceof Map) { ctx._source.metadata = params.new; } "
+            "else if (m instanceof List) { "
+            "  for (int i = 0; i < m.size(); i++) { "
+            "    if (m.get(i).equals(params.old)) { m.set(i, params.new); break; } "
+            "  } "
+            "}"
+        )
+        script = {
+            "lang": "painless",
+            "source": painless,
+            "params": {"old": old_metadata, "new": new_metadata},
+        }
+        actions = [
+            {
+                "_op_type": "update",
+                "_index": self._index_name,
+                "_id": cid,
+                "script": script,
+            }
+            for cid in chunk_ids
+        ]
+        try:
+            success, errors = await helpers.async_bulk(
+                self.client, actions, raise_on_error=False, refresh=True
+            )
+        except OpenSearchException as e:
+            if _is_missing_index_error(e):
+                self._mark_index_missing()
+                return {"updated": 0, "failures": 0, "not_found": len(chunk_ids)}
+            logger.error(
+                f"[{self.workspace}] Error updating chunk metadata: {e}"
+            )
+            return {"updated": 0, "failures": len(chunk_ids), "not_found": 0}
+
+        not_found = 0
+        failures = 0
+        for err in errors or []:
+            update_info = err.get("update") if isinstance(err, dict) else None
+            if isinstance(update_info, dict) and (
+                update_info.get("result") == "not_found"
+                or update_info.get("status") == 404
+            ):
+                not_found += 1
+            else:
+                failures += 1
+        return {"updated": success, "failures": failures, "not_found": not_found}
+
     async def drop(self) -> dict[str, str]:
         """Delete and recreate the vector index."""
         try:
