@@ -2,8 +2,6 @@
 
 import sys
 
-import pytest
-
 sys.argv = sys.argv[:1]
 
 from lightrag.api.routers.document_routes import _shallow_merge_metadata  # noqa: E402
