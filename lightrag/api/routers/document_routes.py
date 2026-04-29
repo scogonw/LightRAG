@@ -3070,6 +3070,157 @@ def create_document_routes(
             logger.error(traceback.format_exc())
             raise HTTPException(status_code=500, detail=error_msg)
 
+    @router.patch(
+        "/{doc_id}/metadata",
+        response_model=UpdateDocumentMetadataResponse,
+        dependencies=[Depends(combined_auth)],
+        summary="Update a document's metadata (OpenSearch only).",
+    )
+    async def update_document_metadata(
+        doc_id: str,
+        body: UpdateDocumentMetadataRequest,
+        background_tasks: BackgroundTasks,
+        x_org_id: str = Header(
+            ...,
+            alias="X-Org-Id",
+            description="Organization ID for multi-tenancy (required)",
+        ),
+    ) -> UpdateDocumentMetadataResponse:
+        """
+        Partially update a document's ``metadata`` via shallow merge.
+
+        Semantics:
+          - Keys in the request body with non-null values are added or
+            overwritten on the document's metadata.
+          - Keys with ``null`` values are removed.
+          - An empty patch is a no-op (status="no_change").
+
+        The doc-status row is updated synchronously. A background task
+        propagates the same change to the chunks vector index so chunk-level
+        ``metadata_filter`` queries reflect the update.
+
+        Limitations:
+          - Only supported when both ``doc_status`` and ``chunks_vdb`` are
+            backed by OpenSearch. Other backends return 501.
+          - Updates do **not** cascade to entities or relations: those
+            indices are intrinsically multi-source and lack per-entry doc
+            tagging, so a safe cascade is not possible.
+          - When the same chunk is shared across multiple documents, the
+            cascade replaces only the metadata entry equal to the doc's
+            previous metadata snapshot. If the snapshot has drifted from
+            what's stored on the chunk, that chunk is left unchanged.
+
+        Args:
+            doc_id: The document to update.
+            body: ``{"metadata": <patch dict>}``.
+
+        Returns:
+            UpdateDocumentMetadataResponse:
+              - status="update_started": doc-status updated, cascade dispatched.
+              - status="no_change": empty patch, no writes performed.
+              - status="busy": target doc is mid-ingestion (PROCESSING /
+                PREPROCESSED), no writes performed.
+
+        Raises:
+            HTTPException 404: Document not found, or org_id mismatch.
+            HTTPException 501: Backend is not OpenSearch.
+            HTTPException 500: Unexpected internal error.
+        """
+        from lightrag.kg.opensearch_impl import (
+            OpenSearchDocStatusStorage,
+            OpenSearchVectorDBStorage,
+        )
+
+        # 1. Backend guard
+        if not isinstance(rag.doc_status, OpenSearchDocStatusStorage) or not isinstance(
+            rag.chunks_vdb, OpenSearchVectorDBStorage
+        ):
+            raise HTTPException(
+                status_code=501,
+                detail="Document metadata updates are only supported on OpenSearch storage.",
+            )
+
+        # 2. Empty-patch short-circuit (don't even read the doc — return current
+        #    metadata if we have it, else an empty dict).
+        if not body.metadata:
+            existing = await rag.doc_status.get_by_id(doc_id)
+            if existing is None or existing.get("org_id", "") != x_org_id:
+                raise HTTPException(status_code=404, detail="Document not found")
+            return UpdateDocumentMetadataResponse(
+                status="no_change",
+                message="Empty patch; no changes applied.",
+                doc_id=doc_id,
+                metadata=existing.get("metadata") or {},
+            )
+
+        try:
+            # 3. Load + ownership check
+            existing = await rag.doc_status.get_by_id(doc_id)
+            if existing is None or existing.get("org_id", "") != x_org_id:
+                raise HTTPException(status_code=404, detail="Document not found")
+
+            # 4. Pipeline race guard (target-doc only)
+            current_status = existing.get("status")
+            if current_status in (
+                DocStatus.PROCESSING.value,
+                DocStatus.PREPROCESSED.value,
+                DocStatus.PROCESSING,
+                DocStatus.PREPROCESSED,
+            ):
+                return UpdateDocumentMetadataResponse(
+                    status="busy",
+                    message=(
+                        "Document is currently being processed by the "
+                        "ingestion pipeline. Retry once it leaves "
+                        "PROCESSING/PREPROCESSED state."
+                    ),
+                    doc_id=doc_id,
+                    metadata=existing.get("metadata") or {},
+                )
+
+            # 5. Snapshot old metadata BEFORE mutating
+            old_metadata = dict(existing.get("metadata") or {})
+
+            # 6. Compute new metadata
+            new_metadata = _shallow_merge_metadata(old_metadata, body.metadata)
+
+            # 7. Persist doc-status synchronously
+            #    upsert() takes a {doc_id: data} dict. Strip the synthetic _id
+            #    field that get_by_id attaches.
+            updated_record = {k: v for k, v in existing.items() if k != "_id"}
+            updated_record["metadata"] = new_metadata
+            updated_record["updated_at"] = datetime.now(timezone.utc).isoformat()
+            await rag.doc_status.upsert({doc_id: updated_record})
+
+            # 8. Dispatch background cascade
+            chunk_ids = list(existing.get("chunks_list") or [])
+            background_tasks.add_task(
+                cascade_metadata_to_chunks,
+                rag,
+                doc_id,
+                chunk_ids,
+                old_metadata,
+                new_metadata,
+            )
+
+            return UpdateDocumentMetadataResponse(
+                status="update_started",
+                message=(
+                    f"Metadata updated. Cascade to {len(chunk_ids)} chunks "
+                    f"scheduled in background."
+                ),
+                doc_id=doc_id,
+                metadata=new_metadata,
+            )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(
+                f"Error PATCH /documents/{doc_id}/metadata: {e}"
+            )
+            logger.error(traceback.format_exc())
+            raise HTTPException(status_code=500, detail=str(e))
+
     class CheckDeletionStatusResponse(BaseModel):
         """Response model for checking document deletion status."""
 
