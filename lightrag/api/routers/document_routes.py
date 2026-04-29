@@ -466,6 +466,63 @@ class DeleteDocRequest(BaseModel):
         return validated_ids
 
 
+class UpdateDocumentMetadataRequest(BaseModel):
+    """Request model for partial metadata update on a document.
+
+    The ``metadata`` field is a patch dict applied with shallow-merge
+    semantics: keys with non-null values are added or overwritten, keys
+    whose value is ``null`` are removed. An empty dict is a no-op.
+    """
+
+    metadata: Dict[str, Any] = Field(
+        description=(
+            "Patch dict applied to the document's metadata. Non-null values "
+            "are merged in (added or overwritten); null values delete the "
+            "corresponding key. Empty dict is a no-op."
+        ),
+    )
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "metadata": {
+                    "department": "marketing",
+                    "year": 2026,
+                    "old_tag": None,
+                }
+            }
+        },
+    )
+
+
+class UpdateDocumentMetadataResponse(BaseModel):
+    """Response model for the update-document-metadata endpoint."""
+
+    status: Literal["update_started", "no_change", "busy"] = Field(
+        description="Outcome of the update request"
+    )
+    message: str = Field(description="Human-readable status message")
+    doc_id: str = Field(description="The document ID that was targeted")
+    metadata: Dict[str, Any] = Field(
+        description="The document's metadata after applying the patch"
+    )
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "status": "update_started",
+                "message": (
+                    "Metadata updated. Cascade to chunks scheduled in "
+                    "background."
+                ),
+                "doc_id": "doc-abc123",
+                "metadata": {"department": "marketing", "year": 2026},
+            }
+        }
+    )
+
+
 class DeleteEntityRequest(BaseModel):
     entity_name: str = Field(..., description="The name of the entity to delete.")
 
