@@ -6150,6 +6150,7 @@ class PGGraphStorage(BaseGraphStorage):
         node_label: str,
         max_depth: int = 3,
         max_nodes: int = None,
+        org_id: str | None = None,
     ) -> KnowledgeGraph:
         """
         Retrieve a connected subgraph of nodes where the label includes the specified `node_label`.
@@ -6158,6 +6159,8 @@ class PGGraphStorage(BaseGraphStorage):
             node_label: Label of the starting node, * means all nodes
             max_depth: Maximum depth of the subgraph, Defaults to 3
             max_nodes: Maximum nodes to return, Defaults to global_config max_graph_nodes
+            org_id: Optional organization ID for multi-tenant scoping. Applied
+                as a post-filter on the returned subgraph.
 
         Returns:
             KnowledgeGraph object containing nodes and edges, with an is_truncated flag
@@ -6269,6 +6272,9 @@ class PGGraphStorage(BaseGraphStorage):
             logger.info(
                 f"[{self.workspace}] Subgraph query for '{node_label}' successful | Node count: {len(kg.nodes)} | Edge count: {len(kg.edges)}"
             )
+
+        if org_id is not None:
+            kg = kg.filter_by_org(org_id)
 
         return kg
 

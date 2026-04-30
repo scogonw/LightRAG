@@ -4,7 +4,7 @@ This module contains all graph-related routes for the LightRAG API.
 
 from typing import Optional, Dict, Any
 import traceback
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Header, Query, HTTPException
 from pydantic import BaseModel, Field
 
 from lightrag.utils import logger
@@ -189,6 +189,56 @@ def create_graph_routes(rag, api_key: Optional[str] = None):
             )
         except Exception as e:
             logger.error(f"Error getting knowledge graph for label '{label}': {str(e)}")
+            logger.error(traceback.format_exc())
+            raise HTTPException(
+                status_code=500, detail=f"Error getting knowledge graph: {str(e)}"
+            )
+
+    @router.get("/graphs/by_org", dependencies=[Depends(combined_auth)])
+    async def get_knowledge_graph_by_org(
+        label: str = Query(..., description="Label to get knowledge graph for"),
+        max_depth: int = Query(3, description="Maximum depth of graph", ge=1),
+        max_nodes: int = Query(1000, description="Maximum nodes to return", ge=1),
+        x_org_id: str = Header(
+            ...,
+            alias="X-Org-Id",
+            description="Organization ID for multi-tenancy (required)",
+        ),
+    ):
+        """
+        Org-scoped variant of ``GET /graphs``.
+
+        Returns the same connected subgraph as ``/graphs`` but restricted to
+        nodes and edges tagged with the caller's ``X-Org-Id``. Backends with
+        push-down support (NetworkX) apply the filter before BFS so
+        ``max_nodes`` is filled with org-matching nodes; other backends
+        post-filter the result, which can yield fewer than ``max_nodes``
+        nodes for the calling org if the underlying subgraph is dominated
+        by other tenants.
+
+        Args:
+            label: Label of the starting node, ``*`` means all nodes.
+            max_depth: Maximum depth of the subgraph.
+            max_nodes: Maximum nodes to return (subject to per-server cap).
+
+        Returns:
+            KnowledgeGraph: Org-scoped knowledge graph.
+        """
+        try:
+            logger.debug(
+                f"get_knowledge_graph_by_org called with label: '{label}' "
+                f"(org_id={x_org_id})"
+            )
+            return await rag.get_knowledge_graph(
+                node_label=label,
+                max_depth=max_depth,
+                max_nodes=max_nodes,
+                org_id=x_org_id,
+            )
+        except Exception as e:
+            logger.error(
+                f"Error getting org-scoped knowledge graph for label '{label}': {str(e)}"
+            )
             logger.error(traceback.format_exc())
             raise HTTPException(
                 status_code=500, detail=f"Error getting knowledge graph: {str(e)}"

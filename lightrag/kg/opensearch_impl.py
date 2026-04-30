@@ -2229,8 +2229,15 @@ class OpenSearchGraphStorage(BaseGraphStorage):
         node_label: str,
         max_depth: int = 3,
         max_nodes: int = None,
+        org_id: str | None = None,
     ) -> KnowledgeGraph:
-        """Retrieve a subgraph via PPL graphlookup (if available) or client-side BFS."""
+        """Retrieve a subgraph via PPL graphlookup (if available) or client-side BFS.
+
+        ``org_id`` (when provided) restricts the returned subgraph to nodes
+        and edges tagged with the matching ``org_id`` property. Applied as a
+        post-filter; push-down would require threading the predicate through
+        PPL/BFS code paths and is left for a follow-up.
+        """
         if not self._indices_ready:
             return KnowledgeGraph()
         if max_nodes is None:
@@ -2262,6 +2269,9 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                 self._mark_indices_missing()
                 return KnowledgeGraph()
             logger.error(f"[{self.workspace}] Graph query failed: {e}")
+
+        if org_id is not None:
+            result = result.filter_by_org(org_id)
 
         return result
 

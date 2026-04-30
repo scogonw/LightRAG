@@ -1155,6 +1155,7 @@ class LightRAG:
         node_label: str,
         max_depth: int = 3,
         max_nodes: int = None,
+        org_id: str | None = None,
     ) -> KnowledgeGraph:
         """Get knowledge graph for a given label
 
@@ -1162,6 +1163,9 @@ class LightRAG:
             node_label (str): Label to get knowledge graph for
             max_depth (int): Maximum depth of graph
             max_nodes (int, optional): Maximum number of nodes to return. Defaults to self.max_graph_nodes.
+            org_id (str, optional): Organization ID for multi-tenant filtering.
+                When provided, only nodes/edges tagged with this org_id are
+                returned. ``None`` returns all nodes/edges.
 
         Returns:
             KnowledgeGraph: Knowledge graph containing nodes and edges
@@ -1174,7 +1178,7 @@ class LightRAG:
             max_nodes = min(max_nodes, self.max_graph_nodes)
 
         return await self.chunk_entity_relation_graph.get_knowledge_graph(
-            node_label, max_depth, max_nodes
+            node_label, max_depth, max_nodes, org_id=org_id
         )
 
     def _get_storage_class(self, storage_name: str) -> Callable[..., Any]:

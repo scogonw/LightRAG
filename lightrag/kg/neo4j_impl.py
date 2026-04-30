@@ -1249,6 +1249,7 @@ class Neo4JStorage(BaseGraphStorage):
         node_label: str,
         max_depth: int = 3,
         max_nodes: int = None,
+        org_id: str | None = None,
     ) -> KnowledgeGraph:
         """
         Retrieve a connected subgraph of nodes where the label includes the specified `node_label`.
@@ -1257,6 +1258,10 @@ class Neo4JStorage(BaseGraphStorage):
             node_label: Label of the starting node, * means all nodes
             max_depth: Maximum depth of the subgraph, Defaults to 3
             max_nodes: Maxiumu nodes to return by BFS, Defaults to 1000
+            org_id: Optional organization ID for multi-tenant scoping. The
+                ``*`` (all-nodes) branch pushes the predicate into Cypher;
+                the labeled-BFS branch (which uses APOC traversal) applies
+                the filter as a post-step on the returned subgraph.
 
         Returns:
             KnowledgeGraph object containing nodes and edges, with an is_truncated flag
@@ -1457,11 +1462,19 @@ class Neo4JStorage(BaseGraphStorage):
                     logger.warning(
                         f"[{self.workspace}] Neo4j: falling back to basic Cypher recursive search..."
                     )
-                    return await self._robust_fallback(node_label, max_depth, max_nodes)
+                    fallback = await self._robust_fallback(
+                        node_label, max_depth, max_nodes
+                    )
+                    if org_id is not None:
+                        fallback = fallback.filter_by_org(org_id)
+                    return fallback
                 else:
                     logger.warning(
                         f"[{self.workspace}] Neo4j: APOC plugin error with wildcard query, returning empty result"
                     )
+
+        if org_id is not None:
+            result = result.filter_by_org(org_id)
 
         return result
 

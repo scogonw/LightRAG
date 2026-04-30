@@ -1012,6 +1012,7 @@ class MemgraphStorage(BaseGraphStorage):
         node_label: str,
         max_depth: int = 3,
         max_nodes: int = None,
+        org_id: str | None = None,
     ) -> KnowledgeGraph:
         """
         Retrieve a connected subgraph of nodes where the label includes the specified `node_label`.
@@ -1020,6 +1021,8 @@ class MemgraphStorage(BaseGraphStorage):
             node_label: Label of the starting node, * means all nodes
             max_depth: Maximum depth of the subgraph, Defaults to 3
             max_nodes: Maximum nodes to return by BFS, Defaults to 1000
+            org_id: Optional organization ID for multi-tenant scoping. Applied
+                as a post-filter on the returned subgraph.
 
         Returns:
             KnowledgeGraph object containing nodes and edges, with an is_truncated flag
@@ -1182,6 +1185,9 @@ class MemgraphStorage(BaseGraphStorage):
                 logger.warning(
                     f"[{self.workspace}] Memgraph error during subgraph query: {str(e)}"
                 )
+
+        if org_id is not None:
+            result = result.filter_by_org(org_id)
 
         return result
 

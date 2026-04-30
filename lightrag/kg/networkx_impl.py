@@ -336,6 +336,7 @@ class NetworkXStorage(BaseGraphStorage):
         node_label: str,
         max_depth: int = 3,
         max_nodes: int = None,
+        org_id: str | None = None,
     ) -> KnowledgeGraph:
         """
         Retrieve a connected subgraph of nodes where the label includes the specified `node_label`.
@@ -344,6 +345,10 @@ class NetworkXStorage(BaseGraphStorage):
             node_label: Label of the starting node，* means all nodes
             max_depth: Maximum depth of the subgraph, Defaults to 3
             max_nodes: Maxiumu nodes to return by BFS, Defaults to 1000
+            org_id: Optional organization ID. When provided, restricts the
+                returned subgraph to nodes/edges belonging to this org so
+                that ``max_nodes`` is filled with matching nodes (filter is
+                applied before BFS/top-degree selection).
 
         Returns:
             KnowledgeGraph object containing nodes and edges, with an is_truncated flag
@@ -357,6 +362,17 @@ class NetworkXStorage(BaseGraphStorage):
             max_nodes = min(max_nodes, self.global_config.get("max_graph_nodes", 1000))
 
         graph = await self._get_graph()
+
+        # Apply org_id filter as a node-induced subgraph view. Edges are kept
+        # only if both endpoints survive — matches the semantics of the
+        # other batch methods that already filter by org_id.
+        if org_id is not None:
+            allowed = {
+                n
+                for n, data in graph.nodes(data=True)
+                if data.get("org_id", "") == org_id
+            }
+            graph = graph.subgraph(allowed)
 
         result = KnowledgeGraph()
 
