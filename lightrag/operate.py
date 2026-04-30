@@ -1633,6 +1633,7 @@ async def _rebuild_single_relationship(
                 "created_at": node_created_at,
                 "truncate": "",
                 "metadata": current_relationship.get("metadata"),
+                "org_id": current_relationship.get("org_id", ""),
             }
             await knowledge_graph_inst.upsert_node(node_id, node_data=node_data)
 
@@ -2053,6 +2054,11 @@ async def _merge_nodes_then_upsert(
         metadata = metadata_list if metadata_list else None
 
         # 11. Update both graph and vector db
+        # Resolve org_id once and tag both the graph node and the vector
+        # payload, so multi-tenant filters on the graph layer match.
+        entity_org_id = nodes_data[0].get("org_id", "") if nodes_data else ""
+        if not entity_org_id and already_node:
+            entity_org_id = already_node.get("org_id", "")
         node_data = dict(
             entity_id=entity_name,
             entity_type=entity_type,
@@ -2062,6 +2068,7 @@ async def _merge_nodes_then_upsert(
             created_at=int(time.time()),
             truncate=truncation_info,
             metadata=metadata,
+            org_id=entity_org_id,
         )
         await knowledge_graph_inst.upsert_node(
             entity_name,
@@ -2071,10 +2078,6 @@ async def _merge_nodes_then_upsert(
         if entity_vdb is not None:
             entity_vdb_id = compute_mdhash_id(str(entity_name), prefix="ent-")
             entity_content = f"{entity_name}\n{description}"
-            # Get org_id from first node data or existing entity
-            entity_org_id = nodes_data[0].get("org_id", "") if nodes_data else ""
-            if not entity_org_id and already_node:
-                entity_org_id = already_node.get("org_id", "")
             data_for_vdb = {
                 entity_vdb_id: {
                     "entity_name": entity_name,
@@ -2459,6 +2462,7 @@ async def _merge_edges_then_upsert(
                     "created_at": node_created_at,
                     "truncate": "",
                     "metadata": metadata,
+                    "org_id": edge_org_id,
                 }
                 await knowledge_graph_inst.upsert_node(
                     need_insert_id, node_data=node_data
@@ -2637,6 +2641,7 @@ async def _merge_edges_then_upsert(
                 created_at=edge_created_at,
                 truncate=truncation_info,
                 metadata=metadata,
+                org_id=edge_org_id,
             ),
         )
 
