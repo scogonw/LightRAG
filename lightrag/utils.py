@@ -2470,6 +2470,40 @@ def pick_by_weighted_polling(
     return selected_chunks
 
 
+def apply_dynamic_threshold(
+    results: list[dict],
+    floor: float,
+    gap: float,
+    score_key: str = "distance",
+) -> list[dict]:
+    """Filter VDB results with a hard floor plus a relative-gap cutoff.
+
+    Keeps results where ``score >= max(floor, top_score - gap)``. The floor
+    discards low-confidence noise; the gap discards results that are far
+    below the top hit (adapts to query difficulty — when the top hit is
+    weak, the gap stays close to the floor and more results survive).
+
+    Args:
+        results: VDB hits, each containing a similarity score under
+            ``score_key`` (higher = more similar).
+        floor: Hard minimum score. Hits below this are always dropped.
+        gap: Maximum allowed distance from the top score. ``0`` disables
+            the gap filter (only the floor applies).
+        score_key: Field name holding the similarity score. Defaults to
+            ``"distance"`` to match the storage backends.
+
+    Returns:
+        Filtered results, in their original order. Returns ``[]`` if
+        ``results`` is empty or every hit is below the cutoff.
+    """
+    if not results:
+        return []
+    scores = [r.get(score_key, 0.0) for r in results]
+    top = max(scores)
+    cutoff = max(floor, top - gap) if gap > 0 else floor
+    return [r for r, s in zip(results, scores) if s >= cutoff]
+
+
 async def pick_by_vector_similarity(
     query: str,
     text_chunks_storage: "BaseKVStorage",

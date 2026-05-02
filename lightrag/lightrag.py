@@ -36,6 +36,7 @@ from lightrag.constants import (
     DEFAULT_MAX_RELATION_TOKENS,
     DEFAULT_MAX_TOTAL_TOKENS,
     DEFAULT_COSINE_THRESHOLD,
+    DEFAULT_COSINE_THRESHOLD_GAP,
     DEFAULT_RELATED_CHUNK_NUMBER,
     DEFAULT_KG_CHUNK_PICK_METHOD,
     DEFAULT_MIN_RERANK_SCORE,
@@ -523,8 +524,44 @@ class LightRAG:
     """If True, lightrag will automatically calls initialize_storages and finalize_storages at the appropriate times."""
 
     cosine_better_than_threshold: float = field(
-        default=float(os.getenv("COSINE_THRESHOLD", 0.2))
+        default=float(os.getenv("COSINE_THRESHOLD", DEFAULT_COSINE_THRESHOLD))
     )
+    """Global similarity floor applied at the vector DB. Results below this
+    score are dropped server-side regardless of top_k."""
+
+    entity_cosine_threshold: Optional[float] = field(
+        default_factory=lambda: (
+            float(os.environ["ENTITY_COSINE_THRESHOLD"])
+            if os.getenv("ENTITY_COSINE_THRESHOLD") is not None
+            else None
+        )
+    )
+    """Per-surface floor for entity VDB. Falls back to cosine_better_than_threshold."""
+
+    relation_cosine_threshold: Optional[float] = field(
+        default_factory=lambda: (
+            float(os.environ["RELATION_COSINE_THRESHOLD"])
+            if os.getenv("RELATION_COSINE_THRESHOLD") is not None
+            else None
+        )
+    )
+    """Per-surface floor for relation VDB. Falls back to cosine_better_than_threshold."""
+
+    chunk_cosine_threshold: Optional[float] = field(
+        default_factory=lambda: (
+            float(os.environ["CHUNK_COSINE_THRESHOLD"])
+            if os.getenv("CHUNK_COSINE_THRESHOLD") is not None
+            else None
+        )
+    )
+    """Per-surface floor for chunk VDB. Falls back to cosine_better_than_threshold."""
+
+    cosine_threshold_gap: float = field(
+        default=float(os.getenv("COSINE_THRESHOLD_GAP", DEFAULT_COSINE_THRESHOLD_GAP))
+    )
+    """Relative-gap filter applied to VDB results post-query: keep only
+    results where score >= max(floor, top_score - gap). 0 disables the gap
+    filter (only the floor applies)."""
 
     ollama_server_infos: Optional[OllamaServerInfos] = field(default=None)
     """Configuration for Ollama server information."""
@@ -730,6 +767,19 @@ class LightRAG:
             embedding_func=self.embedding_func,
             meta_fields={"full_doc_id", "content", "file_path", "metadata", "org_id", "knowledgebase_id", "access_levels"},
         )
+
+        # Apply per-surface cosine floors. Each falls back to the global
+        # value if not configured. The VDB's cosine_better_than_threshold is
+        # the server-side hard floor; the relative-gap filter runs in
+        # operate.py after results return.
+        if self.entity_cosine_threshold is not None:
+            self.entities_vdb.cosine_better_than_threshold = self.entity_cosine_threshold
+        if self.relation_cosine_threshold is not None:
+            self.relationships_vdb.cosine_better_than_threshold = (
+                self.relation_cosine_threshold
+            )
+        if self.chunk_cosine_threshold is not None:
+            self.chunks_vdb.cosine_better_than_threshold = self.chunk_cosine_threshold
 
         # Initialize document status storage
         self.doc_status: DocStatusStorage = self.doc_status_storage_cls(
@@ -2943,6 +2993,10 @@ class LightRAG:
         logger.debug(f"[aquery_llm] Query param: {param}")
 
         global_config = asdict(self)
+
+        # Inherit the global gap if the caller did not override it per-query.
+        if param.cosine_threshold_gap is None:
+            param.cosine_threshold_gap = self.cosine_threshold_gap
 
         try:
             query_result = None

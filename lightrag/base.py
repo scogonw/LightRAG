@@ -180,6 +180,11 @@ class QueryParam:
     Typically set from the X-Org-Id HTTP header at the API layer.
     """
 
+    cosine_threshold_gap: float | None = None
+    """Optional per-query override for the relative-gap filter applied to VDB
+    results. When None, falls back to LightRAG.cosine_threshold_gap. The
+    cutoff per surface is ``max(vdb.cosine_better_than_threshold, top_score - gap)``."""
+
 
 @dataclass
 class StorageNameSpace(ABC):

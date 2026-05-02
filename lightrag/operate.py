@@ -30,6 +30,7 @@ from lightrag.utils import (
     remove_think_tags,
     pick_by_weighted_polling,
     pick_by_vector_similarity,
+    apply_dynamic_threshold,
     process_chunks_unified,
     safe_vdb_operation_with_exception,
     create_prefixed_exception,
@@ -3770,18 +3771,34 @@ async def _get_vector_context(
             query, top_k=search_top_k, query_embedding=query_embedding,
             metadata_filter=query_param.metadata_filter, org_id=query_param.org_id
         )
-        logger.info(
-            f"[_get_vector_context] VDB returned {len(results) if results else 0} chunks"
-        )
+        raw_count = len(results) if results else 0
+        raw_top = max((r.get("distance", 0.0) for r in results), default=0.0) if results else 0.0
+        gap = query_param.cosine_threshold_gap or 0.0
+        if results and gap > 0:
+            results = apply_dynamic_threshold(
+                results, floor=cosine_threshold, gap=gap
+            )
+        kept_count = len(results) if results else 0
+        cutoff = max(cosine_threshold, raw_top - gap) if (raw_count and gap > 0) else cosine_threshold
+        if gap > 0:
+            logger.info(
+                f"[_get_vector_context] chunks: vdb_returned={raw_count} "
+                f"top_score={raw_top:.4f} cutoff={cutoff:.4f} "
+                f"(floor={cosine_threshold} gap={gap}) kept={kept_count}"
+            )
+        else:
+            logger.info(
+                f"[_get_vector_context] chunks: vdb_returned={raw_count} "
+                f"top_score={raw_top:.4f} (floor={cosine_threshold}, gap-filter disabled) "
+                f"kept={kept_count}"
+            )
         if results:
             for r in results:
                 logger.info(
-                    f"[_get_vector_context]   chunk file_path={r.get('file_path')} metadata={r.get('metadata')}"
+                    f"[_get_vector_context]   chunk score={r.get('distance', 0.0):.4f} "
+                    f"file_path={r.get('file_path')} metadata={r.get('metadata')}"
                 )
         if not results:
-            logger.info(
-                f"Naive query: 0 chunks (chunk_top_k:{search_top_k} cosine:{cosine_threshold})"
-            )
             return []
 
         valid_chunks = []
@@ -4604,8 +4621,11 @@ async def _get_node_data(
     query_param: QueryParam,
     query_embedding=None,
 ):
+    cosine_threshold = entities_vdb.cosine_better_than_threshold
+    gap = query_param.cosine_threshold_gap or 0.0
     logger.info(
-        f"Query nodes: {query} (top_k:{query_param.top_k}, cosine:{entities_vdb.cosine_better_than_threshold})"
+        f"Query nodes: {query} (top_k:{query_param.top_k}, "
+        f"floor={cosine_threshold}, gap={gap})"
     )
 
     logger.info(
@@ -4615,9 +4635,26 @@ async def _get_node_data(
         query, top_k=query_param.top_k, query_embedding=query_embedding,
         metadata_filter=query_param.metadata_filter, org_id=query_param.org_id
     )
-    logger.info(
-        f"[_get_node_data] VDB returned {len(results)} entities"
-    )
+    raw_count = len(results)
+    raw_top = max((r.get("distance", 0.0) for r in results), default=0.0)
+    if results and gap > 0:
+        results = apply_dynamic_threshold(
+            results, floor=cosine_threshold, gap=gap
+        )
+    kept_count = len(results)
+    cutoff = max(cosine_threshold, raw_top - gap) if (raw_count and gap > 0) else cosine_threshold
+    if gap > 0:
+        logger.info(
+            f"[_get_node_data] entities: vdb_returned={raw_count} "
+            f"top_score={raw_top:.4f} cutoff={cutoff:.4f} "
+            f"(floor={cosine_threshold} gap={gap}) kept={kept_count}"
+        )
+    else:
+        logger.info(
+            f"[_get_node_data] entities: vdb_returned={raw_count} "
+            f"top_score={raw_top:.4f} (floor={cosine_threshold}, gap-filter disabled) "
+            f"kept={kept_count}"
+        )
     for r in results:
         logger.info(
             f"[_get_node_data]   entity={r.get('entity_name')} metadata={r.get('metadata')}"
@@ -4901,8 +4938,11 @@ async def _get_edge_data(
     query_param: QueryParam,
     query_embedding=None,
 ):
+    cosine_threshold = relationships_vdb.cosine_better_than_threshold
+    gap = query_param.cosine_threshold_gap or 0.0
     logger.info(
-        f"Query edges: {keywords} (top_k:{query_param.top_k}, cosine:{relationships_vdb.cosine_better_than_threshold})"
+        f"Query edges: {keywords} (top_k:{query_param.top_k}, "
+        f"floor={cosine_threshold}, gap={gap})"
     )
     logger.info(
         f"[_get_edge_data] metadata_filter={query_param.metadata_filter}"
@@ -4912,9 +4952,26 @@ async def _get_edge_data(
         keywords, top_k=query_param.top_k, query_embedding=query_embedding,
         metadata_filter=query_param.metadata_filter, org_id=query_param.org_id
     )
-    logger.info(
-        f"[_get_edge_data] VDB returned {len(results)} relations"
-    )
+    raw_count = len(results)
+    raw_top = max((r.get("distance", 0.0) for r in results), default=0.0)
+    if results and gap > 0:
+        results = apply_dynamic_threshold(
+            results, floor=cosine_threshold, gap=gap
+        )
+    kept_count = len(results)
+    cutoff = max(cosine_threshold, raw_top - gap) if (raw_count and gap > 0) else cosine_threshold
+    if gap > 0:
+        logger.info(
+            f"[_get_edge_data] relations: vdb_returned={raw_count} "
+            f"top_score={raw_top:.4f} cutoff={cutoff:.4f} "
+            f"(floor={cosine_threshold} gap={gap}) kept={kept_count}"
+        )
+    else:
+        logger.info(
+            f"[_get_edge_data] relations: vdb_returned={raw_count} "
+            f"top_score={raw_top:.4f} (floor={cosine_threshold}, gap-filter disabled) "
+            f"kept={kept_count}"
+        )
     for r in results:
         logger.info(
             f"[_get_edge_data]   rel={r.get('src_id','?')}->{r.get('tgt_id','?')} metadata={r.get('metadata')}"
