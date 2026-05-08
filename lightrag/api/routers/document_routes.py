@@ -2509,15 +2509,22 @@ def create_document_routes(
             HTTPException: If an error occurs during text processing (500).
         """
         try:
-            # Check if file_source already exists in doc_status storage
+            # Check whether this (knowledgebase_id, file_source) tuple already
+            # exists in doc_status. Reproduce the doc_id hash used at ingestion
+            # (kb_id + normalized file_path) and look it up by ID — this is
+            # naturally tenant-scoped without needing extra fields on the
+            # doc_status schema.
+            kb_id_for_lookup = (request.metadata or {}).get("knowledgebase_id") or ""
             if (
                 request.file_source
                 and request.file_source.strip()
                 and request.file_source != "unknown_source"
             ):
-                existing_doc_data = await rag.doc_status.get_doc_by_file_path(
-                    request.file_source
+                normalized_source = normalize_file_path(request.file_source)
+                expected_doc_id = compute_mdhash_id(
+                    f"{kb_id_for_lookup}::{normalized_source}", prefix="doc-"
                 )
+                existing_doc_data = await rag.doc_status.get_by_id(expected_doc_id)
                 if existing_doc_data:
                     # Get document status and track_id from existing document
                     status = existing_doc_data.get("status", "unknown")
@@ -2579,7 +2586,11 @@ def create_document_routes(
             HTTPException: If an error occurs during text processing (500).
         """
         try:
-            # Check if any file_sources already exist in doc_status storage
+            # Check whether any (knowledgebase_id, file_source) tuple already
+            # exists in doc_status. Reproduce the doc_id hash used at ingestion
+            # (kb_id + normalized file_path) and look it up by ID — naturally
+            # tenant-scoped without extra fields on the doc_status schema.
+            kb_id_for_lookup = (request.metadata or {}).get("knowledgebase_id") or ""
             if request.file_sources:
                 for file_source in request.file_sources:
                     if (
@@ -2587,8 +2598,13 @@ def create_document_routes(
                         and file_source.strip()
                         and file_source != "unknown_source"
                     ):
-                        existing_doc_data = await rag.doc_status.get_doc_by_file_path(
-                            file_source
+                        normalized_source = normalize_file_path(file_source)
+                        expected_doc_id = compute_mdhash_id(
+                            f"{kb_id_for_lookup}::{normalized_source}",
+                            prefix="doc-",
+                        )
+                        existing_doc_data = await rag.doc_status.get_by_id(
+                            expected_doc_id
                         )
                         if existing_doc_data:
                             # Get document status and track_id from existing document
