@@ -1466,12 +1466,14 @@ class LightRAG:
                 for id_, doc, path in zip(ids, input, file_paths)
             }
         else:
-            # Generate contents dict with IDs based on content + file_path
-            # This allows the same content to be ingested under different file sources
+            # Generate contents dict with IDs based on knowledgebase_id + file_path.
+            # Scoping by knowledgebase_id ensures the same filename uploaded to
+            # different KBs produces distinct doc_ids (per-KB isolation).
+            kb_id = (metadata or {}).get("knowledgebase_id") or ""
             contents = {}
             for doc, path in zip(input, file_paths):
                 cleaned_content = sanitize_text_for_encoding(doc)
-                doc_id = compute_mdhash_id(path, prefix="doc-")
+                doc_id = compute_mdhash_id(f"{kb_id}::{path}", prefix="doc-")
                 contents[doc_id] = {
                     "content": cleaned_content,
                     "file_path": path,
