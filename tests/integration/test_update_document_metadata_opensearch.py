@@ -237,6 +237,161 @@ async def test_patch_preserves_other_docs_metadata_on_shared_chunks(
             assert meta.get("src") == "A2", meta
 
 
+async def _nodes_edges_for_doc(rag, chunk_ids):
+    """Scan the graph nodes/edges indices for records sourced from chunk_ids.
+
+    Returns (node_hits, edge_hits) as raw OpenSearch hits (full _source) so
+    tests can assert on the stored ``metadata`` of the document's entities and
+    relations.
+    """
+    graph = rag.chunk_entity_relation_graph
+    await graph._refresh_graph_indices_if_dirty(refresh_nodes=True, refresh_edges=True)
+    node_hits = await graph._scan_by_source_ids(
+        graph._nodes_index, list(chunk_ids), source_fields=True
+    )
+    edge_hits = await graph._scan_by_source_ids(
+        graph._edges_index, list(chunk_ids), source_fields=True
+    )
+    return node_hits, edge_hits
+
+
+def _meta_has_value(meta, key, value):
+    """True if metadata (dict or list-of-dicts) contains key==value somewhere."""
+    if isinstance(meta, dict):
+        return meta.get(key) == value
+    if isinstance(meta, list):
+        return any(isinstance(m, dict) and m.get(key) == value for m in meta)
+    return False
+
+
+@pytest.mark.asyncio
+async def test_patch_propagates_to_entities_and_relations(opensearch_rag):
+    """PATCH must cascade onto graph nodes/edges and the entity/relation vector
+    indices, not just doc-status and chunks."""
+    rag = opensearch_rag
+    org_id = f"org-{uuid.uuid4().hex[:6]}"
+    doc_id = await _ingest_one_doc(
+        rag,
+        content=(
+            "Alice Johnson works at Acme Corporation in Paris. "
+            "Acme Corporation was founded by Bob Smith in 1998. "
+            "Alice Johnson manages the research team at Acme Corporation."
+        ),
+        file_path=f"graph-{uuid.uuid4().hex[:6]}.txt",
+        org_id=org_id,
+        metadata={"label": "before"},
+    )
+
+    client = _make_client(rag)
+    response = client.patch(
+        f"/documents/{doc_id}/metadata",
+        headers={"X-Org-Id": org_id},
+        json={"metadata": {"label": "after"}},
+    )
+    assert response.status_code == 200, response.text
+
+    # Let the background graph cascade run, then make search views current.
+    await asyncio.sleep(3)
+    await rag.chunk_entity_relation_graph.index_done_callback()
+    await rag.entities_vdb.index_done_callback()
+    await rag.relationships_vdb.index_done_callback()
+
+    stored = await rag.doc_status.get_by_id(doc_id)
+    chunk_ids = stored["chunks_list"]
+    assert chunk_ids, "doc has no chunks; ingestion may have failed"
+
+    node_hits, edge_hits = await _nodes_edges_for_doc(rag, chunk_ids)
+    assert node_hits, "no entities were extracted; cannot verify graph cascade"
+
+    # Every graph node/edge sourced from this doc must reflect the new value.
+    for hit in node_hits:
+        meta = hit["_source"].get("metadata")
+        assert _meta_has_value(meta, "label", "after"), hit["_source"]
+        assert not _meta_has_value(meta, "label", "before"), hit["_source"]
+    for hit in edge_hits:
+        meta = hit["_source"].get("metadata")
+        assert _meta_has_value(meta, "label", "after"), hit["_source"]
+
+    # Entity/relation vector records (IDs derived from names/pairs) must match.
+    from lightrag.utils import compute_mdhash_id
+
+    entity_ids = [
+        compute_mdhash_id(str(hit["_id"]), prefix="ent-") for hit in node_hits
+    ]
+    entity_records = await rag.entities_vdb.get_by_ids(entity_ids)
+    seen_entity = False
+    for rec in entity_records:
+        if rec is None:
+            continue
+        seen_entity = True
+        assert _meta_has_value(rec.get("metadata"), "label", "after"), rec
+    assert seen_entity, "no entity vector records found for derived IDs"
+
+    rel_ids = set()
+    for hit in edge_hits:
+        src = hit["_source"].get("source_node_id")
+        tgt = hit["_source"].get("target_node_id")
+        if src is None or tgt is None:
+            continue
+        rel_ids.add(compute_mdhash_id(f"{src}{tgt}", prefix="rel-"))
+        rel_ids.add(compute_mdhash_id(f"{tgt}{src}", prefix="rel-"))
+    if rel_ids:
+        rel_records = await rag.relationships_vdb.get_by_ids(list(rel_ids))
+        for rec in rel_records:
+            if rec is None:
+                continue
+            assert _meta_has_value(rec.get("metadata"), "label", "after"), rec
+
+
+@pytest.mark.asyncio
+async def test_patch_preserves_other_docs_metadata_on_shared_entities(
+    opensearch_rag,
+):
+    """An entity extracted from two docs carries a list of per-doc metadata.
+    PATCHing only doc A must replace doc A's entry and leave doc B's intact."""
+    rag = opensearch_rag
+    org_id = f"org-{uuid.uuid4().hex[:6]}"
+
+    shared_content = (
+        "Acme Corporation is headquartered in Paris. "
+        "Acme Corporation employs thousands of people worldwide."
+    )
+
+    doc_a = await _ingest_one_doc(
+        rag, content=shared_content, file_path=f"entA-{uuid.uuid4().hex[:6]}.txt",
+        org_id=org_id, metadata={"src": "A"},
+    )
+    await _ingest_one_doc(
+        rag, content=shared_content, file_path=f"entB-{uuid.uuid4().hex[:6]}.txt",
+        org_id=org_id, metadata={"src": "B"},
+    )
+
+    client = _make_client(rag)
+    response = client.patch(
+        f"/documents/{doc_a}/metadata",
+        headers={"X-Org-Id": org_id},
+        json={"metadata": {"src": "A2"}},
+    )
+    assert response.status_code == 200, response.text
+
+    await asyncio.sleep(3)
+    await rag.chunk_entity_relation_graph.index_done_callback()
+
+    stored_a = await rag.doc_status.get_by_id(doc_a)
+    node_hits, _ = await _nodes_edges_for_doc(rag, stored_a["chunks_list"])
+    assert node_hits, "no shared entities found"
+
+    for hit in node_hits:
+        meta = hit["_source"].get("metadata")
+        if isinstance(meta, list):
+            srcs = sorted(m.get("src") for m in meta if isinstance(m, dict))
+            # Doc A's entry updated to A2; doc B's "B" entry must survive.
+            assert "A2" in srcs, meta
+            assert "A" not in srcs, meta
+        else:
+            assert meta.get("src") == "A2", meta
+
+
 @pytest.mark.asyncio
 async def test_patch_returns_404_for_nonexistent_doc(opensearch_rag):
     rag = opensearch_rag

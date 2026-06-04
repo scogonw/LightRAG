@@ -74,6 +74,48 @@ def _apply_metadata_filter(
     return filtered
 
 
+# Painless script that replaces a record's ``metadata``, handling the three
+# shapes the field can take (missing/null, single dict, list of dicts). On
+# list-shaped metadata only the entry equal to ``old_metadata`` is replaced,
+# preserving the contributions of other source documents (multi-source records
+# such as chunks/entities/relations shared across documents).
+_METADATA_REPLACE_PAINLESS = (
+    "def m = ctx._source.metadata; "
+    "if (m == null) { ctx._source.metadata = params.new; } "
+    "else if (m instanceof Map) { ctx._source.metadata = params.new; } "
+    "else if (m instanceof List) { "
+    "  for (int i = 0; i < m.size(); i++) { "
+    "    if (m.get(i).equals(params.old)) { m.set(i, params.new); break; } "
+    "  } "
+    "}"
+)
+
+
+def _metadata_replace_script(old_metadata: dict, new_metadata: dict) -> dict:
+    """Build the OpenSearch update script that replaces a record's metadata."""
+    return {
+        "lang": "painless",
+        "source": _METADATA_REPLACE_PAINLESS,
+        "params": {"old": old_metadata, "new": new_metadata},
+    }
+
+
+def _summarize_bulk_update_errors(success: int, errors: list | None) -> dict:
+    """Classify async_bulk update errors into updated/not_found/failures counts."""
+    not_found = 0
+    failures = 0
+    for err in errors or []:
+        update_info = err.get("update") if isinstance(err, dict) else None
+        if isinstance(update_info, dict) and (
+            update_info.get("result") == "not_found"
+            or update_info.get("status") == 404
+        ):
+            not_found += 1
+        else:
+            failures += 1
+    return {"updated": success, "failures": failures, "not_found": not_found}
+
+
 # Keys in metadata_filter that are consumed by the knowledgebase filter builder
 _KB_FILTER_KEYS = {"agent_kb_ids", "user_id", "user_kb_ids", "team_kb_ids"}
 
@@ -1904,6 +1946,134 @@ class OpenSearchGraphStorage(BaseGraphStorage):
         except OpenSearchException as e:
             logger.error(f"[{self.workspace}] Error during batch edge upsert: {e}")
 
+    # --- Metadata cascade ---
+
+    async def _scan_by_source_ids(
+        self, index: str, chunk_ids: list[str], source_fields
+    ) -> list[dict]:
+        """Scan an index for docs whose ``source_ids`` match any of ``chunk_ids``.
+
+        Returns the raw OpenSearch hits with ``_source`` limited to
+        ``source_fields`` (pass ``False`` to fetch IDs only). Uses PIT +
+        search_after to page through all matches.
+        """
+        query = {"terms": {"source_ids": chunk_ids}}
+        hits_out: list[dict] = []
+        pit = await self.client.create_pit(index=index, params={"keep_alive": "1m"})
+        pit_id = pit["pit_id"]
+        try:
+            search_after = None
+            while True:
+                body = {
+                    "query": query,
+                    "_source": source_fields,
+                    "size": 10000,
+                    "pit": {"id": pit_id, "keep_alive": "1m"},
+                    "sort": [{"_shard_doc": "asc"}],
+                }
+                if search_after:
+                    body["search_after"] = search_after
+                response = await self.client.search(body=body)
+                hits = response["hits"]["hits"]
+                if not hits:
+                    break
+                hits_out.extend(hits)
+                search_after = hits[-1]["sort"]
+                if len(hits) < 10000:
+                    break
+        finally:
+            try:
+                await self.client.delete_pit(body={"pit_id": [pit_id]})
+            except Exception:
+                pass
+        return hits_out
+
+    async def _bulk_update_script(
+        self, index: str, ids: list[str], script: dict
+    ) -> dict:
+        """Apply an update ``script`` to the listed IDs via the bulk API."""
+        if not ids:
+            return {"updated": 0, "failures": 0, "not_found": 0}
+        actions = [
+            {"_op_type": "update", "_index": index, "_id": doc_id, "script": script}
+            for doc_id in ids
+        ]
+        success, errors = await helpers.async_bulk(
+            self.client, actions, raise_on_error=False, refresh=True
+        )
+        return _summarize_bulk_update_errors(success, errors)
+
+    async def update_metadata_by_chunk_ids(
+        self, chunk_ids: list[str], old_metadata: dict, new_metadata: dict
+    ) -> dict:
+        """Cascade a document metadata change onto graph nodes and edges.
+
+        Locates nodes/edges whose ``source_ids`` reference any of ``chunk_ids``
+        (i.e. that were extracted from the patched document) and replaces the
+        matching ``metadata`` entry on each. Multi-source records keep the
+        contributions of their other source documents (only the list entry
+        equal to ``old_metadata`` is replaced).
+
+        Returns a summary including the affected entity names and edge endpoint
+        pairs, so the caller can cascade the same change to the entity/relation
+        vector indices (whose record IDs are derived from those names/pairs).
+        """
+        empty = {
+            "entity_names": [],
+            "edge_pairs": [],
+            "nodes": {"updated": 0, "failures": 0, "not_found": 0},
+            "edges": {"updated": 0, "failures": 0, "not_found": 0},
+        }
+        if not chunk_ids or not self._indices_ready:
+            return empty
+        try:
+            # Make recent writes visible to the source_ids search.
+            await self._refresh_graph_indices_if_dirty(
+                refresh_nodes=True, refresh_edges=True
+            )
+
+            node_hits = await self._scan_by_source_ids(
+                self._nodes_index, chunk_ids, source_fields=False
+            )
+            edge_hits = await self._scan_by_source_ids(
+                self._edges_index,
+                chunk_ids,
+                source_fields=["source_node_id", "target_node_id"],
+            )
+
+            node_ids = [hit["_id"] for hit in node_hits]
+            edge_ids = [hit["_id"] for hit in edge_hits]
+            edge_pairs = [
+                (
+                    hit["_source"].get("source_node_id"),
+                    hit["_source"].get("target_node_id"),
+                )
+                for hit in edge_hits
+            ]
+
+            script = _metadata_replace_script(old_metadata, new_metadata)
+            node_result = await self._bulk_update_script(
+                self._nodes_index, node_ids, script
+            )
+            edge_result = await self._bulk_update_script(
+                self._edges_index, edge_ids, script
+            )
+
+            return {
+                "entity_names": node_ids,
+                "edge_pairs": edge_pairs,
+                "nodes": node_result,
+                "edges": edge_result,
+            }
+        except OpenSearchException as e:
+            if _is_missing_index_error(e):
+                self._mark_indices_missing()
+                return empty
+            logger.error(
+                f"[{self.workspace}] Error cascading metadata to graph: {e}"
+            )
+            return empty
+
     # --- Delete operations ---
 
     async def delete_node(self, node_id: str) -> None:
@@ -3222,21 +3392,7 @@ class OpenSearchVectorDBStorage(BaseVectorStorage):
         if not self._index_ready:
             return {"updated": 0, "failures": 0, "not_found": len(chunk_ids)}
 
-        painless = (
-            "def m = ctx._source.metadata; "
-            "if (m == null) { ctx._source.metadata = params.new; } "
-            "else if (m instanceof Map) { ctx._source.metadata = params.new; } "
-            "else if (m instanceof List) { "
-            "  for (int i = 0; i < m.size(); i++) { "
-            "    if (m.get(i).equals(params.old)) { m.set(i, params.new); break; } "
-            "  } "
-            "}"
-        )
-        script = {
-            "lang": "painless",
-            "source": painless,
-            "params": {"old": old_metadata, "new": new_metadata},
-        }
+        script = _metadata_replace_script(old_metadata, new_metadata)
         actions = [
             {
                 "_op_type": "update",
@@ -3259,18 +3415,7 @@ class OpenSearchVectorDBStorage(BaseVectorStorage):
             )
             return {"updated": 0, "failures": len(chunk_ids), "not_found": 0}
 
-        not_found = 0
-        failures = 0
-        for err in errors or []:
-            update_info = err.get("update") if isinstance(err, dict) else None
-            if isinstance(update_info, dict) and (
-                update_info.get("result") == "not_found"
-                or update_info.get("status") == 404
-            ):
-                not_found += 1
-            else:
-                failures += 1
-        return {"updated": success, "failures": failures, "not_found": not_found}
+        return _summarize_bulk_update_errors(success, errors)
 
     async def drop(self) -> dict[str, str]:
         """Delete and recreate the vector index."""
