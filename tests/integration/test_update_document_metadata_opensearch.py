@@ -131,7 +131,7 @@ async def test_patch_propagates_to_single_source_chunks(opensearch_rag):
         ),
         file_path=f"single-{uuid.uuid4().hex[:6]}.txt",
         org_id=org_id,
-        metadata={"label": "before"},
+        metadata={"label": "before", "resource_id": "res-single"},
     )
 
     client = _make_client(rag)
@@ -152,7 +152,11 @@ async def test_patch_propagates_to_single_source_chunks(opensearch_rag):
     chunks = await rag.chunks_vdb.get_by_ids(chunk_ids)
     for chunk in chunks:
         assert chunk is not None, "chunk missing from vector store"
-        assert chunk["metadata"] == {"label": "after"}, chunk
+        # Anchored upsert replaces this doc's entry; resource_id is retained.
+        assert chunk["metadata"] == {
+            "label": "after",
+            "resource_id": "res-single",
+        }, chunk
 
 
 @pytest.mark.asyncio
@@ -164,7 +168,7 @@ async def test_patch_null_value_removes_key(opensearch_rag):
         content="Content for null-deletion test, sufficiently long.",
         file_path=f"null-{uuid.uuid4().hex[:6]}.txt",
         org_id=org_id,
-        metadata={"keep": "yes", "remove": "yes"},
+        metadata={"keep": "yes", "remove": "yes", "resource_id": "res-null"},
     )
 
     client = _make_client(rag)
@@ -174,10 +178,10 @@ async def test_patch_null_value_removes_key(opensearch_rag):
         json={"metadata": {"remove": None}},
     )
     assert response.status_code == 200, response.text
-    assert response.json()["metadata"] == {"keep": "yes"}
+    assert response.json()["metadata"] == {"keep": "yes", "resource_id": "res-null"}
 
     stored = await rag.doc_status.get_by_id(doc_id)
-    assert stored["metadata"] == {"keep": "yes"}
+    assert stored["metadata"] == {"keep": "yes", "resource_id": "res-null"}
 
     await asyncio.sleep(2)
     await rag.chunks_vdb.index_done_callback()
@@ -206,11 +210,11 @@ async def test_patch_preserves_other_docs_metadata_on_shared_chunks(
 
     doc_a = await _ingest_one_doc(
         rag, content=shared_content, file_path=f"shareA-{uuid.uuid4().hex[:6]}.txt",
-        org_id=org_id, metadata={"src": "A"},
+        org_id=org_id, metadata={"src": "A", "resource_id": "res-A"},
     )
     await _ingest_one_doc(
         rag, content=shared_content, file_path=f"shareB-{uuid.uuid4().hex[:6]}.txt",
-        org_id=org_id, metadata={"src": "B"},
+        org_id=org_id, metadata={"src": "B", "resource_id": "res-B"},
     )
 
     client = _make_client(rag)
@@ -228,11 +232,12 @@ async def test_patch_preserves_other_docs_metadata_on_shared_chunks(
     chunks = await rag.chunks_vdb.get_by_ids(stored_a["chunks_list"])
     for chunk in chunks:
         meta = chunk["metadata"]
+        # Anchored on resource_id: doc A's entry (res-A) becomes src=A2;
+        # doc B's entry (res-B) is untouched.
         if isinstance(meta, list):
-            keys_present = sorted(
-                m.get("src") for m in meta if isinstance(m, dict)
-            )
-            assert keys_present == ["A2", "B"], meta
+            by_res = {m.get("resource_id"): m.get("src") for m in meta if isinstance(m, dict)}
+            assert by_res.get("res-A") == "A2", meta
+            assert by_res.get("res-B") == "B", meta
         else:
             assert meta.get("src") == "A2", meta
 
@@ -279,7 +284,7 @@ async def test_patch_propagates_to_entities_and_relations(opensearch_rag):
         ),
         file_path=f"graph-{uuid.uuid4().hex[:6]}.txt",
         org_id=org_id,
-        metadata={"label": "before"},
+        metadata={"label": "before", "resource_id": "res-graph"},
     )
 
     client = _make_client(rag)
@@ -359,11 +364,11 @@ async def test_patch_preserves_other_docs_metadata_on_shared_entities(
 
     doc_a = await _ingest_one_doc(
         rag, content=shared_content, file_path=f"entA-{uuid.uuid4().hex[:6]}.txt",
-        org_id=org_id, metadata={"src": "A"},
+        org_id=org_id, metadata={"src": "A", "resource_id": "res-entA"},
     )
     await _ingest_one_doc(
         rag, content=shared_content, file_path=f"entB-{uuid.uuid4().hex[:6]}.txt",
-        org_id=org_id, metadata={"src": "B"},
+        org_id=org_id, metadata={"src": "B", "resource_id": "res-entB"},
     )
 
     client = _make_client(rag)
@@ -383,11 +388,16 @@ async def test_patch_preserves_other_docs_metadata_on_shared_entities(
 
     for hit in node_hits:
         meta = hit["_source"].get("metadata")
+        # Anchored on resource_id: doc A's entry (res-entA) becomes src=A2.
+        # Doc B's entry (res-entB), if present, must survive. Every entity
+        # extracted from doc A must end up with an entry for res-entA (replaced
+        # or injected), so src=A2 is always present and the old src=A is gone.
         if isinstance(meta, list):
-            srcs = sorted(m.get("src") for m in meta if isinstance(m, dict))
-            # Doc A's entry updated to A2; doc B's "B" entry must survive.
-            assert "A2" in srcs, meta
-            assert "A" not in srcs, meta
+            by_res = {m.get("resource_id"): m.get("src") for m in meta if isinstance(m, dict)}
+            assert by_res.get("res-entA") == "A2", meta
+            assert "A" not in by_res.values(), meta
+            if "res-entB" in by_res:
+                assert by_res["res-entB"] == "B", meta
         else:
             assert meta.get("src") == "A2", meta
 
@@ -510,7 +520,7 @@ async def test_patch_idempotent(opensearch_rag):
         content="Content for idempotency test.",
         file_path=f"idem-{uuid.uuid4().hex[:6]}.txt",
         org_id=org_id,
-        metadata={"v": 1},
+        metadata={"v": 1, "resource_id": "res-idem"},
     )
 
     client = _make_client(rag)
@@ -530,15 +540,18 @@ async def test_patch_idempotent(opensearch_rag):
     await rag.chunks_vdb.index_done_callback()
 
     stored = await rag.doc_status.get_by_id(doc_id)
-    assert stored["metadata"] == {"v": 2, "tag": "x"}
+    assert stored["metadata"] == {"v": 2, "tag": "x", "resource_id": "res-idem"}
 
+    expected = {"v": 2, "tag": "x", "resource_id": "res-idem"}
     chunks = await rag.chunks_vdb.get_by_ids(stored["chunks_list"])
     for chunk in chunks:
         meta = chunk["metadata"]
         if isinstance(meta, dict):
-            assert meta == {"v": 2, "tag": "x"}
+            # Idempotent: re-running the same patch must not duplicate entries.
+            assert meta == expected
         elif isinstance(meta, list):
-            assert {"v": 2, "tag": "x"} in meta
+            assert expected in meta
+            assert meta.count(expected) == 1
 
 
 @pytest.mark.asyncio

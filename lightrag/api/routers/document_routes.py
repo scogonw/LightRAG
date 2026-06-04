@@ -119,6 +119,23 @@ def _shallow_merge_metadata(
     return result
 
 
+# Keys the ingestion pipeline writes into the doc-status ``metadata`` field for
+# its own bookkeeping (see lightrag.py processing-status updates). They never
+# exist on chunk/entity/relation metadata, so they must be stripped before the
+# doc's metadata is cascaded onto those records.
+_DOC_STATUS_ONLY_METADATA_KEYS = {"processing_start_time", "processing_end_time"}
+
+
+def _clean_cascade_entry(metadata: dict | None) -> dict:
+    """Strip doc-status bookkeeping keys to get the metadata entry that should
+    be stored on the document's chunks/entities/relations."""
+    return {
+        k: v
+        for k, v in (metadata or {}).items()
+        if k not in _DOC_STATUS_ONLY_METADATA_KEYS
+    }
+
+
 def sanitize_filename(filename: str, input_dir: Path) -> str:
     """
     Sanitize uploaded filename to prevent Path Traversal attacks.
@@ -1941,15 +1958,14 @@ async def cascade_metadata_to_chunks(
     doc_id: str,
     org_id: str,
     chunk_ids: list[str],
-    old_metadata: dict,
-    new_metadata: dict,
+    resource_id: str,
+    entry: dict,
 ) -> None:
     """Background task: propagate a metadata change to the chunks vector index.
 
-    Idempotent. Single-source chunks are overwritten outright; multi-source
-    chunks have only the entry equal to ``old_metadata`` replaced. If no
-    entry matches (drift), that chunk is left unchanged and counted in
-    ``failures``/``not_found`` for the log line.
+    Idempotent. The document's metadata ``entry`` is upserted on each chunk,
+    anchored on ``resource_id``: the matching list entry is replaced (or
+    appended if absent), preserving other documents' entries on shared chunks.
     """
     from lightrag.kg.opensearch_impl import OpenSearchVectorDBStorage
     from lightrag.kg.shared_storage import (
@@ -1994,11 +2010,18 @@ async def cascade_metadata_to_chunks(
         )
         return
 
+    if not resource_id:
+        logger.warning(
+            f"chunk metadata cascade skipped: doc_id={doc_id} org_id={org_id} "
+            f"document metadata has no resource_id to anchor on"
+        )
+        return
+
     try:
         result = await rag.chunks_vdb.update_metadata_for_ids(
-            chunk_ids=chunk_ids,
-            old_metadata=old_metadata,
-            new_metadata=new_metadata,
+            record_ids=chunk_ids,
+            resource_id=resource_id,
+            entry=entry,
         )
         logger.info(
             f"chunk metadata cascade: doc_id={doc_id} org_id={org_id} "
@@ -2017,8 +2040,8 @@ async def cascade_metadata_to_chunks(
         elif result["updated"] == 0 and len(chunk_ids) > 0:
             warning_msg = (
                 f"chunk metadata cascade: doc_id={doc_id} org_id={org_id} "
-                f"updated 0 of {len(chunk_ids)} chunks (drift between "
-                f"doc-status snapshot and stored chunk metadata)"
+                f"updated 0 of {len(chunk_ids)} chunks "
+                f"(not_found={result['not_found']}; chunks may have been deleted)"
             )
             logger.warning(warning_msg)
             await _record_history(warning_msg)
@@ -2038,17 +2061,18 @@ async def cascade_metadata_to_graph(
     doc_id: str,
     org_id: str,
     chunk_ids: list[str],
-    old_metadata: dict,
-    new_metadata: dict,
+    resource_id: str,
+    entry: dict,
 ) -> None:
     """Background task: propagate a metadata change to graph nodes/edges and the
     entity/relation vector indices.
 
-    Locates the document's entities/relations via its chunk IDs, replaces the
-    matching ``metadata`` entry on each (multi-source records keep the
-    contributions of their other source documents), then mirrors the change
-    onto ``entities_vdb`` / ``relationships_vdb`` using record IDs derived from
-    the affected entity names and edge endpoint pairs.
+    Locates the document's entities/relations via its chunk IDs and upserts the
+    document's metadata ``entry`` on each, anchored on ``resource_id`` (matching
+    entry replaced, or appended if absent — so the change reaches even shared
+    records that never carried this doc's entry). Other documents' entries are
+    preserved. Mirrors the change onto ``entities_vdb`` / ``relationships_vdb``
+    using record IDs derived from the affected entity names and edge pairs.
 
     Idempotent. Never raises — the HTTP response was already sent.
     """
@@ -2101,11 +2125,18 @@ async def cascade_metadata_to_graph(
         )
         return
 
+    if not resource_id:
+        logger.warning(
+            f"graph metadata cascade skipped: doc_id={doc_id} org_id={org_id} "
+            f"document metadata has no resource_id to anchor on"
+        )
+        return
+
     try:
         graph_result = await rag.chunk_entity_relation_graph.update_metadata_by_chunk_ids(
             chunk_ids=chunk_ids,
-            old_metadata=old_metadata,
-            new_metadata=new_metadata,
+            resource_id=resource_id,
+            entry=entry,
         )
 
         # Derive vector-index record IDs from the affected names/pairs. The
@@ -2124,14 +2155,14 @@ async def cascade_metadata_to_graph(
             rel_ids.add(compute_mdhash_id(f"{tgt}{src}", prefix="rel-"))
 
         entity_vdb_result = await rag.entities_vdb.update_metadata_for_ids(
-            chunk_ids=entity_ids,
-            old_metadata=old_metadata,
-            new_metadata=new_metadata,
+            record_ids=entity_ids,
+            resource_id=resource_id,
+            entry=entry,
         )
         relation_vdb_result = await rag.relationships_vdb.update_metadata_for_ids(
-            chunk_ids=list(rel_ids),
-            old_metadata=old_metadata,
-            new_metadata=new_metadata,
+            record_ids=list(rel_ids),
+            resource_id=resource_id,
+            entry=entry,
         )
 
         logger.info(
@@ -3306,19 +3337,22 @@ def create_document_routes(
             (local/global/hybrid/mix) filter on the new metadata.
 
         The document's entities/relations are located via its chunk IDs
-        (``source_ids`` references), so no per-entry doc tagging is required.
+        (``source_ids`` references). The cascade is anchored on the document's
+        ``resource_id`` (stable across access_level / knowledgebase_id changes):
+        the metadata entry belonging to this document is replaced in place, or
+        appended if the record never carried one (e.g. an entity shared with
+        other documents). Other documents' entries are always preserved, and
+        doc-status bookkeeping keys (processing_start_time / processing_end_time)
+        are stripped before writing to records.
 
         Limitations:
           - Only supported when ``doc_status``, ``chunks_vdb``,
             ``chunk_entity_relation_graph``, ``entities_vdb`` and
             ``relationships_vdb`` are all backed by OpenSearch. Other backends
             return 501.
-          - When a chunk/entity/relation is shared across multiple documents,
-            the cascade replaces only the metadata entry equal to the doc's
-            previous metadata snapshot, preserving the other documents'
-            contributions. If the snapshot has drifted from what's stored on
-            the record, that record is left unchanged (and counted in the
-            cascade's drift warning).
+          - The cascade requires the document's metadata to carry a
+            ``resource_id`` to anchor on; without it the entity/relation/chunk
+            cascade is skipped (the doc-status row is still updated).
           - The cascade is asynchronous: for a brief window after the 200,
             graph-mode queries may still observe the previous metadata.
 
@@ -3406,16 +3440,21 @@ def create_document_routes(
             updated_record["updated_at"] = datetime.now(timezone.utc).isoformat()
             await rag.doc_status.upsert({doc_id: updated_record})
 
-            # 8. Dispatch background cascades (chunks + graph/entity/relation)
+            # 8. Dispatch background cascades (chunks + graph/entity/relation).
+            #    Records store the document's metadata WITHOUT doc-status
+            #    bookkeeping keys, and the cascade is anchored on resource_id
+            #    (stable across access_level / knowledgebase_id changes).
             chunk_ids = list(existing.get("chunks_list") or [])
+            cascade_entry = _clean_cascade_entry(new_metadata)
+            resource_id = cascade_entry.get("resource_id")
             background_tasks.add_task(
                 cascade_metadata_to_chunks,
                 rag,
                 doc_id,
                 x_org_id,
                 chunk_ids,
-                old_metadata,
-                new_metadata,
+                resource_id,
+                cascade_entry,
             )
             background_tasks.add_task(
                 cascade_metadata_to_graph,
@@ -3423,8 +3462,8 @@ def create_document_routes(
                 doc_id,
                 x_org_id,
                 chunk_ids,
-                old_metadata,
-                new_metadata,
+                resource_id,
+                cascade_entry,
             )
 
             return UpdateDocumentMetadataResponse(

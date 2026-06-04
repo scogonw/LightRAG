@@ -10,6 +10,7 @@ from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from lightrag.api.routers.document_routes import (  # noqa: E402
+    _clean_cascade_entry,
     _shallow_merge_metadata,
     create_document_routes,
 )
@@ -43,6 +44,32 @@ def test_shallow_merge_does_not_mutate_existing():
     existing = {"a": 1}
     _shallow_merge_metadata(existing, {"b": 2})
     assert existing == {"a": 1}
+
+
+def test_clean_cascade_entry_strips_bookkeeping_keys():
+    entry = _clean_cascade_entry(
+        {
+            "access_level": "ORGANIZATION",
+            "knowledgebase_id": "kb1",
+            "resource_id": "r1",
+            "processing_start_time": 123,
+            "processing_end_time": 456,
+        }
+    )
+    assert entry == {
+        "access_level": "ORGANIZATION",
+        "knowledgebase_id": "kb1",
+        "resource_id": "r1",
+    }
+
+
+def test_clean_cascade_entry_keeps_user_keys():
+    entry = _clean_cascade_entry({"department": "eng", "year": 2026, "resource_id": "r1"})
+    assert entry == {"department": "eng", "year": 2026, "resource_id": "r1"}
+
+
+def test_clean_cascade_entry_none_is_empty():
+    assert _clean_cascade_entry(None) == {}
 
 
 def _make_test_client_with_non_opensearch_backend():

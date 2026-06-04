@@ -74,29 +74,49 @@ def _apply_metadata_filter(
     return filtered
 
 
-# Painless script that replaces a record's ``metadata``, handling the three
-# shapes the field can take (missing/null, single dict, list of dicts). On
-# list-shaped metadata only the entry equal to ``old_metadata`` is replaced,
-# preserving the contributions of other source documents (multi-source records
-# such as chunks/entities/relations shared across documents).
-_METADATA_REPLACE_PAINLESS = (
+# Painless script that upserts a single document's metadata entry, anchored on
+# ``resource_id``. ``metadata`` on a record can be missing/null, a single dict
+# (single-source), or a list of dicts (multi-source records shared across
+# documents). The entry belonging to the patched document is identified by its
+# ``resource_id`` (stable across access_level / knowledgebase_id changes) and
+# REPLACED with ``params.entry``. If no entry for that resource_id exists, the
+# new entry is appended — so a document's access change reaches every record it
+# produced, even shared ones that never accumulated its metadata. Other
+# documents' entries are always preserved.
+_METADATA_UPSERT_PAINLESS = (
+    "def entry = params.entry; "
+    "def rid = params.rid; "
+    "if (rid == null) { return; } "
     "def m = ctx._source.metadata; "
-    "if (m == null) { ctx._source.metadata = params.new; } "
-    "else if (m instanceof Map) { ctx._source.metadata = params.new; } "
+    "if (m == null) { ctx._source.metadata = entry; } "
+    "else if (m instanceof Map) { "
+    "  if (rid.equals(m.get('resource_id'))) { ctx._source.metadata = entry; } "
+    "  else { ctx._source.metadata = [m, entry]; } "
+    "} "
     "else if (m instanceof List) { "
+    "  boolean replaced = false; "
     "  for (int i = 0; i < m.size(); i++) { "
-    "    if (m.get(i).equals(params.old)) { m.set(i, params.new); break; } "
+    "    def e = m.get(i); "
+    "    if (e instanceof Map && rid.equals(e.get('resource_id'))) { "
+    "      m.set(i, entry); replaced = true; break; "
+    "    } "
     "  } "
+    "  if (!replaced) { m.add(entry); } "
     "}"
 )
 
 
-def _metadata_replace_script(old_metadata: dict, new_metadata: dict) -> dict:
-    """Build the OpenSearch update script that replaces a record's metadata."""
+def _metadata_upsert_script(resource_id: str, entry: dict) -> dict:
+    """Build the OpenSearch update script that upserts a doc's metadata entry.
+
+    ``entry`` is the patched document's clean metadata (its access_level /
+    knowledgebase_id / resource_id and any user keys, minus doc-status
+    bookkeeping fields). ``resource_id`` anchors which list entry it replaces.
+    """
     return {
         "lang": "painless",
-        "source": _METADATA_REPLACE_PAINLESS,
-        "params": {"old": old_metadata, "new": new_metadata},
+        "source": _METADATA_UPSERT_PAINLESS,
+        "params": {"rid": resource_id, "entry": entry},
     }
 
 
@@ -2004,15 +2024,15 @@ class OpenSearchGraphStorage(BaseGraphStorage):
         return _summarize_bulk_update_errors(success, errors)
 
     async def update_metadata_by_chunk_ids(
-        self, chunk_ids: list[str], old_metadata: dict, new_metadata: dict
+        self, chunk_ids: list[str], resource_id: str, entry: dict
     ) -> dict:
         """Cascade a document metadata change onto graph nodes and edges.
 
         Locates nodes/edges whose ``source_ids`` reference any of ``chunk_ids``
-        (i.e. that were extracted from the patched document) and replaces the
-        matching ``metadata`` entry on each. Multi-source records keep the
-        contributions of their other source documents (only the list entry
-        equal to ``old_metadata`` is replaced).
+        (i.e. that were extracted from the patched document) and upserts the
+        document's metadata ``entry`` on each, anchored on ``resource_id``: the
+        matching entry is replaced, or appended if absent. Other documents'
+        entries on multi-source records are preserved.
 
         Returns a summary including the affected entity names and edge endpoint
         pairs, so the caller can cascade the same change to the entity/relation
@@ -2024,7 +2044,7 @@ class OpenSearchGraphStorage(BaseGraphStorage):
             "nodes": {"updated": 0, "failures": 0, "not_found": 0},
             "edges": {"updated": 0, "failures": 0, "not_found": 0},
         }
-        if not chunk_ids or not self._indices_ready:
+        if not chunk_ids or not resource_id or not self._indices_ready:
             return empty
         try:
             # Make recent writes visible to the source_ids search.
@@ -2051,7 +2071,7 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                 for hit in edge_hits
             ]
 
-            script = _metadata_replace_script(old_metadata, new_metadata)
+            script = _metadata_upsert_script(resource_id, entry)
             node_result = await self._bulk_update_script(
                 self._nodes_index, node_ids, script
             )
@@ -3362,37 +3382,36 @@ class OpenSearchVectorDBStorage(BaseVectorStorage):
 
     async def update_metadata_for_ids(
         self,
-        chunk_ids: list[str],
-        old_metadata: dict,
-        new_metadata: dict,
+        record_ids: list[str],
+        resource_id: str,
+        entry: dict,
     ) -> dict:
-        """Replace ``metadata`` on the listed records via a Painless script.
+        """Upsert a document's metadata ``entry`` on the listed records.
 
-        Handles three shapes the stored ``metadata`` field can take:
-          - missing / null   -> set to ``new_metadata``
-          - dict (single src) -> replace with ``new_metadata``
-          - list of dicts    -> replace the list entry that equals
-                                ``old_metadata`` (multi-source chunks)
+        Anchored on ``resource_id``: the list entry belonging to the patched
+        document (identified by its resource_id) is replaced with ``entry``; if
+        no such entry exists it is appended. Other documents' entries are left
+        intact. Handles missing/dict/list metadata shapes (see
+        ``_METADATA_UPSERT_PAINLESS``).
 
         Args:
-            chunk_ids: Record IDs to update. Empty list is a no-op.
-            old_metadata: The doc's metadata snapshot before the patch was
-                applied. Used to find the matching list entry on
-                multi-source chunks.
-            new_metadata: The merged metadata to write.
+            record_ids: Record IDs to update (chunk-, ent-, or rel- IDs). Empty
+                list is a no-op.
+            resource_id: The patched document's stable resource identifier.
+            entry: The document's clean metadata entry to write.
 
         Returns:
             ``{"updated": int, "failures": int, "not_found": int}`` —
-            ``updated`` counts successful updates, ``not_found`` counts
-            chunk IDs that no longer exist in the index, ``failures`` counts
-            other errors.
+            ``updated`` counts successful updates, ``not_found`` counts record
+            IDs that no longer exist in the index, ``failures`` counts other
+            errors.
         """
-        if not chunk_ids:
+        if not record_ids or not resource_id:
             return {"updated": 0, "failures": 0, "not_found": 0}
         if not self._index_ready:
-            return {"updated": 0, "failures": 0, "not_found": len(chunk_ids)}
+            return {"updated": 0, "failures": 0, "not_found": len(record_ids)}
 
-        script = _metadata_replace_script(old_metadata, new_metadata)
+        script = _metadata_upsert_script(resource_id, entry)
         actions = [
             {
                 "_op_type": "update",
@@ -3400,7 +3419,7 @@ class OpenSearchVectorDBStorage(BaseVectorStorage):
                 "_id": cid,
                 "script": script,
             }
-            for cid in chunk_ids
+            for cid in record_ids
         ]
         try:
             success, errors = await helpers.async_bulk(
@@ -3409,11 +3428,11 @@ class OpenSearchVectorDBStorage(BaseVectorStorage):
         except OpenSearchException as e:
             if _is_missing_index_error(e):
                 self._mark_index_missing()
-                return {"updated": 0, "failures": 0, "not_found": len(chunk_ids)}
+                return {"updated": 0, "failures": 0, "not_found": len(record_ids)}
             logger.error(
-                f"[{self.workspace}] Error updating chunk metadata: {e}"
+                f"[{self.workspace}] Error updating record metadata: {e}"
             )
-            return {"updated": 0, "failures": len(chunk_ids), "not_found": 0}
+            return {"updated": 0, "failures": len(record_ids), "not_found": 0}
 
         return _summarize_bulk_update_errors(success, errors)
 
