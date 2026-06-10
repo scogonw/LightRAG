@@ -3201,22 +3201,23 @@ class OpenSearchVectorDBStorage(BaseVectorStorage):
             )
             results = []
             for hit in response["hits"]["hits"]:
-                # OpenSearch k-NN with lucene engine and cosinesimil space type
-                # returns scores that can be used directly as similarity measure.
-                score = hit["_score"]
+                # Lucene engine with cosinesimil returns score = (1 + cosine) / 2,
+                # ranging 0–1. Convert to raw cosine (-1 to 1) so that threshold
+                # comparison and doc["distance"] are consistent with other backends.
+                raw_cosine = 2.0 * hit["_score"] - 1.0
 
-                if score >= self.cosine_better_than_threshold:
+                if raw_cosine >= self.cosine_better_than_threshold:
                     doc = hit["_source"]
                     doc["id"] = hit["_id"]
-                    doc["distance"] = score
+                    doc["distance"] = raw_cosine
                     results.append(doc)
             logger.info(
                 f"[{self.workspace}] Vector query on {self._index_name}: "
                 f"top_k={top_k}, threshold={self.cosine_better_than_threshold}, "
                 f"total_hits={len(response['hits']['hits'])}, "
                 f"passed_filter={len(results)}, "
-                f"score_range=[{min((h['_score'] for h in response['hits']['hits']), default=0):.4f}, "
-                f"{max((h['_score'] for h in response['hits']['hits']), default=0):.4f}]"
+                f"cosine_range=[{min((2.0 * h['_score'] - 1.0 for h in response['hits']['hits']), default=0):.4f}, "
+                f"{max((2.0 * h['_score'] - 1.0 for h in response['hits']['hits']), default=0):.4f}]"
             )
 
             return results[:top_k]
