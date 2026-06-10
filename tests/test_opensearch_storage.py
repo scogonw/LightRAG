@@ -1195,13 +1195,23 @@ class TestGraphStorage:
 
     @pytest.mark.asyncio
     async def test_upsert_edge(self, global_config, embed_func, mock_client):
-        mock_client.exists = AsyncMock(return_value=False)
+        # Source node "A" not found; no reverse edge exists
+        mock_client.mget = AsyncMock(
+            side_effect=[
+                {"docs": [{"_id": "A", "found": False}]},  # has_nodes_batch
+                {"docs": [{"_id": "edge-ba", "found": False}]},  # reverse edge check
+            ]
+        )
         with patch.object(ClientManager, "get_client", return_value=mock_client):
             s = self._make(global_config, embed_func)
             await s.initialize()
-            await s.upsert_edge("A", "B", {"weight": "1.0", "description": "knows"})
-            # Should call index twice: once for ensuring source node, once for edge
-            assert mock_client.index.await_count == 2
+            with patch(
+                "lightrag.kg.opensearch_impl.helpers.async_bulk",
+                new=AsyncMock(return_value=(1, [])),
+            ) as mock_bulk:
+                await s.upsert_edge("A", "B", {"weight": "1.0", "description": "knows"})
+                # Called twice: once for missing source node, once for the edge write
+                assert mock_bulk.await_count == 2
 
     @pytest.mark.asyncio
     async def test_upsert_edges_batch_reuses_id_for_reciprocal_edges(
@@ -1243,7 +1253,12 @@ class TestGraphStorage:
     async def test_upsert_after_drop_recreates_indices(
         self, global_config, embed_func, mock_client
     ):
-        mock_client.exists = AsyncMock(return_value=False)
+        mock_client.mget = AsyncMock(
+            side_effect=[
+                {"docs": [{"_id": "A", "found": False}]},  # has_nodes_batch
+                {"docs": [{"_id": "edge-ba", "found": False}]},  # reverse edge check
+            ]
+        )
         with patch.object(ClientManager, "get_client", return_value=mock_client):
             s = self._make(global_config, embed_func)
             with patch.object(
@@ -1252,9 +1267,13 @@ class TestGraphStorage:
                 await s.initialize()
                 mock_create.reset_mock()
                 await s.drop()
-                await s.upsert_edge("A", "B", {"weight": "1.0"})
-                mock_create.assert_awaited_once()
-                assert mock_client.index.await_count == 2
+                with patch(
+                    "lightrag.kg.opensearch_impl.helpers.async_bulk",
+                    new=AsyncMock(return_value=(1, [])),
+                ) as mock_bulk:
+                    await s.upsert_edge("A", "B", {"weight": "1.0"})
+                    mock_create.assert_awaited_once()
+                    assert mock_bulk.await_count == 2  # node creation + edge write
 
     @pytest.mark.asyncio
     async def test_reads_short_circuit_after_drop(
@@ -1539,9 +1558,15 @@ class TestGraphStorage:
     async def test_drop_partial_error_marks_indices_not_ready_and_next_upsert_recreates_indices(
         self, global_config, embed_func, mock_client
     ):
-        mock_client.exists = AsyncMock(return_value=False)
         mock_client.indices.delete = AsyncMock(
             side_effect=[None, OpenSearchException("edges drop failed")]
+        )
+        # Node "A" found so no node creation bulk call; no reverse edge
+        mock_client.mget = AsyncMock(
+            side_effect=[
+                {"docs": [{"_id": "A", "found": True, "_source": {}}]},  # has_nodes_batch
+                {"docs": [{"_id": "edge-ba", "found": False}]},  # reverse edge check
+            ]
         )
         with patch.object(ClientManager, "get_client", return_value=mock_client):
             s = self._make(global_config, embed_func)
@@ -1553,7 +1578,11 @@ class TestGraphStorage:
                 assert result["status"] == "error"
                 assert "edges drop failed" in result["message"]
                 assert s._indices_ready is False
-                await s.upsert_edge("A", "B", {"weight": "1.0"})
+                with patch(
+                    "lightrag.kg.opensearch_impl.helpers.async_bulk",
+                    new=AsyncMock(return_value=(1, [])),
+                ):
+                    await s.upsert_edge("A", "B", {"weight": "1.0"})
                 mock_create.assert_awaited_once()
 
     @pytest.mark.asyncio
