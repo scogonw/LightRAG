@@ -7,7 +7,8 @@ import { useAuthStore } from '@/stores/state'
 import { cn } from '@/lib/utils'
 import { useTranslation } from 'react-i18next'
 import { navigationService } from '@/services/navigation'
-import { GithubIcon, LogOutIcon } from 'lucide-react'
+import { ZapIcon, LogOutIcon } from 'lucide-react'
+import GithubIcon from '@/components/icons/GithubIcon'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/Tooltip'
 
 interface NavigationTabProps {

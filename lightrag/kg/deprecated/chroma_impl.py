@@ -5,6 +5,7 @@ from typing import Any, final
 import numpy as np
 
 from lightrag.base import BaseVectorStorage
+from lightrag.constants import DEFAULT_QUERY_PRIORITY
 from lightrag.utils import logger
 import pipmaster as pm
 
