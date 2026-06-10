@@ -171,13 +171,24 @@ class TestHelpers:
         assert ws == ""
         assert idx == _sanitize_index_name("chunks")
 
-    def test_resolve_workspace_env_override(self):
+    def test_resolve_workspace_env_does_not_override_instance(self):
+        # Env var must NOT override an explicitly set instance workspace.
+        # Prior behaviour silently merged tenants; the fix treats env as default only.
         with patch.dict("os.environ", {"OPENSEARCH_WORKSPACE": "forced"}):
-            assert _resolve_workspace("original", "ns") == "forced"
+            assert _resolve_workspace("original", "ns") == "original"
+
+    def test_resolve_workspace_env_as_default_when_empty(self):
+        # Env var is used as a fallback only when instance workspace is empty.
+        with patch.dict("os.environ", {"OPENSEARCH_WORKSPACE": "fallback_ws"}):
+            assert _resolve_workspace("", "ns") == "fallback_ws"
 
     def test_resolve_workspace_fallback(self):
         with patch.dict("os.environ", {}, clear=True):
             assert _resolve_workspace("original", "ns") == "original"
+
+    def test_resolve_workspace_empty_no_env(self):
+        with patch.dict("os.environ", {}, clear=True):
+            assert _resolve_workspace("", "ns") == ""
 
     def test_sanitize_index_name(self):
         assert _sanitize_index_name("Hello_World") == "hello_world"
