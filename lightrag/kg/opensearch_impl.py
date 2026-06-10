@@ -290,14 +290,14 @@ class ClientManager:
         async with cls._lock:
             if cls._instances["client"] is None:
                 hosts_str = _get_opensearch_env("OPENSEARCH_HOSTS", "localhost:9200")
-                port =  _get_opensearch_env("OPENSEARCH_PORT", "80")
+                port = _get_opensearch_env("OPENSEARCH_PORT", "9200")
                 # hosts = [h.strip() for h in hosts_str.split(",") if h.strip()]
                 hosts = [{
                     "host": hosts_str,
                     "port": int(port)
                 }]
-                username = _get_opensearch_env("OPENSEARCH_USER", "admin")
-                password = _get_opensearch_env("OPENSEARCH_PASSWORD", "admin")
+                username = _get_opensearch_env("OPENSEARCH_USER", "")
+                password = _get_opensearch_env("OPENSEARCH_PASSWORD", "")
                 use_ssl = _get_opensearch_env("OPENSEARCH_USE_SSL", "true").lower() in (
                     "true",
                     "1",
@@ -308,6 +308,19 @@ class ClientManager:
                 ).lower() in ("true", "1", "yes")
                 timeout = int(_get_opensearch_env("OPENSEARCH_TIMEOUT", "30"))
                 max_retries = int(_get_opensearch_env("OPENSEARCH_MAX_RETRIES", "3"))
+
+                if not verify_certs:
+                    logger.warning(
+                        "OPENSEARCH_VERIFY_CERTS is disabled — TLS certificate "
+                        "verification is OFF. Set OPENSEARCH_VERIFY_CERTS=true in "
+                        "production to prevent man-in-the-middle attacks."
+                    )
+                if username in ("admin", "") or password in ("admin", ""):
+                    logger.warning(
+                        "OpenSearch is configured with default or empty credentials. "
+                        "Set OPENSEARCH_USER and OPENSEARCH_PASSWORD to strong, "
+                        "unique values before deploying to production."
+                    )
 
                 ssl_context = None
                 if use_ssl and not verify_certs:
