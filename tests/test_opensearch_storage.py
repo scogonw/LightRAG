@@ -191,32 +191,60 @@ class TestHelpers:
 
 
 class TestClientManager:
-    """Tests for ClientManager singleton pattern and reference counting."""
+    """Tests for ClientManager per-config registry and reference counting."""
 
     @pytest.mark.asyncio
     async def test_singleton_and_refcount(self):
-        ClientManager._instances = {"client": None, "ref_count": 0}
+        ClientManager._instances = {}
         with patch("lightrag.kg.opensearch_impl.AsyncOpenSearch") as mock_cls:
             mock_cls.return_value = AsyncMock()
             c1 = await ClientManager.get_client()
             c2 = await ClientManager.get_client()
             assert c1 is c2
-            assert ClientManager._instances["ref_count"] == 2
+            key = ClientManager._make_config_key()
+            assert ClientManager._instances[key]["ref_count"] == 2
             await ClientManager.release_client(c1)
-            assert ClientManager._instances["ref_count"] == 1
+            assert ClientManager._instances[key]["ref_count"] == 1
             await ClientManager.release_client(c2)
-            assert ClientManager._instances["ref_count"] == 0
-            assert ClientManager._instances["client"] is None
+            assert key not in ClientManager._instances
 
     @pytest.mark.asyncio
     async def test_close_called_on_last_release(self):
-        ClientManager._instances = {"client": None, "ref_count": 0}
+        ClientManager._instances = {}
         with patch("lightrag.kg.opensearch_impl.AsyncOpenSearch") as mock_cls:
             inner = AsyncMock()
             mock_cls.return_value = inner
             c = await ClientManager.get_client()
             await ClientManager.release_client(c)
             inner.close.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_different_configs_get_separate_clients(self):
+        """Two distinct configs must produce two independent client objects."""
+        ClientManager._instances = {}
+        mock_client_a = AsyncMock()
+        mock_client_b = AsyncMock()
+        call_count = 0
+
+        def _make_client(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return mock_client_a if call_count == 1 else mock_client_b
+
+        with patch("lightrag.kg.opensearch_impl.AsyncOpenSearch", side_effect=_make_client):
+            with patch.dict(
+                "os.environ",
+                {"OPENSEARCH_HOSTS": "cluster-a", "OPENSEARCH_PORT": "9200"},
+            ):
+                ca = await ClientManager.get_client()
+            with patch.dict(
+                "os.environ",
+                {"OPENSEARCH_HOSTS": "cluster-b", "OPENSEARCH_PORT": "9200"},
+            ):
+                cb = await ClientManager.get_client()
+
+        assert ca is not cb
+        assert len(ClientManager._instances) == 2
 
 
 # ---------------------------------------------------------------------------

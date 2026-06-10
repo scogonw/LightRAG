@@ -279,35 +279,42 @@ def _sanitize_index_name(name: str) -> str:
 
 
 class ClientManager:
-    """Singleton manager for OpenSearch client connections."""
+    """Per-config registry of OpenSearch client connections.
 
-    _instances = {"client": None, "ref_count": 0}
+    Keyed by a config tuple so two LightRAG instances pointing at different
+    clusters each get their own connection instead of silently sharing the first.
+    """
+
+    # Maps config_key -> {"client": AsyncOpenSearch, "ref_count": int}
+    _instances: dict[tuple, dict] = {}
     _lock = asyncio.Lock()
 
     @classmethod
+    def _make_config_key(cls) -> tuple:
+        """Build a hashable key from the current OpenSearch env configuration."""
+        hosts_str = _get_opensearch_env("OPENSEARCH_HOSTS", "localhost:9200")
+        port = _get_opensearch_env("OPENSEARCH_PORT", "80")
+        username = _get_opensearch_env("OPENSEARCH_USER", "admin")
+        password = _get_opensearch_env("OPENSEARCH_PASSWORD", "admin")
+        use_ssl = _get_opensearch_env("OPENSEARCH_USE_SSL", "true").lower() in (
+            "true", "1", "yes",
+        )
+        verify_certs = _get_opensearch_env("OPENSEARCH_VERIFY_CERTS", "false").lower() in (
+            "true", "1", "yes",
+        )
+        timeout = int(_get_opensearch_env("OPENSEARCH_TIMEOUT", "30"))
+        max_retries = int(_get_opensearch_env("OPENSEARCH_MAX_RETRIES", "3"))
+        return (hosts_str, port, username, password, use_ssl, verify_certs, timeout, max_retries)
+
+    @classmethod
     async def get_client(cls) -> AsyncOpenSearch:
-        """Get or create a shared AsyncOpenSearch client with reference counting."""
+        """Get or create a shared AsyncOpenSearch client for the current config."""
         async with cls._lock:
-            if cls._instances["client"] is None:
-                hosts_str = _get_opensearch_env("OPENSEARCH_HOSTS", "localhost:9200")
-                port =  _get_opensearch_env("OPENSEARCH_PORT", "80")
-                # hosts = [h.strip() for h in hosts_str.split(",") if h.strip()]
-                hosts = [{
-                    "host": hosts_str,
-                    "port": int(port)
-                }]
-                username = _get_opensearch_env("OPENSEARCH_USER", "admin")
-                password = _get_opensearch_env("OPENSEARCH_PASSWORD", "admin")
-                use_ssl = _get_opensearch_env("OPENSEARCH_USE_SSL", "true").lower() in (
-                    "true",
-                    "1",
-                    "yes",
-                )
-                verify_certs = _get_opensearch_env(
-                    "OPENSEARCH_VERIFY_CERTS", "false"
-                ).lower() in ("true", "1", "yes")
-                timeout = int(_get_opensearch_env("OPENSEARCH_TIMEOUT", "30"))
-                max_retries = int(_get_opensearch_env("OPENSEARCH_MAX_RETRIES", "3"))
+            key = cls._make_config_key()
+            entry = cls._instances.get(key)
+            if entry is None:
+                hosts_str, port, username, password, use_ssl, verify_certs, timeout, max_retries = key
+                hosts = [{"host": hosts_str, "port": int(port)}]
 
                 ssl_context = None
                 if use_ssl and not verify_certs:
@@ -326,27 +333,35 @@ class ClientManager:
                     max_retries=max_retries,
                     retry_on_timeout=True,
                 )
-                cls._instances["client"] = client
-                cls._instances["ref_count"] = 0
+                entry = {"client": client, "ref_count": 0}
+                cls._instances[key] = entry
                 logger.info(f"OpenSearch client connected to {hosts}")
 
-            cls._instances["ref_count"] += 1
-            return cls._instances["client"]
+            entry["ref_count"] += 1
+            return entry["client"]
 
     @classmethod
     async def release_client(cls, client: AsyncOpenSearch):
         """Release a client reference. Closes the connection when ref count reaches 0."""
         async with cls._lock:
-            if client is not None and client is cls._instances["client"]:
-                cls._instances["ref_count"] -= 1
-                if cls._instances["ref_count"] <= 0:
-                    try:
-                        await cls._instances["client"].close()
-                    except Exception:
-                        pass
-                    cls._instances["client"] = None
-                    cls._instances["ref_count"] = 0
-                    logger.info("OpenSearch client connection closed")
+            if client is None:
+                return
+            found_key = None
+            for k, entry in cls._instances.items():
+                if entry["client"] is client:
+                    found_key = k
+                    break
+            if found_key is None:
+                return
+            entry = cls._instances[found_key]
+            entry["ref_count"] -= 1
+            if entry["ref_count"] <= 0:
+                try:
+                    await entry["client"].close()
+                except Exception:
+                    pass
+                del cls._instances[found_key]
+                logger.info("OpenSearch client connection closed")
 
 
 def _resolve_workspace(workspace: str, namespace: str):
