@@ -585,6 +585,7 @@ class OpenSearchKVStorage(BaseKVStorage):
         current_time = int(time.time())
         actions = []
         for i, (doc_id, doc_data) in enumerate(data.items(), start=1):
+            doc_data = {**doc_data}
             doc_data["update_time"] = current_time
             doc_data.setdefault("create_time", current_time)
             actions.append(

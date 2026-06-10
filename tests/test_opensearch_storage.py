@@ -357,6 +357,23 @@ class TestKVStorage:
                 assert "update_time" in src
 
     @pytest.mark.asyncio
+    async def test_upsert_does_not_mutate_caller_dicts(
+        self, global_config, embed_func, mock_client
+    ):
+        with patch.object(ClientManager, "get_client", return_value=mock_client):
+            with patch(
+                "lightrag.kg.opensearch_impl.helpers.async_bulk", new_callable=AsyncMock
+            ) as mock_bulk:
+                mock_bulk.return_value = (1, [])
+                s = self._make(global_config, embed_func)
+                await s.initialize()
+                original = {"content": "v1"}
+                data = {"k1": original}
+                await s.upsert(data)
+                assert "update_time" not in original
+                assert "create_time" not in original
+
+    @pytest.mark.asyncio
     async def test_is_empty(self, global_config, embed_func, mock_client):
         mock_client.count = AsyncMock(return_value={"count": 0})
         with patch.object(ClientManager, "get_client", return_value=mock_client):
