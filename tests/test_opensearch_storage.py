@@ -357,6 +357,54 @@ class TestKVStorage:
                 assert "update_time" in src
 
     @pytest.mark.asyncio
+    async def test_upsert_preserves_stored_create_time(
+        self, global_config, embed_func, mock_client
+    ):
+        """Re-upserting an existing doc must keep its original create_time."""
+        mock_client.mget = AsyncMock(
+            return_value={
+                "docs": [
+                    {"_id": "k1", "found": True, "_source": {"create_time": 111}},
+                    {"_id": "k2", "found": False},
+                ]
+            }
+        )
+        with patch.object(ClientManager, "get_client", return_value=mock_client):
+            with patch(
+                "lightrag.kg.opensearch_impl.helpers.async_bulk", new_callable=AsyncMock
+            ) as mock_bulk:
+                mock_bulk.return_value = (2, [])
+                s = self._make(global_config, embed_func)
+                await s.initialize()
+                await s.upsert(
+                    {
+                        "k1": {"content": "updated", "create_time": 999},
+                        "k2": {"content": "new"},
+                    }
+                )
+                sources = {a["_id"]: a["_source"] for a in mock_bulk.call_args[0][1]}
+                assert sources["k1"]["create_time"] == 111
+                assert sources["k1"]["update_time"] >= 111
+                assert sources["k2"]["create_time"] > 111
+
+    @pytest.mark.asyncio
+    async def test_upsert_proceeds_when_create_time_lookup_fails(
+        self, global_config, embed_func, mock_client
+    ):
+        """An mget failure must not block the upsert; timestamps fall back to now."""
+        mock_client.mget = AsyncMock(side_effect=OpenSearchException("boom"))
+        with patch.object(ClientManager, "get_client", return_value=mock_client):
+            with patch(
+                "lightrag.kg.opensearch_impl.helpers.async_bulk", new_callable=AsyncMock
+            ) as mock_bulk:
+                mock_bulk.return_value = (1, [])
+                s = self._make(global_config, embed_func)
+                await s.initialize()
+                await s.upsert({"k1": {"content": "v1"}})
+                src = mock_bulk.call_args[0][1][0]["_source"]
+                assert src["create_time"] > 0
+
+    @pytest.mark.asyncio
     async def test_is_empty(self, global_config, embed_func, mock_client):
         mock_client.count = AsyncMock(return_value={"count": 0})
         with patch.object(ClientManager, "get_client", return_value=mock_client):
@@ -2069,6 +2117,36 @@ class TestVectorStorage:
                 assert len(actions) == 2
                 assert "vector" in actions[0]["_source"]
                 assert len(actions[0]["_source"]["vector"]) == 128
+
+    @pytest.mark.asyncio
+    async def test_upsert_preserves_stored_created_at(
+        self, global_config, embed_func, mock_client
+    ):
+        """Re-upserting an existing vector must keep its original created_at."""
+        mock_client.mget = AsyncMock(
+            return_value={
+                "docs": [
+                    {"_id": "v1", "found": True, "_source": {"created_at": 222}},
+                    {"_id": "v2", "found": False},
+                ]
+            }
+        )
+        with patch.object(ClientManager, "get_client", return_value=mock_client):
+            with patch(
+                "lightrag.kg.opensearch_impl.helpers.async_bulk", new_callable=AsyncMock
+            ) as mock_bulk:
+                mock_bulk.return_value = (2, [])
+                s = self._make(global_config, embed_func)
+                await s.initialize()
+                await s.upsert(
+                    {
+                        "v1": {"content": "updated"},
+                        "v2": {"content": "new"},
+                    }
+                )
+                sources = {a["_id"]: a["_source"] for a in mock_bulk.call_args[0][1]}
+                assert sources["v1"]["created_at"] == 222
+                assert sources["v2"]["created_at"] > 222
 
     @pytest.mark.asyncio
     async def test_query_cosine_score_conversion(
