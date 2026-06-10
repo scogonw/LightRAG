@@ -23,6 +23,7 @@ from lightrag.kg.opensearch_impl import (
     OpenSearchVectorDBStorage,
     ClientManager,
     _build_index_name,
+    _is_missing_index_error,
     _resolve_workspace,
     _sanitize_index_name,
 )
@@ -56,6 +57,40 @@ def patch_data_init_lock():
         "lightrag.kg.opensearch_impl.get_data_init_lock", side_effect=_mock_lock_factory
     ):
         yield
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for _is_missing_index_error
+# ---------------------------------------------------------------------------
+
+
+class TestIsMissingIndexError:
+    def test_true_for_notfounderror_with_matching_error_field(self):
+        exc = NotFoundError(404, "index_not_found_exception", "no such index")
+        assert _is_missing_index_error(exc) is True
+
+    def test_true_for_notfounderror_with_matching_info_type(self):
+        exc = NotFoundError(
+            404,
+            "some_other_error",
+            {"error": {"type": "index_not_found_exception", "reason": "no such index"}},
+        )
+        assert _is_missing_index_error(exc) is True
+
+    def test_false_for_notfounderror_wrong_error_type(self):
+        exc = NotFoundError(404, "document_missing_exception", {"error": {"type": "document_missing_exception"}})
+        assert _is_missing_index_error(exc) is False
+
+    def test_false_for_non_opensearch_exception(self):
+        assert _is_missing_index_error(ValueError("index_not_found_exception")) is False
+
+    def test_false_for_generic_exception(self):
+        assert _is_missing_index_error(Exception("some error")) is False
+
+    def test_false_for_opensearch_exception_wrong_type(self):
+        from opensearchpy.exceptions import RequestError
+        exc = RequestError(400, "index_not_found_exception", "index_not_found_exception in body")
+        assert _is_missing_index_error(exc) is False
 
 
 # ---------------------------------------------------------------------------
