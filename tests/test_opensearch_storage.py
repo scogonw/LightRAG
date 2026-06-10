@@ -23,6 +23,7 @@ from lightrag.kg.opensearch_impl import (
     OpenSearchVectorDBStorage,
     ClientManager,
     _build_index_name,
+    _edge_key,
     _resolve_workspace,
     _sanitize_index_name,
 )
@@ -183,6 +184,42 @@ class TestHelpers:
         assert _sanitize_index_name("Hello_World") == "hello_world"
         assert _sanitize_index_name("-bad") == "x-bad"
         assert _sanitize_index_name("a.b/c") == "a_b_c"
+
+
+# ---------------------------------------------------------------------------
+# _edge_key collision-free encoding (H5 regression)
+# ---------------------------------------------------------------------------
+
+
+class TestEdgeKey:
+    """Regression tests for edge ID collision with hyphenated entity names (SCO-13/H5)."""
+
+    def test_hyphenated_entities_do_not_collide(self):
+        # ('A-B', 'C') and ('A', 'B-C') used to hash to the same string 'A-B-C'
+        assert _edge_key("A-B", "C") != _edge_key("A", "B-C")
+
+    def test_pipe_in_entity_name_does_not_collide(self):
+        # The '|' separator is safe because the length prefix anchors the boundary
+        assert _edge_key("A|B", "C") != _edge_key("A", "B|C")
+        assert _edge_key("A|B", "C") != _edge_key("A", "|BC")
+
+    def test_same_pair_is_stable(self):
+        assert _edge_key("AlphaRAG", "BetaRAG") == _edge_key("AlphaRAG", "BetaRAG")
+
+    def test_direction_differs(self):
+        assert _edge_key("A", "B") != _edge_key("B", "A")
+
+    def test_empty_entity_names(self):
+        # Edge case: empty strings must not collide with each other
+        assert _edge_key("", "AB") != _edge_key("A", "B")
+        assert _edge_key("AB", "") != _edge_key("A", "B")
+
+    def test_compute_mdhash_id_no_collision_for_hyphenated_entities(self):
+        from lightrag.utils import compute_mdhash_id
+
+        id1 = compute_mdhash_id(_edge_key("A-B", "C"), prefix="edge-")
+        id2 = compute_mdhash_id(_edge_key("A", "B-C"), prefix="edge-")
+        assert id1 != id2
 
 
 # ---------------------------------------------------------------------------

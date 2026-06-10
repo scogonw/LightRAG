@@ -136,6 +136,17 @@ def _summarize_bulk_update_errors(success: int, errors: list | None) -> dict:
     return {"updated": success, "failures": failures, "not_found": not_found}
 
 
+def _edge_key(src: str, tgt: str) -> str:
+    """Collision-free encoding for an edge (src, tgt) pair.
+
+    Using bare '-' as separator collides when entity names contain hyphens:
+    ('A-B', 'C') and ('A', 'B-C') both produce 'A-B-C'.  The length-prefix
+    encoding avoids this: the byte-count of src is prepended so the boundary
+    between src and tgt is unambiguous regardless of their content.
+    """
+    return f"{len(src)}:{src}|{tgt}"
+
+
 # Keys in metadata_filter that are consumed by the knowledgebase filter builder
 _KB_FILTER_KEYS = {"agent_kb_ids", "user_id", "user_kb_ids", "team_kb_ids"}
 
@@ -1468,10 +1479,10 @@ class OpenSearchGraphStorage(BaseGraphStorage):
             return False
         try:
             forward_id = compute_mdhash_id(
-                f"{source_node_id}-{target_node_id}", prefix="edge-"
+                _edge_key(source_node_id, target_node_id), prefix="edge-"
             )
             reverse_id = compute_mdhash_id(
-                f"{target_node_id}-{source_node_id}", prefix="edge-"
+                _edge_key(target_node_id, source_node_id), prefix="edge-"
             )
             response = await self.client.mget(
                 index=self._edges_index, body={"ids": [forward_id, reverse_id]}
@@ -1542,10 +1553,10 @@ class OpenSearchGraphStorage(BaseGraphStorage):
             return None
         try:
             forward_id = compute_mdhash_id(
-                f"{source_node_id}-{target_node_id}", prefix="edge-"
+                _edge_key(source_node_id, target_node_id), prefix="edge-"
             )
             reverse_id = compute_mdhash_id(
-                f"{target_node_id}-{source_node_id}", prefix="edge-"
+                _edge_key(target_node_id, source_node_id), prefix="edge-"
             )
             response = await self.client.mget(
                 index=self._edges_index, body={"ids": [forward_id, reverse_id]}
@@ -1820,12 +1831,12 @@ class OpenSearchGraphStorage(BaseGraphStorage):
 
             # Use a deterministic ID for the edge so upserts work
             edge_id = compute_mdhash_id(
-                f"{source_node_id}-{target_node_id}", prefix="edge-"
+                _edge_key(source_node_id, target_node_id), prefix="edge-"
             )
 
             # Check if reverse edge exists
             reverse_id = compute_mdhash_id(
-                f"{target_node_id}-{source_node_id}", prefix="edge-"
+                _edge_key(target_node_id, source_node_id), prefix="edge-"
             )
             try:
                 if await self.client.exists(index=self._edges_index, id=reverse_id):
@@ -1922,11 +1933,11 @@ class OpenSearchGraphStorage(BaseGraphStorage):
             # Compute forward and reverse edge IDs, then batch-check which
             # reverse-direction docs already exist (one mget instead of N exists).
             forward_ids = [
-                compute_mdhash_id(f"{src}-{tgt}", prefix="edge-")
+                compute_mdhash_id(_edge_key(src, tgt), prefix="edge-")
                 for src, tgt, _ in edges
             ]
             reverse_ids = [
-                compute_mdhash_id(f"{tgt}-{src}", prefix="edge-")
+                compute_mdhash_id(_edge_key(tgt, src), prefix="edge-")
                 for src, tgt, _ in edges
             ]
             try:
@@ -2176,8 +2187,8 @@ class OpenSearchGraphStorage(BaseGraphStorage):
         """Batch-delete multiple edges by deterministic ID (real-time).
 
         Each edge is stored under one of two candidate IDs:
-          forward  = compute_mdhash_id("src-tgt", prefix="edge-")
-          reverse  = compute_mdhash_id("tgt-src", prefix="edge-")
+          forward  = compute_mdhash_id(_edge_key(src, tgt), prefix="edge-")
+          reverse  = compute_mdhash_id(_edge_key(tgt, src), prefix="edge-")
         We delete both candidates for every requested edge so the deletion
         is effective regardless of which direction was stored.
 
@@ -2191,8 +2202,8 @@ class OpenSearchGraphStorage(BaseGraphStorage):
             operations = []
             for src, tgt in edges:
                 for edge_id in (
-                    compute_mdhash_id(f"{src}-{tgt}", prefix="edge-"),
-                    compute_mdhash_id(f"{tgt}-{src}", prefix="edge-"),
+                    compute_mdhash_id(_edge_key(src, tgt), prefix="edge-"),
+                    compute_mdhash_id(_edge_key(tgt, src), prefix="edge-"),
                 ):
                     operations.append(
                         {
@@ -2363,7 +2374,7 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                     break
                 for hit in hits:
                     e = hit["_source"]
-                    eid = f"{e['source_node_id']}-{e['target_node_id']}"
+                    eid = _edge_key(e["source_node_id"], e["target_node_id"])
                     if eid not in seen_edges:
                         seen_edges.add(eid)
                         result.edges.append(self._construct_graph_edge(eid, e))
