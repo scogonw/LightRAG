@@ -468,6 +468,7 @@ class OpenSearchKVStorage(BaseKVStorage):
         if self.client is not None:
             await ClientManager.release_client(self.client)
             self.client = None
+        self._index_ready = False
 
     async def _iter_raw_docs(
         self, batch_size: int = 1000
@@ -837,6 +838,7 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
         if self.client is not None:
             await ClientManager.release_client(self.client)
             self.client = None
+        self._index_ready = False
 
     async def get_by_id(self, id: str) -> Union[dict[str, Any], None]:
         """Get a document status record by ID."""
@@ -1443,6 +1445,7 @@ class OpenSearchGraphStorage(BaseGraphStorage):
         if self.client is not None:
             await ClientManager.release_client(self.client)
             self.client = None
+        self._indices_ready = False
 
     # --- Basic queries ---
 
@@ -3095,6 +3098,7 @@ class OpenSearchVectorDBStorage(BaseVectorStorage):
         if self.client is not None:
             await ClientManager.release_client(self.client)
             self.client = None
+        self._index_ready = False
 
     async def upsert(self, data: dict[str, dict[str, Any]], token_tracker=None) -> None:
         """Generate embeddings and upsert vectors in batches."""
