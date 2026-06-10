@@ -103,6 +103,7 @@ def _make_client():
     client.indices.delete = AsyncMock()
     client.indices.refresh = AsyncMock()
     client.indices.get_mapping = AsyncMock(return_value={})
+    client.indices.put_mapping = AsyncMock()
     # transport for PPL
     client.transport = AsyncMock()
     client.transport.perform_request = AsyncMock(
@@ -113,6 +114,7 @@ def _make_client():
     client.index = AsyncMock()
     client.delete = AsyncMock()
     client.delete_by_query = AsyncMock()
+    client.update_by_query = AsyncMock()
     client.get = AsyncMock(
         return_value={
             "_id": "doc1",
@@ -841,7 +843,61 @@ class TestDocStatusStorage:
             assert total == 3
             # Verify count query used the status filter
             count_body = mock_client.count.call_args.kwargs.get("body", {})
-            assert count_body["query"] == {"term": {"status": "processed"}}
+            assert count_body["query"] == {
+                "bool": {"must": [{"term": {"status": "processed"}}]}
+            }
+
+    @pytest.mark.asyncio
+    async def test_get_docs_paginated_sort_id_maps_to_doc_id(
+        self, global_config, embed_func, mock_client
+    ):
+        """sort_field='id' must use the stored 'doc_id' keyword field, not '_id'."""
+        mock_client.count = AsyncMock(return_value={"count": 5})
+        mock_client.search = AsyncMock(
+            return_value={"hits": {"hits": [], "total": {"value": 5}}}
+        )
+        with patch.object(ClientManager, "get_client", return_value=mock_client):
+            s = self._make(global_config, embed_func)
+            await s.initialize()
+            await s.get_docs_paginated(page=1, page_size=10, sort_field="id")
+            body = mock_client.search.call_args.kwargs.get(
+                "body"
+            ) or mock_client.search.call_args[1].get("body", {})
+            sort_fields = [list(clause.keys())[0] for clause in body.get("sort", [])]
+            assert "doc_id" in sort_fields, "sort must use doc_id, not _id"
+            assert "_id" not in sort_fields, "_id (fielddata) must not appear in sort"
+
+    @pytest.mark.asyncio
+    async def test_upsert_sets_doc_id_in_source(
+        self, global_config, embed_func, mock_client
+    ):
+        """Every upserted doc must carry doc_id equal to its document key."""
+        with patch.object(ClientManager, "get_client", return_value=mock_client):
+            with patch(
+                "lightrag.kg.opensearch_impl.helpers.async_bulk", new_callable=AsyncMock
+            ) as mock_bulk:
+                mock_bulk.return_value = (1, [])
+                s = self._make(global_config, embed_func)
+                await s.initialize()
+                await s.upsert({"my-doc-id": {"status": "pending"}})
+                actions = mock_bulk.call_args[0][1]
+                assert actions[0]["_source"]["doc_id"] == "my-doc-id"
+
+    @pytest.mark.asyncio
+    async def test_migrate_add_doc_id_field(
+        self, global_config, embed_func, mock_client
+    ):
+        """Migration must put the keyword mapping and backfill missing doc_id fields."""
+        mock_client.indices.exists = AsyncMock(return_value=True)
+        with patch.object(ClientManager, "get_client", return_value=mock_client):
+            s = self._make(global_config, embed_func)
+            await s.initialize()
+            mock_client.indices.put_mapping.assert_awaited_once()
+            put_body = mock_client.indices.put_mapping.call_args.kwargs.get(
+                "body"
+            ) or mock_client.indices.put_mapping.call_args[1].get("body", {})
+            assert put_body["properties"]["doc_id"]["type"] == "keyword"
+            mock_client.update_by_query.assert_awaited()
 
     @pytest.mark.asyncio
     async def test_get_doc_by_file_path(self, global_config, embed_func, mock_client):

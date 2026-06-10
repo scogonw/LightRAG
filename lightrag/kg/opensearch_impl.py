@@ -730,6 +730,7 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
                 self.client = await ClientManager.get_client()
             await self._create_index_if_not_exists()
             await self._migrate_drop_soft_delete_fields()
+            await self._migrate_add_doc_id_field()
             self._index_ready = True
             logger.debug(
                 f"[{self.workspace}] OpenSearch DocStatus storage initialized: {self._index_name}"
@@ -759,6 +760,7 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
                         "properties": {
                             "status": {"type": "keyword"},
                             "file_path": {"type": "keyword"},
+                            "doc_id": {"type": "keyword"},
                             "track_id": {"type": "keyword"},
                             "org_id": {"type": "keyword"},
                             "created_at": {"type": "date"},
@@ -830,6 +832,49 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
             logger.error(
                 f"[{self.workspace}] MIGRATION FAILED (drop soft-delete fields): {e}. "
                 f"Rows with is_deleted=True may still exist in {self._index_name}."
+            )
+
+    async def _migrate_add_doc_id_field(self) -> None:
+        """Idempotent: ensure the doc_id keyword field exists and is backfilled.
+
+        New indices already have doc_id in their mapping and it is populated on
+        every upsert.  For existing indices this migration (a) registers the
+        keyword mapping so OpenSearch treats it as a sortable keyword rather
+        than dynamic text, and (b) backfills doc_id = _id on rows that predate
+        the change.
+        """
+        if not await self.client.indices.exists(index=self._index_name):
+            return
+        try:
+            await self.client.indices.put_mapping(
+                index=self._index_name,
+                body={"properties": {"doc_id": {"type": "keyword"}}},
+            )
+            await self.client.update_by_query(
+                index=self._index_name,
+                body={
+                    "script": {
+                        "lang": "painless",
+                        "source": "ctx._source.doc_id = ctx._id;",
+                    },
+                    "query": {
+                        "bool": {
+                            "must_not": [{"exists": {"field": "doc_id"}}]
+                        }
+                    },
+                },
+                refresh=True,
+                conflicts="proceed",
+            )
+            logger.info(
+                f"[{self.workspace}] Ensured doc_id field on {self._index_name}"
+            )
+        except OpenSearchException as e:
+            if _is_missing_index_error(e):
+                return
+            logger.error(
+                f"[{self.workspace}] MIGRATION FAILED (add doc_id field): {e}. "
+                f"Sorting by 'id' may fall back to 'updated_at' for un-backfilled rows."
             )
 
     async def finalize(self):
@@ -907,7 +952,10 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
                     "_op_type": "index",
                     "_index": self._index_name,
                     "_id": k,
-                    "_source": {fk: fv for fk, fv in v.items() if fk != "_id"},
+                    "_source": {
+                        **{fk: fv for fk, fv in v.items() if fk not in ("_id", "doc_id")},
+                        "doc_id": k,
+                    },
                 }
             )
             await _cooperative_yield(i)
@@ -1037,8 +1085,8 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
         page = max(1, page)
         page_size = max(10, min(200, page_size))
         if sort_field == "id":
-            sort_field = "_id"
-        if sort_field not in ("created_at", "updated_at", "_id", "file_path"):
+            sort_field = "doc_id"
+        if sort_field not in ("created_at", "updated_at", "doc_id", "file_path"):
             sort_field = "updated_at"
         sort_order = "asc" if sort_direction.lower() == "asc" else "desc"
 
@@ -1067,7 +1115,8 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
                 search_after = None
                 skipped = 0
                 while skipped < skip_count:
-                    batch = min(page_size, skip_count - skipped)
+                    # Use large batches to minimise round trips for deep pages.
+                    batch = min(1000, skip_count - skipped)
                     body = {
                         "query": query,
                         "sort": sort_clause,
