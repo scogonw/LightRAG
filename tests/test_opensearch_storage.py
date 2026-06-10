@@ -1179,6 +1179,44 @@ class TestGraphStorage:
             assert degrees["B"] == 3
 
     @pytest.mark.asyncio
+    async def test_node_degrees_batch_restricts_aggs_to_requested_ids(
+        self, global_config, embed_func, mock_client
+    ):
+        """The terms aggs must only bucket the requested IDs.
+
+        Without an include filter, far-endpoint nodes of matched edges occupy
+        buckets and can evict low-degree requested nodes (terms aggs keep only
+        the top-N buckets), silently returning degree 0 for them.
+        """
+        mock_client.search = AsyncMock(
+            return_value={
+                "hits": {"hits": [], "total": {"value": 0}},
+                "aggregations": {
+                    "source_degrees": {"buckets": [{"key": "A", "doc_count": 2}]},
+                    "target_degrees": {
+                        "buckets": [
+                            {"key": "B", "doc_count": 1},
+                            # Far-endpoint node not requested; must be ignored
+                            {"key": "Z", "doc_count": 5},
+                        ]
+                    },
+                },
+            }
+        )
+        with patch.object(ClientManager, "get_client", return_value=mock_client):
+            s = self._make(global_config, embed_func)
+            await s.initialize()
+            degrees = await s.node_degrees_batch(["A", "B", "A"])
+            assert degrees == {"A": 2, "B": 1}
+
+            body = mock_client.search.call_args.kwargs["body"]
+            for agg_name in ("source_degrees", "target_degrees"):
+                terms = body["aggs"][agg_name]["terms"]
+                assert terms["include"] == ["A", "B"]
+                assert terms["size"] == 2
+                assert terms["shard_size"] == 2
+
+    @pytest.mark.asyncio
     async def test_upsert_node(self, global_config, embed_func, mock_client):
         with patch.object(ClientManager, "get_client", return_value=mock_client):
             s = self._make(global_config, embed_func)
