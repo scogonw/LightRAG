@@ -5,6 +5,7 @@ All tests use mocks — no running OpenSearch instance required.
 Run with: pytest tests/test_opensearch_storage.py -v
 """
 
+import asyncio
 import pytest
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, patch
@@ -193,9 +194,14 @@ class TestHelpers:
 class TestClientManager:
     """Tests for ClientManager singleton pattern and reference counting."""
 
+    def _reset(self):
+        ClientManager._instances = {"client": None, "ref_count": 0}
+        ClientManager._lock = None
+        ClientManager._lock_loop = None
+
     @pytest.mark.asyncio
     async def test_singleton_and_refcount(self):
-        ClientManager._instances = {"client": None, "ref_count": 0}
+        self._reset()
         with patch("lightrag.kg.opensearch_impl.AsyncOpenSearch") as mock_cls:
             mock_cls.return_value = AsyncMock()
             c1 = await ClientManager.get_client()
@@ -210,13 +216,33 @@ class TestClientManager:
 
     @pytest.mark.asyncio
     async def test_close_called_on_last_release(self):
-        ClientManager._instances = {"client": None, "ref_count": 0}
+        self._reset()
         with patch("lightrag.kg.opensearch_impl.AsyncOpenSearch") as mock_cls:
             inner = AsyncMock()
             mock_cls.return_value = inner
             c = await ClientManager.get_client()
             await ClientManager.release_client(c)
             inner.close.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_lock_created_lazily_on_first_use(self):
+        self._reset()
+        assert ClientManager._lock is None
+        with patch("lightrag.kg.opensearch_impl.AsyncOpenSearch") as mock_cls:
+            mock_cls.return_value = AsyncMock()
+            await ClientManager.get_client()
+        assert ClientManager._lock is not None
+        assert isinstance(ClientManager._lock, asyncio.Lock)
+
+    @pytest.mark.asyncio
+    async def test_lock_reused_within_same_loop(self):
+        self._reset()
+        with patch("lightrag.kg.opensearch_impl.AsyncOpenSearch") as mock_cls:
+            mock_cls.return_value = AsyncMock()
+            await ClientManager.get_client()
+            first_lock = ClientManager._lock
+            await ClientManager.get_client()
+            assert ClientManager._lock is first_lock
 
 
 # ---------------------------------------------------------------------------

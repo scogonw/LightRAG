@@ -282,12 +282,27 @@ class ClientManager:
     """Singleton manager for OpenSearch client connections."""
 
     _instances = {"client": None, "ref_count": 0}
-    _lock = asyncio.Lock()
+    _lock: asyncio.Lock | None = None
+    _lock_loop: asyncio.AbstractEventLoop | None = None
+
+    @classmethod
+    def _get_lock(cls) -> asyncio.Lock:
+        # Create a new lock when none exists or when the running loop has changed
+        # (Python < 3.10 binds asyncio.Lock to the creating loop; recreating on
+        # loop change prevents cross-loop acquisition errors in multi-loop test setups).
+        try:
+            loop: asyncio.AbstractEventLoop | None = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        if cls._lock is None or cls._lock_loop is not loop:
+            cls._lock = asyncio.Lock()
+            cls._lock_loop = loop
+        return cls._lock
 
     @classmethod
     async def get_client(cls) -> AsyncOpenSearch:
         """Get or create a shared AsyncOpenSearch client with reference counting."""
-        async with cls._lock:
+        async with cls._get_lock():
             if cls._instances["client"] is None:
                 hosts_str = _get_opensearch_env("OPENSEARCH_HOSTS", "localhost:9200")
                 port =  _get_opensearch_env("OPENSEARCH_PORT", "80")
@@ -336,7 +351,7 @@ class ClientManager:
     @classmethod
     async def release_client(cls, client: AsyncOpenSearch):
         """Release a client reference. Closes the connection when ref count reaches 0."""
-        async with cls._lock:
+        async with cls._get_lock():
             if client is not None and client is cls._instances["client"]:
                 cls._instances["ref_count"] -= 1
                 if cls._instances["ref_count"] <= 0:
