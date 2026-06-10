@@ -151,6 +151,7 @@ This document lists **uncommented (active)** variables from the project `.env` a
 | `OPENSEARCH_PASSWORD` | *(secret)* | Cluster password. |
 | `OPENSEARCH_USE_SSL` | `true` | Use TLS to reach hosts. |
 | `OPENSEARCH_VERIFY_CERTS` | `false` | Whether to verify TLS certificates. |
+| `OPENSEARCH_NUMBER_OF_SHARDS` | `1` *(default)* | Primary shard count for graph indices. **Keep at 1 for most deployments.** Raising this value causes `terms` aggregation degree counts (used in `get_popular_labels` and `_get_knowledge_graph_all`) to become per-shard top-N approximations; the code automatically scales `shard_size` proportional to the shard count to reduce drift, but perfect accuracy is only guaranteed with a single shard. |
 
 
 ## Redis

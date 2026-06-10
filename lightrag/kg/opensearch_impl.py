@@ -2475,7 +2475,16 @@ class OpenSearchGraphStorage(BaseGraphStorage):
             result.is_truncated = total > max_nodes
 
             if result.is_truncated:
-                # Get top nodes by degree
+                # Get top nodes by degree.
+                # terms aggregation doc counts are per-shard top-N approximations:
+                # exact with 1 shard (the default), but degree rankings can silently
+                # drift when OPENSEARCH_NUMBER_OF_SHARDS > 1 because each shard only
+                # returns its own local top-N before results are merged globally.
+                # shard_size is set proportional to the shard count so each shard
+                # contributes more candidates, reducing approximation error at the
+                # cost of slightly higher per-shard memory and network overhead.
+                _n_shards = _get_index_number_of_shards()
+                _shard_size = max_nodes * max(1, _n_shards)
                 body = {
                     "size": 0,
                     "aggs": {
@@ -2483,12 +2492,14 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                             "terms": {
                                 "field": "source_node_id",
                                 "size": max_nodes,
+                                "shard_size": _shard_size,
                             }
                         },
                         "tgt": {
                             "terms": {
                                 "field": "target_node_id",
                                 "size": max_nodes,
+                                "shard_size": _shard_size,
                             }
                         },
                     },
@@ -2827,11 +2838,30 @@ class OpenSearchGraphStorage(BaseGraphStorage):
             return []
         try:
             await self._refresh_graph_indices_if_dirty(refresh_edges=True)
+            # terms aggregation doc counts are per-shard top-N approximations:
+            # exact with 1 shard (the default), but degree rankings can silently
+            # drift when OPENSEARCH_NUMBER_OF_SHARDS > 1.  shard_size is set
+            # proportional to the shard count to reduce approximation error.
+            _n_shards = _get_index_number_of_shards()
+            _size = limit * 2
+            _shard_size = _size * max(1, _n_shards)
             body = {
                 "size": 0,
                 "aggs": {
-                    "src": {"terms": {"field": "source_node_id", "size": limit * 2}},
-                    "tgt": {"terms": {"field": "target_node_id", "size": limit * 2}},
+                    "src": {
+                        "terms": {
+                            "field": "source_node_id",
+                            "size": _size,
+                            "shard_size": _shard_size,
+                        }
+                    },
+                    "tgt": {
+                        "terms": {
+                            "field": "target_node_id",
+                            "size": _size,
+                            "shard_size": _shard_size,
+                        }
+                    },
                 },
             }
             response = await self.client.search(index=self._edges_index, body=body)
