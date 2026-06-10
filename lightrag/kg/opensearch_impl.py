@@ -1257,6 +1257,7 @@ class OpenSearchGraphStorage(BaseGraphStorage):
     _nodes_dirty: bool = field(default=False, init=False)
     _edges_dirty: bool = field(default=False, init=False)
     _ppl_graphlookup_available: bool = field(default=False, init=False)
+    _ppl_probe_conclusive: bool = field(default=False, init=False)
 
     def __init__(self, namespace, global_config, embedding_func, workspace=None):
         super().__init__(
@@ -1333,23 +1334,34 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                 return
             raise
 
-    async def _detect_ppl_graphlookup(self):
+    async def _detect_ppl_graphlookup(self) -> None:
         """Detect whether PPL graphlookup command is available on this cluster."""
         env_override = os.environ.get("OPENSEARCH_USE_PPL_GRAPHLOOKUP", "").lower()
         if env_override == "true":
             self._ppl_graphlookup_available = True
+            self._ppl_probe_conclusive = True
             return
         if env_override == "false":
             self._ppl_graphlookup_available = False
+            self._ppl_probe_conclusive = True
             return
-        # Auto-detect by sending a minimal PPL query
+        await self._probe_ppl_graphlookup()
+
+    async def _probe_ppl_graphlookup(self) -> None:
+        """Run the PPL graphlookup capability probe and update detection state.
+
+        Outcomes:
+        - Success → available=True, conclusive=True
+        - 404/400 without index_not_found → available=False, conclusive=True (permanent absence)
+        - index_not_found or any transient error → conclusive=False (re-probe on next use)
+        """
         try:
             await self.client.transport.perform_request(
                 "POST",
                 "/_plugins/_ppl",
                 body={"query": f"source = {self._edges_index} | head 0"},
             )
-            # PPL endpoint works; now test graphlookup syntax with a no-op query
+            # PPL endpoint works; now test graphlookup syntax with a no-op query.
             await self.client.transport.perform_request(
                 "POST",
                 "/_plugins/_ppl",
@@ -1363,14 +1375,34 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                 },
             )
             self._ppl_graphlookup_available = True
+            self._ppl_probe_conclusive = True
             logger.info(
                 f"[{self.workspace}] PPL graphlookup is available, using server-side BFS"
             )
-        except Exception:
-            self._ppl_graphlookup_available = False
-            logger.info(
-                f"[{self.workspace}] PPL graphlookup not available, using client-side BFS"
+        except (NotFoundError, RequestError) as e:
+            if "index_not_found_exception" in str(e):
+                # Race: edges index not yet searchable after creation; defer to first use.
+                logger.warning(
+                    f"[{self.workspace}] PPL probe deferred: edges index not yet visible "
+                    f"({type(e).__name__}: {e}); will re-probe on first graph query"
+                )
+                # Leave _ppl_probe_conclusive = False so re-probe runs on first use.
+            else:
+                # 404 = PPL plugin absent; 400 = command not supported — conclusive.
+                self._ppl_graphlookup_available = False
+                self._ppl_probe_conclusive = True
+                logger.info(
+                    f"[{self.workspace}] PPL graphlookup not available "
+                    f"({type(e).__name__}: {e}), using client-side BFS"
+                )
+        except Exception as e:
+            # Transient: connection refused, timeout, 5xx, etc.
+            logger.warning(
+                f"[{self.workspace}] PPL probe failed transiently "
+                f"({type(e).__name__}: {e}); will re-probe on first graph query, "
+                f"defaulting to client-side BFS in the meantime"
             )
+            # Leave _ppl_probe_conclusive = False so re-probe runs on first use.
 
     async def _create_indices_if_not_exist(self):
         try:
@@ -2444,10 +2476,13 @@ class OpenSearchGraphStorage(BaseGraphStorage):
             )
             if node_label == "*":
                 result = await self._get_knowledge_graph_all(max_nodes)
-            elif self._ppl_graphlookup_available:
-                result = await self._bfs_subgraph_ppl(node_label, max_depth, max_nodes)
             else:
-                result = await self._bfs_subgraph(node_label, max_depth, max_nodes)
+                if not self._ppl_probe_conclusive:
+                    await self._probe_ppl_graphlookup()
+                if self._ppl_graphlookup_available:
+                    result = await self._bfs_subgraph_ppl(node_label, max_depth, max_nodes)
+                else:
+                    result = await self._bfs_subgraph(node_label, max_depth, max_nodes)
 
             duration = time.perf_counter() - start
             logger.info(
