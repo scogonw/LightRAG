@@ -2953,6 +2953,7 @@ class OpenSearchVectorDBStorage(BaseVectorStorage):
     client: AsyncOpenSearch = field(default=None)
     _index_name: str = field(default="", init=False)
     _index_ready: bool = field(default=False, init=False)
+    _vectors_dirty: bool = field(default=False, init=False)
 
     def __init__(
         self, namespace, global_config, embedding_func, workspace=None, meta_fields=None
@@ -2979,6 +2980,7 @@ class OpenSearchVectorDBStorage(BaseVectorStorage):
             )
         self.cosine_better_than_threshold = cosine_threshold
         self._max_batch_size = self.global_config["embedding_batch_num"]
+        self._vectors_dirty = False
 
     async def initialize(self):
         """Initialize client and create k-NN vector index."""
@@ -3157,6 +3159,7 @@ class OpenSearchVectorDBStorage(BaseVectorStorage):
                 logger.warning(
                     f"[{self.workspace}] {len(failed)} vectors failed to upsert"
                 )
+            self._vectors_dirty = True
         except OpenSearchException as e:
             logger.error(f"[{self.workspace}] Error upserting vectors: {e}")
             raise
@@ -3233,6 +3236,7 @@ class OpenSearchVectorDBStorage(BaseVectorStorage):
             return
         try:
             await self.client.indices.refresh(index=self._index_name)
+            self._vectors_dirty = False
         except OpenSearchException as e:
             if _is_missing_index_error(e):
                 self._mark_index_missing()
@@ -3354,7 +3358,16 @@ class OpenSearchVectorDBStorage(BaseVectorStorage):
         if not self._index_ready:
             return
         try:
-            # No per-operation refresh: search visibility after index_done_callback().
+            # Refresh vector search view so delete_by_query sees all un-flushed writes.
+            # Relation vectors upserted since the last index_done_callback() are invisible
+            # to search until refreshed; without this, they survive entity deletion and
+            # break the grounding chain by pointing at deleted entities.
+            if self._vectors_dirty:
+                try:
+                    await self.client.indices.refresh(index=self._index_name)
+                    self._vectors_dirty = False
+                except Exception:
+                    pass
             body = {
                 "query": {
                     "bool": {
@@ -3365,7 +3378,6 @@ class OpenSearchVectorDBStorage(BaseVectorStorage):
                     }
                 }
             }
-            # conflicts="proceed" tolerates stale search view after refresh removal.
             await self.client.delete_by_query(
                 index=self._index_name, body=body, params={"conflicts": "proceed"}
             )

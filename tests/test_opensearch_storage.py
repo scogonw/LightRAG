@@ -2260,6 +2260,63 @@ class TestVectorStorage:
             mock_client.delete_by_query.assert_awaited_once()
 
     @pytest.mark.asyncio
+    async def test_delete_entity_relation_refreshes_when_dirty(
+        self, global_config, embed_func, mock_client
+    ):
+        # delete_by_query uses the search view; if un-flushed writes exist, the
+        # index must be refreshed first so newly-upserted relation vectors are
+        # visible and actually deleted.
+        with patch.object(ClientManager, "get_client", return_value=mock_client):
+            s = self._make(global_config, embed_func)
+            await s.initialize()
+            s._vectors_dirty = True
+            await s.delete_entity_relation("Alice")
+            mock_client.indices.refresh.assert_awaited()
+            mock_client.delete_by_query.assert_awaited_once()
+            assert s._vectors_dirty is False
+
+    @pytest.mark.asyncio
+    async def test_delete_entity_relation_no_refresh_when_clean(
+        self, global_config, embed_func, mock_client
+    ):
+        # No unnecessary refresh when nothing was written since the last
+        # index_done_callback() or since initialization.
+        with patch.object(ClientManager, "get_client", return_value=mock_client):
+            s = self._make(global_config, embed_func)
+            await s.initialize()
+            assert s._vectors_dirty is False
+            mock_client.indices.refresh.reset_mock()
+            await s.delete_entity_relation("Alice")
+            mock_client.indices.refresh.assert_not_awaited()
+            mock_client.delete_by_query.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_upsert_marks_vectors_dirty(
+        self, global_config, embed_func, mock_client
+    ):
+        with patch.object(ClientManager, "get_client", return_value=mock_client):
+            with patch(
+                "lightrag.kg.opensearch_impl.helpers.async_bulk", new_callable=AsyncMock
+            ) as mock_bulk:
+                mock_bulk.return_value = (1, [])
+                s = self._make(global_config, embed_func)
+                await s.initialize()
+                assert s._vectors_dirty is False
+                await s.upsert({"v1": {"content": "hello"}})
+                assert s._vectors_dirty is True
+
+    @pytest.mark.asyncio
+    async def test_index_done_callback_clears_dirty_flag(
+        self, global_config, embed_func, mock_client
+    ):
+        with patch.object(ClientManager, "get_client", return_value=mock_client):
+            s = self._make(global_config, embed_func)
+            await s.initialize()
+            s._vectors_dirty = True
+            await s.index_done_callback()
+            assert s._vectors_dirty is False
+
+    @pytest.mark.asyncio
     async def test_drop_recreates_index(self, global_config, embed_func, mock_client):
         # After drop, _create_knn_index_if_not_exists is called again.
         # First call (init): exists=False -> create. Second call (after drop): exists=False -> create again.
