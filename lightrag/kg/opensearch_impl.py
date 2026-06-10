@@ -41,8 +41,27 @@ if not pm.is_installed("opensearch-py"):
 from opensearchpy import AsyncOpenSearch, helpers  # type: ignore
 from opensearchpy.exceptions import OpenSearchException, NotFoundError, RequestError  # type: ignore
 
-config = configparser.ConfigParser()
-config.read("config.ini", "utf-8")
+_config: configparser.ConfigParser | None = None
+
+
+def _get_config() -> configparser.ConfigParser:
+    global _config
+    if _config is None:
+        _config = configparser.ConfigParser()
+        # Prefer a path next to this module so behaviour is CWD-independent;
+        # fall back to the process working directory if absent there.
+        module_dir = os.path.dirname(os.path.abspath(__file__))
+        candidate = os.path.join(module_dir, "config.ini")
+        if not os.path.exists(candidate):
+            candidate = os.path.abspath("config.ini")
+        read_files = _config.read(candidate, encoding="utf-8")
+        if read_files:
+            logger.debug(f"OpenSearch config loaded from: {candidate}")
+        else:
+            logger.debug(
+                f"No config.ini found at {candidate}; relying on environment variables/defaults"
+            )
+    return _config
 
 
 def _apply_metadata_filter(
@@ -259,7 +278,7 @@ def _build_knowledgebase_filter(
 
 def _get_opensearch_env(key, fallback):
     cfg_key = key.replace("OPENSEARCH_", "").lower()
-    return os.environ.get(key, config.get("opensearch", cfg_key, fallback=fallback))
+    return os.environ.get(key, _get_config().get("opensearch", cfg_key, fallback=fallback))
 
 
 def _get_index_number_of_shards() -> int:
