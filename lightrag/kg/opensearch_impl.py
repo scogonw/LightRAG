@@ -400,6 +400,7 @@ class OpenSearchKVStorage(BaseKVStorage):
     client: AsyncOpenSearch = field(default=None)
     _index_name: str = field(default="", init=False)
     _index_ready: bool = field(default=False, init=False)
+    _dirty: bool = field(default=False, init=False)
 
     def __init__(self, namespace, global_config, embedding_func, workspace=None):
         super().__init__(
@@ -602,6 +603,7 @@ class OpenSearchKVStorage(BaseKVStorage):
             success, failed = await helpers.async_bulk(
                 self.client, actions, raise_on_error=False
             )
+            self._dirty = True
             if failed:
                 logger.warning(
                     f"[{self.workspace}] {len(failed)} documents failed to upsert"
@@ -616,6 +618,7 @@ class OpenSearchKVStorage(BaseKVStorage):
             return
         try:
             await self.client.indices.refresh(index=self._index_name)
+            self._dirty = False
         except OpenSearchException as e:
             if _is_missing_index_error(e):
                 self._mark_index_missing()
@@ -628,6 +631,9 @@ class OpenSearchKVStorage(BaseKVStorage):
         if not self._index_ready:
             return True
         try:
+            if self._dirty:
+                await self.client.indices.refresh(index=self._index_name)
+                self._dirty = False
             response = await self.client.count(index=self._index_name)
             return response["count"] == 0
         except OpenSearchException as e:
@@ -653,6 +659,7 @@ class OpenSearchKVStorage(BaseKVStorage):
             success, _ = await helpers.async_bulk(
                 self.client, actions, raise_on_error=False
             )
+            self._dirty = True
             logger.info(
                 f"[{self.workspace}] Deleted {success} documents from {self.namespace}"
             )
@@ -1174,7 +1181,12 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
             pass
 
     async def is_empty(self) -> bool:
-        """Return True if the index contains no documents."""
+        """Return True if the index contains no documents.
+
+        count() is safe here without a pre-refresh because all writes (upsert
+        and delete) use refresh="wait_for", guaranteeing search visibility
+        before returning.
+        """
         if not self._index_ready:
             return True
         try:
