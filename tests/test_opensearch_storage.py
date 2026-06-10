@@ -180,9 +180,23 @@ class TestHelpers:
             assert _resolve_workspace("original", "ns") == "original"
 
     def test_sanitize_index_name(self):
-        assert _sanitize_index_name("Hello_World") == "hello_world"
-        assert _sanitize_index_name("-bad") == "x-bad"
-        assert _sanitize_index_name("a.b/c") == "a_b_c"
+        # Already-clean names pass through unchanged (no suffix).
+        assert _sanitize_index_name("hello_world") == "hello_world"
+        assert _sanitize_index_name("chunks") == "chunks"
+        # Names that differ after sanitization get an 8-char MD5 suffix.
+        assert _sanitize_index_name("Hello_World") == "hello_world-486b98e4"
+        assert _sanitize_index_name("-bad") == "x-bad-650ab930"
+        assert _sanitize_index_name("a.b/c") == "a_b_c-d8c60fdd"
+
+    def test_sanitize_index_name_disambiguates_collisions(self):
+        # The three inputs that previously all collapsed to 'ws_a' must now
+        # produce distinct index names.
+        results = [
+            _sanitize_index_name("ws.A"),
+            _sanitize_index_name("ws_A"),
+            _sanitize_index_name("WS_a"),
+        ]
+        assert len(set(results)) == 3, f"Expected 3 distinct names, got {results}"
 
 
 # ---------------------------------------------------------------------------
