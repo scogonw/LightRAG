@@ -1864,7 +1864,13 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                         "_source": doc,
                     }
                 )
-            await helpers.async_bulk(self.client, actions)
+            success, failed = await helpers.async_bulk(
+                self.client, actions, raise_on_error=False
+            )
+            if failed:
+                logger.warning(
+                    f"[{self.workspace}] {len(failed)} nodes failed to upsert in batch"
+                )
             self._nodes_dirty = True
         except OpenSearchException as e:
             logger.error(f"[{self.workspace}] Error during batch node upsert: {e}")
@@ -1961,7 +1967,13 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                         "_source": doc,
                     }
                 )
-            await helpers.async_bulk(self.client, actions)
+            success, failed = await helpers.async_bulk(
+                self.client, actions, raise_on_error=False
+            )
+            if failed:
+                logger.warning(
+                    f"[{self.workspace}] {len(failed)} edges failed to upsert in batch"
+                )
             self._edges_dirty = True
         except OpenSearchException as e:
             logger.error(f"[{self.workspace}] Error during batch edge upsert: {e}")
