@@ -4499,8 +4499,7 @@ class OpenSearchVectorDBStorage(BaseVectorStorage):
         # Build knowledgebase access-control filter from metadata_filter + org_id
         os_filter = _build_knowledgebase_filter(metadata_filter, org_id)
 
-        has_filter = os_filter is not None
-        fetch_top_k = top_k * 3 if has_filter else top_k
+        fetch_top_k = top_k * 3  # always oversample; trim to top_k after threshold filter
 
         knn_query: dict = {"knn": {"vector": {"vector": query_vector, "k": fetch_top_k}}}
 
