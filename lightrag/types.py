@@ -87,6 +87,10 @@ class KnowledgeGraph(BaseModel):
             and e.target in kept_node_ids
             and e.properties.get("org_id", "") == org_id
         ]
+        # Preserve is_truncated only when no nodes were shed by the filter.
+        # If filtering removed nodes the BFS budget was consumed partly by wrong-org
+        # nodes, so the pre-filter flag is unreliable and must be cleared.
+        is_truncated = self.is_truncated and len(kept_nodes) == len(self.nodes)
         return KnowledgeGraph(
-            nodes=kept_nodes, edges=kept_edges, is_truncated=self.is_truncated
+            nodes=kept_nodes, edges=kept_edges, is_truncated=is_truncated
         )

@@ -1302,6 +1302,13 @@ class Neo4JStorage(BaseGraphStorage):
         seen_nodes = set()
         seen_edges = set()
 
+        # Build org_id predicate fragments for Cypher injection
+        org_node_pred = " AND n.org_id = $org_id" if org_id is not None else ""
+        org_start_pred = " AND start.org_id = $org_id" if org_id is not None else ""
+        cypher_params_base: dict = {}
+        if org_id is not None:
+            cypher_params_base["org_id"] = org_id
+
         async with self._driver.session(
             database=self._DATABASE, default_access_mode="READ"
         ) as session:
@@ -1309,11 +1316,12 @@ class Neo4JStorage(BaseGraphStorage):
                 if node_label == "*":
                     # First check total node count to determine if graph is truncated
                     count_query = (
-                        f"MATCH (n:`{workspace_label}`) RETURN count(n) as total"
+                        f"MATCH (n:`{workspace_label}`) WHERE true{org_node_pred}"
+                        f" RETURN count(n) as total"
                     )
                     count_result = None
                     try:
-                        count_result = await session.run(count_query)
+                        count_result = await session.run(count_query, cypher_params_base)
                         count_record = await count_result.single()
 
                         if count_record and count_record["total"] > max_nodes:
@@ -1327,7 +1335,7 @@ class Neo4JStorage(BaseGraphStorage):
 
                     # Run main query to get nodes with highest degree
                     main_query = f"""
-                    MATCH (n:`{workspace_label}`)
+                    MATCH (n:`{workspace_label}`) WHERE true{org_node_pred}
                     OPTIONAL MATCH (n)-[r]-()
                     WITH n, COALESCE(count(r), 0) AS degree
                     ORDER BY degree DESC
@@ -1344,7 +1352,7 @@ class Neo4JStorage(BaseGraphStorage):
                     try:
                         result_set = await session.run(
                             main_query,
-                            {"max_nodes": max_nodes},
+                            {"max_nodes": max_nodes, **cypher_params_base},
                         )
                         record = await result_set.single()
                     finally:
@@ -1352,11 +1360,10 @@ class Neo4JStorage(BaseGraphStorage):
                             await result_set.consume()
 
                 else:
-                    # return await self._robust_fallback(node_label, max_depth, max_nodes)
                     # First try without limit to check if we need to truncate
                     full_query = f"""
                     MATCH (start:`{workspace_label}`)
-                    WHERE start.entity_id = $entity_id
+                    WHERE start.entity_id = $entity_id{org_start_pred}
                     WITH start
                     CALL apoc.path.subgraphAll(start, {{
                         relationshipFilter: '',
@@ -1368,6 +1375,7 @@ class Neo4JStorage(BaseGraphStorage):
                     YIELD nodes, relationships
                     WITH nodes, relationships, size(nodes) AS total_nodes
                     UNWIND nodes AS node
+                    WHERE true{org_node_pred}
                     WITH collect({{node: node}}) AS node_info, relationships, total_nodes
                     RETURN node_info, relationships, total_nodes
                     """
@@ -1380,6 +1388,7 @@ class Neo4JStorage(BaseGraphStorage):
                             {
                                 "entity_id": node_label,
                                 "max_depth": max_depth,
+                                **cypher_params_base,
                             },
                         )
                         full_record = await full_result.single()
@@ -1410,7 +1419,7 @@ class Neo4JStorage(BaseGraphStorage):
                             # Run limited query
                             limited_query = f"""
                             MATCH (start:`{workspace_label}`)
-                            WHERE start.entity_id = $entity_id
+                            WHERE start.entity_id = $entity_id{org_start_pred}
                             WITH start
                             CALL apoc.path.subgraphAll(start, {{
                                 relationshipFilter: '',
@@ -1422,6 +1431,7 @@ class Neo4JStorage(BaseGraphStorage):
                             }})
                             YIELD nodes, relationships
                             UNWIND nodes AS node
+                            WHERE true{org_node_pred}
                             WITH collect({{node: node}}) AS node_info, relationships
                             RETURN node_info, relationships
                             """
@@ -1433,6 +1443,7 @@ class Neo4JStorage(BaseGraphStorage):
                                         "entity_id": node_label,
                                         "max_depth": max_depth,
                                         "max_nodes": max_nodes,
+                                        **cypher_params_base,
                                     },
                                 )
                                 record = await result_set.single()
@@ -1485,24 +1496,18 @@ class Neo4JStorage(BaseGraphStorage):
                     logger.warning(
                         f"[{self.workspace}] Neo4j: falling back to basic Cypher recursive search..."
                     )
-                    fallback = await self._robust_fallback(
-                        node_label, max_depth, max_nodes
+                    return await self._robust_fallback(
+                        node_label, max_depth, max_nodes, org_id
                     )
-                    if org_id is not None:
-                        fallback = fallback.filter_by_org(org_id)
-                    return fallback
                 else:
                     logger.warning(
                         f"[{self.workspace}] Neo4j: APOC plugin error with wildcard query, returning empty result"
                     )
 
-        if org_id is not None:
-            result = result.filter_by_org(org_id)
-
         return result
 
     async def _robust_fallback(
-        self, node_label: str, max_depth: int, max_nodes: int
+        self, node_label: str, max_depth: int, max_nodes: int, org_id: str | None = None
     ) -> KnowledgeGraph:
         """
         Fallback implementation when APOC plugin is not available or incompatible.
@@ -1516,16 +1521,23 @@ class Neo4JStorage(BaseGraphStorage):
         visited_edges = set()
         visited_edge_pairs = set()
 
+        # Build org_id predicate fragments
+        org_node_pred = " AND n.org_id = $org_id" if org_id is not None else ""
+        org_neighbor_pred = " AND b.org_id = $org_id" if org_id is not None else ""
+        cypher_params_base: dict = {}
+        if org_id is not None:
+            cypher_params_base["org_id"] = org_id
+
         # Get the starting node's data
         workspace_label = self._get_workspace_label()
         async with self._driver.session(
             database=self._DATABASE, default_access_mode="READ"
         ) as session:
             query = f"""
-            MATCH (n:`{workspace_label}` {{entity_id: $entity_id}})
+            MATCH (n:`{workspace_label}` {{entity_id: $entity_id}}) WHERE true{org_node_pred}
             RETURN id(n) as node_id, n
             """
-            node_result = await session.run(query, entity_id=node_label)
+            node_result = await session.run(query, entity_id=node_label, **cypher_params_base)
             try:
                 node_record = await node_result.single()
                 if not node_record:
@@ -1583,10 +1595,11 @@ class Neo4JStorage(BaseGraphStorage):
                 workspace_label = self._get_workspace_label()
                 query = f"""
                 MATCH (a:`{workspace_label}` {{entity_id: $entity_id}})-[r]-(b)
+                WHERE true{org_neighbor_pred}
                 WITH r, b, id(r) as edge_id, id(b) as target_id
                 RETURN r, b, edge_id, target_id
                 """
-                results = await session.run(query, entity_id=current_node.id)
+                results = await session.run(query, entity_id=current_node.id, **cypher_params_base)
 
                 # Get all records and release database connection
                 records = await results.fetch(1000)  # Max neighbor nodes we can handle
