@@ -53,12 +53,6 @@ import {
 } from '@/features/documentStatusFilters'
 
 
-type StatusFilter = DocStatus | 'all';
-type StatusDisplayConfig = {
-  labelKey: string
-  className: string
-}
-
 const STATUS_BUCKETS: StatusBucket[] = ['completed', 'parse', 'analyze', 'process', 'failed']
 
 // Utility functions defined outside component for better performance and to avoid dependency issues
@@ -309,6 +303,7 @@ export default function DocumentManager() {
   const { t, i18n } = useTranslation()
   const health = useBackendState.use.health()
   const pipelineActive = useBackendState.use.pipelineActive()
+  const pipelineBusy = useBackendState.use.pipelineBusy()
 
   // Legacy state for backward compatibility
   const [docs, setDocs] = useState<DocsStatusesResponse | null>(null)
