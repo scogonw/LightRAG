@@ -4,8 +4,6 @@ Covers the legacy-chunk fallback (metadata=None, top-level org_id present),
 the mismatch exclusion path, normal populated-metadata behaviour, and the
 chunk_tracking stale-key cleanup that mirrors the filter result.
 """
-import pytest
-
 from lightrag.operate import _filter_chunks_by_kb_access
 
 
@@ -111,6 +109,6 @@ class TestChunkTrackingCleanup:
         tracking = {"c1": {"source": "E", "frequency": 1, "order": 1}}
         # No metadata_filter → _filter_chunks_by_kb_access not called in production;
         # verify the filter itself doesn't corrupt tracking when called anyway.
-        result = _filter_chunks_by_kb_access([chunk], {}, org_id=None)
+        _filter_chunks_by_kb_access([chunk], {}, org_id=None)
         # tracking unchanged because caller only cleans when metadata_filter is set
         assert "c1" in tracking
