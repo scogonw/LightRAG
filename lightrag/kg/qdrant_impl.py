@@ -693,9 +693,8 @@ class QdrantVectorDBStorage(BaseVectorStorage):
 
         current_time = int(time.time())
 
-        pending_docs: list[tuple[str, _PendingVectorDoc]] = []
-        for i, (k, v) in enumerate(data.items(), start=1):
-            source = {
+        list_data = [
+            {
                 ID_FIELD: k,
                 WORKSPACE_ID_FIELD: self.effective_workspace,
                 CREATED_AT_FIELD: current_time,
@@ -730,13 +729,6 @@ class QdrantVectorDBStorage(BaseVectorStorage):
             )
             await _cooperative_yield(i)
 
-        # An upsert overrides any pending delete on the same id; installing
-        # a fresh _PendingVectorDoc invalidates any vector cached by a
-        # prior get_vectors_by_ids() call on a stale revision.
-        async with self._flush_lock:
-            for doc_id, pdoc in pending_docs:
-                self._pending_vector_deletes.discard(doc_id)
-                self._pending_vector_docs[doc_id] = pdoc
 
     async def query(
         self, query: str, top_k: int, query_embedding: list[float] = None, metadata_filter: dict[str, Any] | None = None
