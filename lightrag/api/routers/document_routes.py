@@ -48,6 +48,7 @@ from lightrag.parser.routing import (
 from lightrag.utils import (
     generate_track_id,
     move_file_to_parsed_dir,
+    compute_mdhash_id,
 )
 from lightrag.api.utils_api import get_combined_auth_dependency
 from ..config import global_args
