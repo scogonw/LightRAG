@@ -55,6 +55,7 @@ from lightrag.constants import (
     DEFAULT_COSINE_THRESHOLD_GAP,
     DEFAULT_RELATED_CHUNK_NUMBER,
     DEFAULT_KG_CHUNK_PICK_METHOD,
+    DEFAULT_KG_CHUNK_OVERSAMPLING_FACTOR,
     DEFAULT_MIN_RERANK_SCORE,
     DEFAULT_SUMMARY_MAX_TOKENS,
     DEFAULT_SUMMARY_CONTEXT_SIZE,
@@ -241,6 +242,13 @@ class LightRAG(_RoleLLMMixin, _StorageMigrationMixin, _PipelineMixin):
         default=get_env_value("KG_CHUNK_PICK_METHOD", DEFAULT_KG_CHUNK_PICK_METHOD, str)
     )
     """Method for selecting text chunks: 'WEIGHT' for weight-based selection, 'VECTOR' for embedding similarity-based selection."""
+
+    kg_chunk_oversampling_factor: float = field(
+        default=get_env_value(
+            "KG_CHUNK_OVERSAMPLING_FACTOR", DEFAULT_KG_CHUNK_OVERSAMPLING_FACTOR, float
+        )
+    )
+    """Oversampling multiplier applied to num_of_chunks before VDB search to compensate for post-KB-filter attrition."""
 
     enable_content_headings: bool = field(
         default_factory=lambda: get_env_value("ENABLE_CONTENT_HEADINGS", True, bool)

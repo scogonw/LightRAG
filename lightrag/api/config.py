@@ -30,6 +30,7 @@ from lightrag.constants import (
     DEFAULT_MAX_TOTAL_TOKENS,
     DEFAULT_COSINE_THRESHOLD,
     DEFAULT_RELATED_CHUNK_NUMBER,
+    DEFAULT_KG_CHUNK_OVERSAMPLING_FACTOR,
     DEFAULT_MIN_RERANK_SCORE,
     DEFAULT_FORCE_LLM_SUMMARY_ON_MERGE,
     DEFAULT_MAX_ASYNC,
@@ -694,6 +695,9 @@ def parse_args() -> argparse.Namespace:
     )
     args.related_chunk_number = get_env_value(
         "RELATED_CHUNK_NUMBER", DEFAULT_RELATED_CHUNK_NUMBER, int
+    )
+    args.kg_chunk_oversampling_factor = get_env_value(
+        "KG_CHUNK_OVERSAMPLING_FACTOR", DEFAULT_KG_CHUNK_OVERSAMPLING_FACTOR, float
     )
 
     # Add missing environment variables for health endpoint
