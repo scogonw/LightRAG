@@ -1493,6 +1493,7 @@ export default function DocumentManager() {
             {docs && (
               <div className="absolute inset-0 flex min-h-0 flex-col p-0">
                 <div className="absolute inset-[-1px] flex flex-col p-0 border rounded-md border-gray-200 dark:border-gray-700 overflow-hidden">
+                  <TooltipProvider>
                   <Table className="w-full">
                     <TableHeader className="sticky top-0 bg-background z-10 shadow-sm">
                       <TableRow className="border-b bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/75 shadow-[inset_0_-1px_0_rgba(0,0,0,0.1)]">
@@ -1652,6 +1653,7 @@ export default function DocumentManager() {
                             </TableCell>
                           )}
                         </TableRow>
+                      ))}
                       </TableBody>
                     </Table>
                   </TooltipProvider>
