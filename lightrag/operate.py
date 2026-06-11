@@ -5807,28 +5807,35 @@ async def _find_most_related_entities_from_relationships(
 ):
     entity_names = []
     seen = set()
+    # Track the max rank-based proxy score for each entity across all edges that introduce it.
+    # vdb_score = (top_k - position) / top_k, where position is 0-indexed edge rank in results
+    # (results are sorted by cosine similarity highest-first, so position 0 is most relevant).
+    entity_scores: dict[str, float] = {}
+    top_k = max(query_param.top_k, 1)
 
-    for e in edge_datas:
-        if e["src_id"] not in seen:
-            entity_names.append(e["src_id"])
-            seen.add(e["src_id"])
-        if e["tgt_id"] not in seen:
-            entity_names.append(e["tgt_id"])
-            seen.add(e["tgt_id"])
+    for position, e in enumerate(edge_datas):
+        vdb_score = (top_k - position) / top_k
+        for eid in (e["src_id"], e["tgt_id"]):
+            if eid not in seen:
+                entity_names.append(eid)
+                seen.add(eid)
+            if vdb_score > entity_scores.get(eid, -1.0):
+                entity_scores[eid] = vdb_score
 
     # Only get nodes data, no need for node degrees
     nodes_dict = await knowledge_graph_inst.get_nodes_batch(entity_names, metadata_filter=query_param.metadata_filter, org_id=query_param.org_id)
 
-    # Rebuild the list in the same order as entity_names
+    # Build node_datas and sort by max introducing-edge similarity (highest first)
     node_datas = []
     for entity_name in entity_names:
         node = nodes_dict.get(entity_name)
         if node is None:
             logger.warning(f"Node '{entity_name}' not found in batch retrieval.")
             continue
-        # Combine the node data with the entity name, no rank needed
         combined = {**node, "entity_name": entity_name}
         node_datas.append(combined)
+
+    node_datas.sort(key=lambda n: entity_scores.get(n["entity_name"], 0.0), reverse=True)
 
     return node_datas
 
