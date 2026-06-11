@@ -1,7 +1,5 @@
 """Unit tests for KnowledgeGraph.filter_by_org is_truncated recomputation."""
 
-import pytest
-
 from lightrag.types import KnowledgeGraph, KnowledgeGraphEdge, KnowledgeGraphNode
 
 
