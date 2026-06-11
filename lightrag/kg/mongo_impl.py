@@ -1574,12 +1574,14 @@ class MongoGraphStorage(BaseGraphStorage):
             {"edge_lo": edge_lo, "edge_hi": edge_hi}
         )
 
-    async def get_node_edges(self, source_node_id: str) -> list[tuple[str, str]] | None:
+    async def get_node_edges(self, source_node_id: str, limit: int | None = None) -> list[tuple[str, str]] | None:
         """
         Retrieves all edges (relationships) for a particular node identified by its label.
 
         Args:
             source_node_id: Label of the node to get edges for
+            limit: When provided, return only the top-N edges sorted by weight
+                descending.
 
         Returns:
             list[tuple[str, str]]: List of (source_label, target_label) tuples representing edges
@@ -1593,7 +1595,9 @@ class MongoGraphStorage(BaseGraphStorage):
                 ]
             },
             {"source_node_id": 1, "target_node_id": 1},
-        )
+        ).sort("weight", -1)
+        if limit is not None:
+            cursor = cursor.limit(limit)
 
         return [
             (e.get("source_node_id"), e.get("target_node_id")) async for e in cursor
@@ -1639,7 +1643,7 @@ class MongoGraphStorage(BaseGraphStorage):
         return merged_results
 
     async def get_nodes_edges_batch(
-        self, node_ids: list[str]
+        self, node_ids: list[str], metadata_filter: dict | None = None, org_id: str | None = None, limit: int | None = None
     ) -> dict[str, list[tuple[str, str]]]:
         """
         Batch retrieve edges for multiple nodes.
@@ -1648,6 +1652,10 @@ class MongoGraphStorage(BaseGraphStorage):
 
         Args:
             node_ids: List of node IDs (entity_id) for which to retrieve edges.
+            metadata_filter: Ignored for this implementation.
+            org_id: Ignored for this implementation.
+            limit: When provided, return only the top-N edges per node sorted by
+                weight descending. Falls back to serial per-node queries.
 
         Returns:
             A dictionary mapping each node ID to its list of edge tuples (source, target).
@@ -1655,6 +1663,13 @@ class MongoGraphStorage(BaseGraphStorage):
             - Outgoing edges: (queried_node, connected_node)
             - Incoming edges: (connected_node, queried_node)
         """
+        if limit is not None:
+            result = {}
+            for node_id in node_ids:
+                edges = await self.get_node_edges(node_id, limit=limit)
+                result[node_id] = edges if edges is not None else []
+            return result
+
         result = {node_id: [] for node_id in node_ids}
 
         # Query outgoing edges (where node is the source)

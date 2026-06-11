@@ -360,11 +360,13 @@ class MemgraphStorage(BaseGraphStorage):
                     )  # Ensure the result is consumed even on error
                 raise
 
-    async def get_node_edges(self, source_node_id: str) -> list[tuple[str, str]] | None:
+    async def get_node_edges(self, source_node_id: str, limit: int | None = None) -> list[tuple[str, str]] | None:
         """Retrieves all edges (relationships) for a particular node identified by its label.
 
         Args:
             source_node_id: Label of the node to get edges for
+            limit: When provided, return only the top-N edges sorted by weight
+                descending.
 
         Returns:
             list[tuple[str, str]]: List of (source_label, target_label) tuples representing edges
@@ -384,13 +386,25 @@ class MemgraphStorage(BaseGraphStorage):
                 results = None
                 try:
                     workspace_label = self._get_workspace_label()
-                    query = f"""MATCH (n:`{workspace_label}` {{entity_id: $entity_id}})
-                            OPTIONAL MATCH (n)-[r]-(connected:`{workspace_label}`)
-                            WHERE connected.entity_id IS NOT NULL
-                            RETURN n.entity_id AS node_entity_id,
-                                   connected.entity_id AS connected_entity_id,
-                                   startNode(r).entity_id AS start_entity_id"""
-                    results = await session.run(query, entity_id=source_node_id)
+                    if limit is not None:
+                        query = f"""MATCH (n:`{workspace_label}` {{entity_id: $entity_id}})
+                                OPTIONAL MATCH (n)-[r]-(connected:`{workspace_label}`)
+                                WHERE connected.entity_id IS NOT NULL
+                                WITH n, r, connected
+                                ORDER BY r.weight DESC
+                                LIMIT $limit
+                                RETURN n.entity_id AS node_entity_id,
+                                       connected.entity_id AS connected_entity_id,
+                                       startNode(r).entity_id AS start_entity_id"""
+                        results = await session.run(query, entity_id=source_node_id, limit=limit)
+                    else:
+                        query = f"""MATCH (n:`{workspace_label}` {{entity_id: $entity_id}})
+                                OPTIONAL MATCH (n)-[r]-(connected:`{workspace_label}`)
+                                WHERE connected.entity_id IS NOT NULL
+                                RETURN n.entity_id AS node_entity_id,
+                                       connected.entity_id AS connected_entity_id,
+                                       startNode(r).entity_id AS start_entity_id"""
+                        results = await session.run(query, entity_id=source_node_id)
 
                     edges = []
                     async for record in results:

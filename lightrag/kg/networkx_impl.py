@@ -248,11 +248,15 @@ class NetworkXStorage(BaseGraphStorage):
         graph = await self._get_graph()
         return graph.edges.get((source_node_id, target_node_id))
 
-    async def get_node_edges(self, source_node_id: str) -> list[tuple[str, str]] | None:
+    async def get_node_edges(self, source_node_id: str, limit: int | None = None) -> list[tuple[str, str]] | None:
         graph = await self._get_graph()
-        if graph.has_node(source_node_id):
-            return list(graph.edges(source_node_id))
-        return None
+        if not graph.has_node(source_node_id):
+            return None
+        edges = list(graph.edges(source_node_id, data=True))
+        if limit is not None:
+            edges.sort(key=lambda e: float(e[2].get("weight", 0)), reverse=True)
+            edges = edges[:limit]
+        return [(src, tgt) for src, tgt, _ in edges]
 
     async def upsert_node(self, node_id: str, node_data: dict[str, str]) -> None:
         """Insert or update a single node; persistence is deferred.

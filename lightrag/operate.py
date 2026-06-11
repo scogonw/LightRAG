@@ -5486,7 +5486,7 @@ async def _find_most_related_edges_from_entities(
     knowledge_graph_inst: BaseGraphStorage,
 ):
     node_names = [dp["entity_name"] for dp in node_datas]
-    batch_edges_dict = await knowledge_graph_inst.get_nodes_edges_batch(node_names, metadata_filter=query_param.metadata_filter, org_id=query_param.org_id)
+    batch_edges_dict = await knowledge_graph_inst.get_nodes_edges_batch(node_names, metadata_filter=query_param.metadata_filter, org_id=query_param.org_id, limit=query_param.top_k)
 
     all_edges = []
     seen = set()
