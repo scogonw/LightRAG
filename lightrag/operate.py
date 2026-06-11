@@ -165,6 +165,11 @@ def _filter_chunks_by_kb_access(
     for chunk in chunks:
         chunk_meta = chunk.get("metadata")
         if chunk_meta is None:
+            # Legacy chunks lack a metadata dict; fall back to top-level org_id so
+            # pre-migration content is not silently excluded from KG-mode queries.
+            fallback_meta = {"org_id": chunk.get("org_id")}
+            if _chunk_meta_matches_kb_filter(fallback_meta, metadata_filter, org_id):
+                out.append(chunk)
             continue
         if isinstance(chunk_meta, dict):
             meta_list = [chunk_meta]
@@ -5697,6 +5702,10 @@ async def _find_related_text_unit_from_entities(
             f"[_find_related_text_unit_from_entities] Metadata filter applied: {len(filtered_chunks)}/{before_count} entity chunks passed"
         )
         result_chunks = filtered_chunks
+        if chunk_tracking is not None:
+            filtered_ids = {c.get("chunk_id") for c in result_chunks}
+            for stale_id in list(chunk_tracking.keys() - filtered_ids):
+                del chunk_tracking[stale_id]
 
     return result_chunks
 
@@ -6034,6 +6043,10 @@ async def _find_related_text_unit_from_relations(
             f"[_find_related_text_unit_from_relations] Metadata filter applied: {len(filtered_chunks)}/{before_count} relation chunks passed"
         )
         result_chunks = filtered_chunks
+        if chunk_tracking is not None:
+            filtered_ids = {c.get("chunk_id") for c in result_chunks}
+            for stale_id in list(chunk_tracking.keys() - filtered_ids):
+                del chunk_tracking[stale_id]
 
     return result_chunks
 
