@@ -311,7 +311,7 @@ class NanoVectorDBStorage(BaseVectorStorage):
             return self._client
 
     async def upsert(self, data: dict[str, dict[str, Any]], token_tracker=None) -> None:
-        """
+        """Buffer entries for deferred embedding and flush via index_done_callback."""
         # logger.debug(f"[{self.workspace}] Buffering {len(data)} to {self.namespace}")
         if not data:
             return
