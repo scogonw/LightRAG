@@ -1425,14 +1425,6 @@ class LightRAG(_RoleLLMMixin, _StorageMigrationMixin, _PipelineMixin):
             split_by_character_only=split_by_character_only,
         )
         await self.apipeline_enqueue_documents(input, ids, file_paths, track_id, metadata=metadata, chunk_options=chunk_opts)
-        )
-        await self.apipeline_enqueue_documents(
-            input,
-            ids,
-            file_paths,
-            track_id,
-            chunk_options=chunk_opts,
-        )
         await self.apipeline_process_enqueue_documents()
 
         return track_id
