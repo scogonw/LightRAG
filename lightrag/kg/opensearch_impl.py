@@ -3455,16 +3455,24 @@ class OpenSearchGraphStorage(BaseGraphStorage):
             return []
 
     async def _collect_node_ids(
-        self, limit: int, exclude_ids: set[str] | None = None
+        self,
+        limit: int,
+        exclude_ids: set[str] | None = None,
+        org_id: str | None = None,
     ) -> list[str]:
         """Collect up to `limit` node IDs, optionally skipping known IDs."""
         if limit <= 0:
             return []
 
         excluded = exclude_ids or set()
+        node_query = (
+            {"bool": {"filter": [{"term": {"org_id": org_id}}]}}
+            if org_id is not None
+            else {"match_all": {}}
+        )
         if not excluded and limit <= 10000:
             body = {
-                "query": {"match_all": {}},
+                "query": node_query,
                 "_source": False,
                 "size": limit,
             }
@@ -3480,7 +3488,7 @@ class OpenSearchGraphStorage(BaseGraphStorage):
             search_after = None
             while len(node_ids) < limit:
                 body = {
-                    "query": {"match_all": {}},
+                    "query": node_query,
                     "_source": False,
                     "size": 10000,
                     "pit": {"id": pit_id, "keep_alive": "1m"},
@@ -3627,9 +3635,9 @@ class OpenSearchGraphStorage(BaseGraphStorage):
         """Retrieve a subgraph via PPL graphlookup (if available) or client-side BFS.
 
         ``org_id`` (when provided) restricts the returned subgraph to nodes
-        and edges tagged with the matching ``org_id`` property. Applied as a
-        post-filter; push-down would require threading the predicate through
-        PPL/BFS code paths and is left for a follow-up.
+        and edges tagged with the matching ``org_id`` property. The predicate
+        is pushed into the BFS/query layer so the traversal budget is not wasted
+        on wrong-org nodes and ``is_truncated`` reflects the org-scoped subgraph.
         """
         if not self._indices_ready:
             return KnowledgeGraph()
@@ -3646,11 +3654,11 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                 refresh_nodes=True, refresh_edges=True
             )
             if node_label == "*":
-                result = await self._get_knowledge_graph_all(max_nodes)
+                result = await self._get_knowledge_graph_all(max_nodes, org_id)
             elif self._ppl_graphlookup_available:
-                result = await self._bfs_subgraph_ppl(node_label, max_depth, max_nodes)
+                result = await self._bfs_subgraph_ppl(node_label, max_depth, max_nodes, org_id)
             else:
-                result = await self._bfs_subgraph(node_label, max_depth, max_nodes)
+                result = await self._bfs_subgraph(node_label, max_depth, max_nodes, org_id)
 
             duration = time.perf_counter() - start
             logger.info(
@@ -3663,22 +3671,27 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                 return KnowledgeGraph()
             logger.error(f"[{self.workspace}] Graph query failed: {e}")
 
-        if org_id is not None:
-            result = result.filter_by_org(org_id)
-
         return result
 
-    async def _get_knowledge_graph_all(self, max_nodes: int) -> KnowledgeGraph:
+    async def _get_knowledge_graph_all(
+        self, max_nodes: int, org_id: str | None = None
+    ) -> KnowledgeGraph:
         """Get all nodes (up to max_nodes, ranked by degree) and their interconnecting edges."""
         result = KnowledgeGraph()
         if not self._indices_ready:
             return result
         try:
-            total = (await self.client.count(index=self._nodes_index))["count"]
+            if org_id is not None:
+                count_body = {"query": {"term": {"org_id": org_id}}}
+                total = (
+                    await self.client.count(index=self._nodes_index, body=count_body)
+                )["count"]
+            else:
+                total = (await self.client.count(index=self._nodes_index))["count"]
             result.is_truncated = total > max_nodes
 
             if result.is_truncated:
-                # Get top nodes by degree
+                # Get top nodes by degree, scoped to org_id when provided
                 body = {
                     "size": 0,
                     "aggs": {
@@ -3696,6 +3709,8 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                         },
                     },
                 }
+                if org_id is not None:
+                    body["query"] = {"term": {"org_id": org_id}}
                 resp = await self.client.search(index=self._edges_index, body=body)
                 degree_map = {}
                 for bucket in resp["aggregations"]["src"]["buckets"]:
@@ -3712,11 +3727,13 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                 if len(top_ids) < max_nodes:
                     top_ids.extend(
                         await self._collect_node_ids(
-                            max_nodes - len(top_ids), exclude_ids=set(top_ids)
+                            max_nodes - len(top_ids),
+                            exclude_ids=set(top_ids),
+                            org_id=org_id,
                         )
                     )
             else:
-                top_ids = await self._collect_node_ids(max_nodes)
+                top_ids = await self._collect_node_ids(max_nodes, org_id=org_id)
 
             # Fetch node data
             if top_ids:
@@ -3726,6 +3743,8 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                 found_node_ids = []
                 for doc in node_resp["docs"]:
                     if doc.get("found"):
+                        if org_id is not None and doc["_source"].get("org_id") != org_id:
+                            continue
                         found_node_ids.append(doc["_id"])
                         result.nodes.append(
                             self._construct_graph_node(doc["_id"], doc["_source"])
@@ -3740,7 +3759,7 @@ class OpenSearchGraphStorage(BaseGraphStorage):
         return result
 
     async def _bfs_subgraph_ppl(
-        self, start_label: str, max_depth: int, max_nodes: int
+        self, start_label: str, max_depth: int, max_nodes: int, org_id: str | None = None
     ) -> KnowledgeGraph:
         """Server-side BFS using PPL graphlookup command.
 
@@ -3750,9 +3769,11 @@ class OpenSearchGraphStorage(BaseGraphStorage):
         """
         result = KnowledgeGraph()
 
-        # Verify start node exists
+        # Verify start node exists and belongs to the requested org
         start_node = await self.get_node(start_label)
         if not start_node:
+            return result
+        if org_id is not None and start_node.get("org_id") != org_id:
             return result
 
         result.nodes.append(self._construct_graph_node(start_label, start_node))
@@ -3785,7 +3806,7 @@ class OpenSearchGraphStorage(BaseGraphStorage):
             logger.warning(
                 f"[{self.workspace}] PPL graphlookup failed, falling back to client BFS: {e}"
             )
-            return await self._bfs_subgraph(start_label, max_depth, max_nodes)
+            return await self._bfs_subgraph(start_label, max_depth, max_nodes, org_id)
 
         # Parse PPL response — schema-driven to avoid fragile positional access
         try:
@@ -3812,13 +3833,13 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                 logger.warning(
                     f"[{self.workspace}] PPL returned positional arrays, falling back to client BFS"
                 )
-                return await self._bfs_subgraph(start_label, max_depth, max_nodes)
+                return await self._bfs_subgraph(start_label, max_depth, max_nodes, org_id)
 
         except (KeyError, IndexError, TypeError, ValueError) as e:
             logger.warning(
                 f"[{self.workspace}] Error parsing PPL response, falling back: {e}"
             )
-            return await self._bfs_subgraph(start_label, max_depth, max_nodes)
+            return await self._bfs_subgraph(start_label, max_depth, max_nodes, org_id)
 
         ordered_node_ids = [start_label]
         discovered_nodes = {start_label}
@@ -3833,21 +3854,30 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                 if len(ordered_node_ids) < max_nodes:
                     ordered_node_ids.append(node_id)
 
-        result.is_truncated = len(discovered_nodes) > max_nodes
-
         # Batch fetch node data (start node already added)
         new_node_ids = [nid for nid in ordered_node_ids if nid != start_label]
+        fetched_node_ids = [start_label]
         if new_node_ids:
             node_resp = await self.client.mget(
                 index=self._nodes_index, body={"ids": new_node_ids}
             )
             for doc in node_resp["docs"]:
                 if doc.get("found"):
+                    if org_id is not None and doc["_source"].get("org_id") != org_id:
+                        continue
+                    fetched_node_ids.append(doc["_id"])
                     result.nodes.append(
                         self._construct_graph_node(doc["_id"], doc["_source"])
                     )
 
-        await self._append_edges_between_nodes(ordered_node_ids, result)
+        # is_truncated: budget was hit AND no cross-org nodes were shed during mget.
+        # If filtering removed nodes the pre-traversal cap is unreliable.
+        result.is_truncated = (
+            len(discovered_nodes) > max_nodes
+            and len(fetched_node_ids) == len(ordered_node_ids)
+        )
+
+        await self._append_edges_between_nodes(fetched_node_ids, result)
 
         return result
 
@@ -3874,15 +3904,17 @@ class OpenSearchGraphStorage(BaseGraphStorage):
         return value.replace("\\", "\\\\").replace("*", "\\*").replace("?", "\\?")
 
     async def _bfs_subgraph(
-        self, start_label: str, max_depth: int, max_nodes: int
+        self, start_label: str, max_depth: int, max_nodes: int, org_id: str | None = None
     ) -> KnowledgeGraph:
         """BFS traversal from a starting node, batching neighbor lookups per level."""
         result = KnowledgeGraph()
         seen_nodes = set()
 
-        # Verify start node exists
+        # Verify start node exists and belongs to the requested org
         start_node = await self.get_node(start_label)
         if not start_node:
+            return result
+        if org_id is not None and start_node.get("org_id") != org_id:
             return result
 
         seen_nodes.add(start_label)
@@ -3893,16 +3925,18 @@ class OpenSearchGraphStorage(BaseGraphStorage):
             if not current_level or len(seen_nodes) >= max_nodes:
                 break
 
-            # Batch fetch all edges for current level
+            # Batch fetch all edges for current level, scoped to org_id when provided
+            edge_bool: dict = {
+                "should": [
+                    {"terms": {"source_node_id": current_level}},
+                    {"terms": {"target_node_id": current_level}},
+                ],
+                "minimum_should_match": 1,
+            }
+            if org_id is not None:
+                edge_bool["filter"] = [{"term": {"org_id": org_id}}]
             body = {
-                "query": {
-                    "bool": {
-                        "should": [
-                            {"terms": {"source_node_id": current_level}},
-                            {"terms": {"target_node_id": current_level}},
-                        ]
-                    }
-                },
+                "query": {"bool": edge_bool},
                 "_source": ["source_node_id", "target_node_id"],
                 "size": 10000,
             }
@@ -3934,6 +3968,8 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                 )
                 for doc in node_resp["docs"]:
                     if doc.get("found"):
+                        if org_id is not None and doc["_source"].get("org_id") != org_id:
+                            continue
                         seen_nodes.add(doc["_id"])
                         result.nodes.append(
                             self._construct_graph_node(doc["_id"], doc["_source"])

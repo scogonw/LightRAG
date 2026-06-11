@@ -3312,6 +3312,354 @@ class TestGraphStorage:
             assert len(result.edges) == 0
 
 
+class TestGraphOrgIdPushDown:
+    """Tests verifying org_id predicate is pushed into BFS/query rather than post-filtered."""
+
+    def _make(self, global_config, embed_func, workspace="test"):
+        return OpenSearchGraphStorage(
+            namespace="chunk_entity_relation",
+            global_config=global_config,
+            embedding_func=embed_func,
+            workspace=workspace,
+        )
+
+    @pytest.mark.asyncio
+    async def test_bfs_subgraph_single_org_preserved(
+        self, global_config, embed_func, mock_client
+    ):
+        """Single-org graph: all nodes returned, is_truncated correctly False."""
+        mock_client.transport = AsyncMock()
+        mock_client.transport.perform_request = AsyncMock(
+            side_effect=Exception("PPL not available")
+        )
+        # Start node belongs to org_X
+        mock_client.mget = AsyncMock(
+            side_effect=[
+                # get_node for start
+                {
+                    "docs": [
+                        {
+                            "_id": "A",
+                            "found": True,
+                            "_source": {"entity_type": "person", "org_id": "org_X"},
+                        }
+                    ]
+                },
+                # BFS level-1 node fetch
+                {
+                    "docs": [
+                        {
+                            "_id": "B",
+                            "found": True,
+                            "_source": {"entity_type": "person", "org_id": "org_X"},
+                        }
+                    ]
+                },
+            ]
+        )
+        mock_client.search = AsyncMock(
+            side_effect=[
+                # BFS edge query
+                {
+                    "hits": {
+                        "hits": [
+                            {
+                                "_id": "e1",
+                                "_source": {
+                                    "source_node_id": "A",
+                                    "target_node_id": "B",
+                                },
+                            }
+                        ]
+                    }
+                },
+                # _append_edges_between_nodes page 1
+                {
+                    "hits": {
+                        "hits": [
+                            {
+                                "_id": "e1",
+                                "_source": {
+                                    "source_node_id": "A",
+                                    "target_node_id": "B",
+                                    "org_id": "org_X",
+                                },
+                                "sort": [1],
+                            }
+                        ]
+                    }
+                },
+                # _append_edges_between_nodes page 2 (empty)
+                {"hits": {"hits": []}},
+            ]
+        )
+        with patch.object(ClientManager, "get_client", return_value=mock_client):
+            s = self._make(global_config, embed_func)
+            await s.initialize()
+            result = await s.get_knowledge_graph("A", max_depth=1, max_nodes=10, org_id="org_X")
+
+        assert {n.id for n in result.nodes} == {"A", "B"}
+        assert result.is_truncated is False
+        # Edge query must include org_id filter
+        edge_call_body = mock_client.search.call_args_list[0][1]["body"]
+        edge_bool = edge_call_body["query"]["bool"]
+        assert "filter" in edge_bool
+        assert {"term": {"org_id": "org_X"}} in edge_bool["filter"]
+
+    @pytest.mark.asyncio
+    async def test_bfs_subgraph_multi_org_filters_out_wrong_org(
+        self, global_config, embed_func, mock_client
+    ):
+        """Multi-org graph: wrong-org nodes excluded; is_truncated cleared when nodes were shed."""
+        mock_client.transport = AsyncMock()
+        mock_client.transport.perform_request = AsyncMock(
+            side_effect=Exception("PPL not available")
+        )
+        mock_client.mget = AsyncMock(
+            side_effect=[
+                # get_node for start (org_X)
+                {
+                    "docs": [
+                        {
+                            "_id": "A",
+                            "found": True,
+                            "_source": {"entity_type": "person", "org_id": "org_X"},
+                        }
+                    ]
+                },
+                # BFS level-1 node fetch — B is org_X, C is wrong org
+                {
+                    "docs": [
+                        {
+                            "_id": "B",
+                            "found": True,
+                            "_source": {"entity_type": "person", "org_id": "org_X"},
+                        },
+                        {
+                            "_id": "C",
+                            "found": True,
+                            "_source": {"entity_type": "person", "org_id": "org_Y"},
+                        },
+                    ]
+                },
+            ]
+        )
+        mock_client.search = AsyncMock(
+            side_effect=[
+                # BFS edge query returns edges for both B and C
+                {
+                    "hits": {
+                        "hits": [
+                            {
+                                "_id": "e1",
+                                "_source": {
+                                    "source_node_id": "A",
+                                    "target_node_id": "B",
+                                },
+                            },
+                            {
+                                "_id": "e2",
+                                "_source": {
+                                    "source_node_id": "A",
+                                    "target_node_id": "C",
+                                },
+                            },
+                        ]
+                    }
+                },
+                # _append_edges_between_nodes page 1
+                {
+                    "hits": {
+                        "hits": [
+                            {
+                                "_id": "e1",
+                                "_source": {
+                                    "source_node_id": "A",
+                                    "target_node_id": "B",
+                                    "org_id": "org_X",
+                                },
+                                "sort": [1],
+                            }
+                        ]
+                    }
+                },
+                # _append_edges_between_nodes page 2 (empty)
+                {"hits": {"hits": []}},
+            ]
+        )
+        with patch.object(ClientManager, "get_client", return_value=mock_client):
+            s = self._make(global_config, embed_func)
+            await s.initialize()
+            result = await s.get_knowledge_graph("A", max_depth=1, max_nodes=10, org_id="org_X")
+
+        assert {n.id for n in result.nodes} == {"A", "B"}
+        assert "C" not in {n.id for n in result.nodes}
+        assert result.is_truncated is False
+
+    @pytest.mark.asyncio
+    async def test_bfs_subgraph_wrong_org_start_node_returns_empty(
+        self, global_config, embed_func, mock_client
+    ):
+        """If the start node belongs to a different org, return empty graph."""
+        mock_client.transport = AsyncMock()
+        mock_client.transport.perform_request = AsyncMock(
+            side_effect=Exception("PPL not available")
+        )
+        mock_client.mget = AsyncMock(
+            return_value={
+                "docs": [
+                    {
+                        "_id": "A",
+                        "found": True,
+                        "_source": {"entity_type": "person", "org_id": "org_Y"},
+                    }
+                ]
+            }
+        )
+        with patch.object(ClientManager, "get_client", return_value=mock_client):
+            s = self._make(global_config, embed_func)
+            await s.initialize()
+            result = await s.get_knowledge_graph("A", max_depth=1, max_nodes=10, org_id="org_X")
+
+        assert len(result.nodes) == 0
+        assert result.is_truncated is False
+
+    @pytest.mark.asyncio
+    async def test_bfs_truncated_single_org_preserves_is_truncated(
+        self, global_config, embed_func, mock_client
+    ):
+        """Budget-limited org_X-only subgraph keeps is_truncated=True."""
+        mock_client.transport = AsyncMock()
+        mock_client.transport.perform_request = AsyncMock(
+            side_effect=Exception("PPL not available")
+        )
+        # max_nodes=2; A + B = 2 (hit the cap)
+        mock_client.mget = AsyncMock(
+            side_effect=[
+                # get_node for start A
+                {
+                    "docs": [
+                        {
+                            "_id": "A",
+                            "found": True,
+                            "_source": {"entity_type": "person", "org_id": "org_X"},
+                        }
+                    ]
+                },
+                # level-1: only B fits under max_nodes=2
+                {
+                    "docs": [
+                        {
+                            "_id": "B",
+                            "found": True,
+                            "_source": {"entity_type": "person", "org_id": "org_X"},
+                        }
+                    ]
+                },
+            ]
+        )
+        mock_client.search = AsyncMock(
+            side_effect=[
+                # BFS edge query: edges from A to B, C
+                {
+                    "hits": {
+                        "hits": [
+                            {
+                                "_id": "e1",
+                                "_source": {
+                                    "source_node_id": "A",
+                                    "target_node_id": "B",
+                                },
+                            },
+                            {
+                                "_id": "e2",
+                                "_source": {
+                                    "source_node_id": "A",
+                                    "target_node_id": "C",
+                                },
+                            },
+                        ]
+                    }
+                },
+                # _append_edges_between_nodes
+                {
+                    "hits": {
+                        "hits": [
+                            {
+                                "_id": "e1",
+                                "_source": {
+                                    "source_node_id": "A",
+                                    "target_node_id": "B",
+                                    "org_id": "org_X",
+                                },
+                                "sort": [1],
+                            }
+                        ]
+                    }
+                },
+                {"hits": {"hits": []}},
+            ]
+        )
+        with patch.object(ClientManager, "get_client", return_value=mock_client):
+            s = self._make(global_config, embed_func)
+            await s.initialize()
+            result = await s.get_knowledge_graph("A", max_depth=1, max_nodes=2, org_id="org_X")
+
+        assert {n.id for n in result.nodes} == {"A", "B"}
+        assert result.is_truncated is True
+
+    @pytest.mark.asyncio
+    async def test_get_knowledge_graph_all_with_org_id_filters_count(
+        self, global_config, embed_func, mock_client
+    ):
+        """get_knowledge_graph('*') with org_id passes org_id term filter to count query."""
+        mock_client.transport = AsyncMock()
+        mock_client.transport.perform_request = AsyncMock(
+            side_effect=Exception("PPL not available")
+        )
+        # count returns 1 (within max_nodes=10), so no truncation path used
+        mock_client.count = AsyncMock(return_value={"count": 1})
+        mock_client.create_pit = AsyncMock(return_value={"pit_id": "pit1"})
+        mock_client.delete_pit = AsyncMock(return_value={})
+        mock_client.search = AsyncMock(
+            side_effect=[
+                # _collect_node_ids: returns node A
+                {
+                    "hits": {
+                        "hits": [{"_id": "A", "sort": [1]}],
+                        "total": {"value": 1},
+                    }
+                },
+                # _append_edges_between_nodes PIT page 1 (no edges)
+                {"hits": {"hits": []}},
+            ]
+        )
+        mock_client.mget = AsyncMock(
+            return_value={
+                "docs": [
+                    {
+                        "_id": "A",
+                        "found": True,
+                        "_source": {"entity_type": "person", "org_id": "org_X"},
+                    }
+                ]
+            }
+        )
+
+        with patch.object(ClientManager, "get_client", return_value=mock_client):
+            s = self._make(global_config, embed_func)
+            await s.initialize()
+            result = await s.get_knowledge_graph("*", max_nodes=10, org_id="org_X")
+
+        # count must have been called with org_id filter
+        count_call = mock_client.count.call_args
+        assert count_call is not None
+        body = count_call[1].get("body") or (count_call[0][0] if count_call[0] else None)
+        assert body == {"query": {"term": {"org_id": "org_X"}}}
+        assert {n.id for n in result.nodes} == {"A"}
+        assert result.is_truncated is False
+
+
 class TestGraphPPLDetection:
     """Tests for PPL graphlookup detection and server-side BFS."""
 

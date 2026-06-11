@@ -1986,27 +1986,32 @@ class MongoGraphStorage(BaseGraphStorage):
         return [docs_by_id[node_id] for node_id in node_ids if node_id in docs_by_id]
 
     async def get_knowledge_graph_all_by_degree(
-        self, max_depth: int, max_nodes: int
+        self, max_depth: int, max_nodes: int, org_id: str | None = None
     ) -> KnowledgeGraph:
         """
         It's possible that the node with one or multiple relationships is retrieved,
         while its neighbor is not.  Then this node might seem like disconnected in UI.
         """
+        node_filter = {"org_id": org_id} if org_id is not None else {}
+        edge_filter = {"org_id": org_id} if org_id is not None else {}
 
-        total_node_count = await self.collection.count_documents({})
+        total_node_count = await self.collection.count_documents(node_filter)
         result = KnowledgeGraph()
         seen_edges = set()
 
         result.is_truncated = total_node_count > max_nodes
         if result.is_truncated:
             # Get all node_ids ranked by degree if max_nodes exceeds total node count
+            edge_match = [{"$match": edge_filter}] if edge_filter else []
             pipeline = [
+                *edge_match,
                 {"$project": {"source_node_id": 1, "_id": 0}},
                 {"$group": {"_id": "$source_node_id", "degree": {"$sum": 1}}},
                 {
                     "$unionWith": {
                         "coll": self._edge_collection_name,
                         "pipeline": [
+                            *edge_match,
                             {"$project": {"target_node_id": 1, "_id": 0}},
                             {
                                 "$group": {
@@ -2030,8 +2035,9 @@ class MongoGraphStorage(BaseGraphStorage):
 
             if len(node_ids) < max_nodes:
                 remaining = max_nodes - len(node_ids)
+                extra_filter = {**node_filter, "_id": {"$nin": node_ids}}
                 cursor = self.collection.find(
-                    {"_id": {"$nin": node_ids}},
+                    extra_filter,
                     {"source_ids": 0},
                 ).limit(remaining)
                 async for doc in cursor:
@@ -2047,18 +2053,19 @@ class MongoGraphStorage(BaseGraphStorage):
                     "$and": [
                         {"source_node_id": {"$in": node_ids}},
                         {"target_node_id": {"$in": node_ids}},
+                        *([{"org_id": org_id}] if org_id is not None else []),
                     ]
                 }
             )
         else:
             # All nodes and edges are needed
-            cursor = self.collection.find({}, {"source_ids": 0})
+            cursor = self.collection.find(node_filter, {"source_ids": 0})
 
             async for doc in cursor:
                 node_id = str(doc["_id"])
                 result.nodes.append(self._construct_graph_node(doc["_id"], doc))
 
-            edge_cursor = self.edge_collection.find({})
+            edge_cursor = self.edge_collection.find(edge_filter)
 
         async for edge in edge_cursor:
             edge_id = f"{edge['source_node_id']}-{edge['target_node_id']}"
@@ -2076,11 +2083,15 @@ class MongoGraphStorage(BaseGraphStorage):
         depth: int,
         max_depth: int,
         max_nodes: int,
+        org_id: str | None = None,
     ) -> KnowledgeGraph:
         if depth > max_depth or len(result.nodes) > max_nodes:
             return result
 
-        cursor = self.collection.find({"_id": {"$in": node_labels}})
+        node_filter: dict = {"_id": {"$in": node_labels}}
+        if org_id is not None:
+            node_filter["org_id"] = org_id
+        cursor = self.collection.find(node_filter)
 
         async for node in cursor:
             node_id = node["_id"]
@@ -2090,16 +2101,16 @@ class MongoGraphStorage(BaseGraphStorage):
                 if len(result.nodes) > max_nodes:
                     return result
 
-        # Collect neighbors
-        # Get both inbound and outbound one hop nodes
-        cursor = self.edge_collection.find(
-            {
-                "$or": [
-                    {"source_node_id": {"$in": node_labels}},
-                    {"target_node_id": {"$in": node_labels}},
-                ]
-            }
-        )
+        # Collect neighbors via edges (scoped to org_id when provided)
+        edge_query: dict = {
+            "$or": [
+                {"source_node_id": {"$in": node_labels}},
+                {"target_node_id": {"$in": node_labels}},
+            ]
+        }
+        if org_id is not None:
+            edge_query["org_id"] = org_id
+        cursor = self.edge_collection.find(edge_query)
 
         neighbor_nodes = []
         async for edge in cursor:
@@ -2110,7 +2121,7 @@ class MongoGraphStorage(BaseGraphStorage):
 
         if neighbor_nodes:
             result = await self._bidirectional_bfs_nodes(
-                neighbor_nodes, seen_nodes, result, depth + 1, max_depth, max_nodes
+                neighbor_nodes, seen_nodes, result, depth + 1, max_depth, max_nodes, org_id
             )
 
         return result
@@ -2121,25 +2132,27 @@ class MongoGraphStorage(BaseGraphStorage):
         depth: int,
         max_depth: int,
         max_nodes: int,
+        org_id: str | None = None,
     ) -> KnowledgeGraph:
         seen_nodes = set()
         seen_edges = set()
         result = KnowledgeGraph()
 
         result = await self._bidirectional_bfs_nodes(
-            [node_label], seen_nodes, result, depth, max_depth, max_nodes
+            [node_label], seen_nodes, result, depth, max_depth, max_nodes, org_id
         )
 
         # Get all edges from seen_nodes
         all_node_ids = list(seen_nodes)
-        cursor = self.edge_collection.find(
-            {
-                "$and": [
-                    {"source_node_id": {"$in": all_node_ids}},
-                    {"target_node_id": {"$in": all_node_ids}},
-                ]
-            }
-        )
+        edge_filter: dict = {
+            "$and": [
+                {"source_node_id": {"$in": all_node_ids}},
+                {"target_node_id": {"$in": all_node_ids}},
+            ]
+        }
+        if org_id is not None:
+            edge_filter["org_id"] = org_id
+        cursor = self.edge_collection.find(edge_filter)
 
         async for edge in cursor:
             edge_id = f"{edge['source_node_id']}-{edge['target_node_id']}"
@@ -2150,7 +2163,7 @@ class MongoGraphStorage(BaseGraphStorage):
         return result
 
     async def get_knowledge_subgraph_in_out_bound_bfs(
-        self, node_label: str, max_depth: int, max_nodes: int
+        self, node_label: str, max_depth: int, max_nodes: int, org_id: str | None = None
     ) -> KnowledgeGraph:
         seen_nodes = set()
         seen_edges = set()
@@ -2162,8 +2175,11 @@ class MongoGraphStorage(BaseGraphStorage):
             "file_path": 0,
         }
 
-        # Verify if starting node exists
-        start_node = await self.collection.find_one({"_id": node_label})
+        # Verify if starting node exists (and belongs to the requested org)
+        start_filter: dict = {"_id": node_label}
+        if org_id is not None:
+            start_filter["org_id"] = org_id
+        start_node = await self.collection.find_one(start_filter)
         if not start_node:
             logger.warning(
                 f"[{self.workspace}] Starting node with label {node_label} does not exist!"
@@ -2179,37 +2195,41 @@ class MongoGraphStorage(BaseGraphStorage):
         # In MongoDB, depth = 0 means one-hop
         max_depth = max_depth - 1
 
+        # Build the $graphLookup stages, scoping traversal to org_id when provided
+        restrict_match = {"org_id": org_id} if org_id is not None else None
+        fwd_lookup: dict = {
+            "from": self._edge_collection_name,
+            "startWith": "$_id",
+            "connectFromField": "target_node_id",
+            "connectToField": "source_node_id",
+            "maxDepth": max_depth,
+            "depthField": "depth",
+            "as": "connected_edges",
+        }
+        bwd_lookup: dict = {
+            "from": self._edge_collection_name,
+            "startWith": "$_id",
+            "connectFromField": "source_node_id",
+            "connectToField": "target_node_id",
+            "maxDepth": max_depth,
+            "depthField": "depth",
+            "as": "connected_edges",
+        }
+        if restrict_match is not None:
+            fwd_lookup["restrictSearchWithMatch"] = restrict_match
+            bwd_lookup["restrictSearchWithMatch"] = restrict_match
+
         pipeline = [
             {"$match": {"_id": node_label}},
             {"$project": project_doc},
-            {
-                "$graphLookup": {
-                    "from": self._edge_collection_name,
-                    "startWith": "$_id",
-                    "connectFromField": "target_node_id",
-                    "connectToField": "source_node_id",
-                    "maxDepth": max_depth,
-                    "depthField": "depth",
-                    "as": "connected_edges",
-                },
-            },
+            {"$graphLookup": fwd_lookup},
             {
                 "$unionWith": {
                     "coll": self._collection_name,
                     "pipeline": [
                         {"$match": {"_id": node_label}},
                         {"$project": project_doc},
-                        {
-                            "$graphLookup": {
-                                "from": self._edge_collection_name,
-                                "startWith": "$_id",
-                                "connectFromField": "source_node_id",
-                                "connectToField": "target_node_id",
-                                "maxDepth": max_depth,
-                                "depthField": "depth",
-                                "as": "connected_edges",
-                            }
-                        },
+                        {"$graphLookup": bwd_lookup},
                     ],
                 }
             },
@@ -2276,8 +2296,8 @@ class MongoGraphStorage(BaseGraphStorage):
             node_label: Label of the starting node, * means all nodes
             max_depth: Maximum depth of the subgraph, Defaults to 3
             max_nodes: Maximum nodes to return, Defaults to global_config max_graph_nodes
-            org_id: Optional organization ID for multi-tenant scoping. Applied
-                as a post-filter on the returned subgraph.
+            org_id: Optional organization ID for multi-tenant scoping. Pushed
+                into the traversal so the budget is spent on org-matching nodes only.
 
         Returns:
             KnowledgeGraph object containing nodes and edges, with an is_truncated flag
@@ -2315,15 +2335,15 @@ class MongoGraphStorage(BaseGraphStorage):
             # Optimize pipeline to avoid memory issues with large datasets
             if node_label == "*":
                 result = await self.get_knowledge_graph_all_by_degree(
-                    max_depth, max_nodes
+                    max_depth, max_nodes, org_id
                 )
             elif GRAPH_BFS_MODE == "in_out_bound":
                 result = await self.get_knowledge_subgraph_in_out_bound_bfs(
-                    node_label, max_depth, max_nodes
+                    node_label, max_depth, max_nodes, org_id
                 )
             else:
                 result = await self.get_knowledge_subgraph_bidirectional_bfs(
-                    node_label, 0, max_depth, max_nodes
+                    node_label, 0, max_depth, max_nodes, org_id
                 )
 
             duration = time.perf_counter() - start
@@ -2340,7 +2360,8 @@ class MongoGraphStorage(BaseGraphStorage):
                 )
                 # Fallback to a simple query without complex aggregation
                 try:
-                    simple_cursor = self.collection.find({}).limit(max_nodes)
+                    fallback_filter = {"org_id": org_id} if org_id is not None else {}
+                    simple_cursor = self.collection.find(fallback_filter).limit(max_nodes)
                     async for doc in simple_cursor:
                         result.nodes.append(
                             self._construct_graph_node(str(doc["_id"]), doc)
@@ -2355,9 +2376,6 @@ class MongoGraphStorage(BaseGraphStorage):
                     )
             else:
                 logger.error(f"[{self.workspace}] MongoDB query failed: {str(e)}")
-
-        if org_id is not None:
-            result = result.filter_by_org(org_id)
 
         return result
 
