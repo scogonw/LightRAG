@@ -442,6 +442,7 @@ class InsertTextRequest(BaseModel):
     metadata: Optional[Dict[str, Any]] = Field(
         default=None,
         description="Optional metadata dict attached to the document. Propagates to chunks, entities, and relations. Used for filtering during queries. Example: {\"department\": \"engineering\", \"year\": 2024}",
+    )
     chunking: Optional[TextChunkingConfig] = Field(
         default=None,
         description="Chunking strategy and params; omit for default fixed-token chunking",
@@ -498,6 +499,7 @@ class InsertTextsRequest(BaseModel):
     metadata: Optional[Dict[str, Any]] = Field(
         default=None,
         description="Optional metadata dict attached to all documents in this batch. Propagates to chunks, entities, and relations. Used for filtering during queries.",
+    )
     chunking: Optional[TextChunkingConfig] = Field(
         default=None,
         description="Shared chunking strategy and params for all texts; omit for default fixed-token chunking",
@@ -2620,15 +2622,13 @@ async def pipeline_index_texts(
 
     process_options, chunk_options = _resolve_text_chunking(chunking, rag)
     await rag.apipeline_enqueue_documents(
-        process_options, chunk_options = _resolve_text_chunking(chunking, rag)
-        await rag.apipeline_enqueue_documents(
-            input=texts,
-            file_paths=normalized_file_sources,
-            track_id=track_id,
-            metadata=metadata,
-            org_id=org_id,
-            process_options=process_options,
-            chunk_options=chunk_options,
+        input=texts,
+        file_paths=normalized_file_sources,
+        track_id=track_id,
+        metadata=metadata,
+        org_id=org_id,
+        process_options=process_options,
+        chunk_options=chunk_options,
     )
     await rag.apipeline_process_enqueue_documents()
 

@@ -1561,6 +1561,8 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
             logger.error(
                 f"[{self.workspace}] MIGRATION FAILED (drop soft-delete fields): {e}. "
                 f"Rows with is_deleted=True may still exist in {self._index_name}."
+            )
+
     async def _ensure_content_hash_mapping(self) -> None:
         """Add the content_hash keyword mapping to a pre-existing doc status index.
 
@@ -4435,6 +4437,9 @@ class OpenSearchVectorDBStorage(BaseVectorStorage):
                 logger.warning(
                     f"[{self.workspace}] {len(failed)} vectors failed to upsert"
                 )
+        except OpenSearchException as e:
+            logger.error(f"[{self.workspace}] Error upserting vectors: {e}")
+            raise
 
     async def query(
         self, query: str, top_k: int, query_embedding: list[float] = None,
