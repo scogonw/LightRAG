@@ -1511,162 +1511,82 @@ class Neo4JStorage(BaseGraphStorage):
     ) -> KnowledgeGraph:
         """
         Fallback implementation when APOC plugin is not available or incompatible.
-        This method implements the same functionality as get_knowledge_graph but uses
-        only basic Cypher queries and true breadth-first traversal instead of APOC procedures.
+        Issues a single variable-length path query (one round-trip) instead of the
+        previous per-node BFS sessions, reducing N sequential round-trips to one.
         """
-        from collections import deque
-
         result = KnowledgeGraph()
-        visited_nodes = set()
-        visited_edges = set()
-        visited_edge_pairs = set()
-
-        # Build org_id predicate fragments
-        org_node_pred = " AND n.org_id = $org_id" if org_id is not None else ""
-        org_neighbor_pred = " AND b.org_id = $org_id" if org_id is not None else ""
-        cypher_params_base: dict = {}
-        if org_id is not None:
-            cypher_params_base["org_id"] = org_id
-
-        # Get the starting node's data
         workspace_label = self._get_workspace_label()
+
+        org_pred = " AND start.org_id = $org_id" if org_id is not None else ""
+        cypher_params: dict = {"entity_id": node_label}
+        if org_id is not None:
+            cypher_params["org_id"] = org_id
+
+        # Single variable-length path query replaces per-node BFS round-trips.
+        # The B-tree index on entity_id makes the anchor lookup fast.
+        # LIMIT caps path count; unique nodes/edges are collected up to max_nodes.
+        query = f"""
+        MATCH path=(start:`{workspace_label}` {{entity_id: $entity_id}})-[*0..{max_depth}]-(end:`{workspace_label}`)
+        WHERE true{org_pred}
+        RETURN nodes(path) AS path_nodes, relationships(path) AS path_rels
+        LIMIT {max_nodes}
+        """
+
+        seen_node_ids: set[str] = set()
+        seen_edge_ids: set[str] = set()
+        seen_edge_pairs: set[tuple[str, str]] = set()
+
         async with self._driver.session(
             database=self._DATABASE, default_access_mode="READ"
         ) as session:
-            query = f"""
-            MATCH (n:`{workspace_label}` {{entity_id: $entity_id}}) WHERE true{org_node_pred}
-            RETURN id(n) as node_id, n
-            """
-            node_result = await session.run(query, entity_id=node_label, **cypher_params_base)
+            query_result = await session.run(query, **cypher_params)
             try:
-                node_record = await node_result.single()
-                if not node_record:
-                    return result
+                async for record in query_result:
+                    path_nodes = record["path_nodes"]
+                    path_rels = record["path_rels"]
 
-                # Create initial KnowledgeGraphNode
-                start_node = KnowledgeGraphNode(
-                    id=f"{node_record['n'].get('entity_id')}",
-                    labels=[node_record["n"].get("entity_id")],
-                    properties=dict(node_record["n"]._properties),
-                )
-            finally:
-                await node_result.consume()  # Ensure results are consumed
-
-        # Initialize queue for BFS with (node, edge, depth) tuples
-        # edge is None for the starting node
-        queue = deque([(start_node, None, 0)])
-
-        # True BFS implementation using a queue
-        while queue and len(visited_nodes) < max_nodes:
-            # Dequeue the next node to process
-            current_node, current_edge, current_depth = queue.popleft()
-
-            # Skip if already visited or exceeds max depth
-            if current_node.id in visited_nodes:
-                continue
-
-            if current_depth > max_depth:
-                logger.debug(
-                    f"[{self.workspace}] Skipping node at depth {current_depth} (max_depth: {max_depth})"
-                )
-                continue
-
-            # Add current node to result
-            result.nodes.append(current_node)
-            visited_nodes.add(current_node.id)
-
-            # Add edge to result if it exists and not already added
-            if current_edge and current_edge.id not in visited_edges:
-                result.edges.append(current_edge)
-                visited_edges.add(current_edge.id)
-
-            # Stop if we've reached the node limit
-            if len(visited_nodes) >= max_nodes:
-                result.is_truncated = True
-                logger.info(
-                    f"[{self.workspace}] Graph truncated: breadth-first search limited to: {max_nodes} nodes"
-                )
-                break
-
-            # Get all edges and target nodes for the current node (even at max_depth)
-            async with self._driver.session(
-                database=self._DATABASE, default_access_mode="READ"
-            ) as session:
-                workspace_label = self._get_workspace_label()
-                query = f"""
-                MATCH (a:`{workspace_label}` {{entity_id: $entity_id}})-[r]-(b)
-                WHERE true{org_neighbor_pred}
-                WITH r, b, id(r) as edge_id, id(b) as target_id
-                RETURN r, b, edge_id, target_id
-                """
-                results = await session.run(query, entity_id=current_node.id, **cypher_params_base)
-
-                # Get all records and release database connection
-                records = await results.fetch(1000)  # Max neighbor nodes we can handle
-                await results.consume()  # Ensure results are consumed
-
-                # Process all neighbors - capture all edges but only queue unvisited nodes
-                for record in records:
-                    rel = record["r"]
-                    edge_id = str(record["edge_id"])
-
-                    if edge_id not in visited_edges:
-                        b_node = record["b"]
-                        target_id = b_node.get("entity_id")
-
-                        if target_id:  # Only process if target node has entity_id
-                            # Create KnowledgeGraphNode for target
-                            target_node = KnowledgeGraphNode(
-                                id=f"{target_id}",
-                                labels=[target_id],
-                                properties=dict(b_node._properties),
-                            )
-
-                            # Create KnowledgeGraphEdge
-                            target_edge = KnowledgeGraphEdge(
-                                id=f"{edge_id}",
-                                type=rel.type,
-                                source=f"{current_node.id}",
-                                target=f"{target_id}",
-                                properties=dict(rel),
-                            )
-
-                            # Sort source_id and target_id to ensure (A,B) and (B,A) are treated as the same edge
-                            sorted_pair = tuple(sorted([current_node.id, target_id]))
-
-                            # Check if the same edge already exists (considering undirectedness)
-                            if sorted_pair not in visited_edge_pairs:
-                                # Only add the edge if the target node is already in the result or will be added
-                                if target_id in visited_nodes or (
-                                    target_id not in visited_nodes
-                                    and current_depth < max_depth
-                                ):
-                                    result.edges.append(target_edge)
-                                    visited_edges.add(edge_id)
-                                    visited_edge_pairs.add(sorted_pair)
-
-                            # Only add unvisited nodes to the queue for further expansion
-                            if target_id not in visited_nodes:
-                                # Only add to queue if we're not at max depth yet
-                                if current_depth < max_depth:
-                                    # Add node to queue with incremented depth
-                                    # Edge is already added to result, so we pass None as edge
-                                    queue.append((target_node, None, current_depth + 1))
-                                else:
-                                    # At max depth, we've already added the edge but we don't add the node
-                                    # This prevents adding nodes beyond max_depth to the result
-                                    logger.debug(
-                                        f"[{self.workspace}] Node {target_id} beyond max depth {max_depth}, edge added but node not included"
-                                    )
-                            else:
-                                # If target node already exists in result, we don't need to add it again
-                                logger.debug(
-                                    f"[{self.workspace}] Node {target_id} already visited, edge added but node not queued"
+                    for node in path_nodes:
+                        entity_id = node.get("entity_id")
+                        if entity_id and entity_id not in seen_node_ids:
+                            if len(seen_node_ids) >= max_nodes:
+                                result.is_truncated = True
+                                break
+                            result.nodes.append(
+                                KnowledgeGraphNode(
+                                    id=f"{entity_id}",
+                                    labels=[entity_id],
+                                    properties=dict(node),
                                 )
-                        else:
-                            logger.warning(
-                                f"[{self.workspace}] Skipping edge {edge_id} due to missing entity_id on target node"
                             )
+                            seen_node_ids.add(entity_id)
+
+                    # path_nodes[i] and path_nodes[i+1] are connected by path_rels[i]
+                    for i, rel in enumerate(path_rels):
+                        edge_id = str(rel.id)
+                        src_entity_id = path_nodes[i].get("entity_id")
+                        tgt_entity_id = path_nodes[i + 1].get("entity_id")
+
+                        if not src_entity_id or not tgt_entity_id:
+                            logger.warning(
+                                f"[{self.workspace}] Skipping edge {edge_id} due to missing entity_id on endpoint"
+                            )
+                            continue
+
+                        sorted_pair = tuple(sorted([src_entity_id, tgt_entity_id]))
+                        if edge_id not in seen_edge_ids and sorted_pair not in seen_edge_pairs:
+                            result.edges.append(
+                                KnowledgeGraphEdge(
+                                    id=edge_id,
+                                    type=rel.type,
+                                    source=f"{src_entity_id}",
+                                    target=f"{tgt_entity_id}",
+                                    properties=dict(rel),
+                                )
+                            )
+                            seen_edge_ids.add(edge_id)
+                            seen_edge_pairs.add(sorted_pair)
+            finally:
+                await query_result.consume()
 
         logger.info(
             f"[{self.workspace}] BFS subgraph query successful | Node count: {len(result.nodes)} | Edge count: {len(result.edges)}"
