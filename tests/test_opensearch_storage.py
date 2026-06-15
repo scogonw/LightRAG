@@ -1889,6 +1889,61 @@ class TestGraphStorage:
             assert len(result.nodes) == 0
             assert len(result.edges) == 0
 
+    @pytest.mark.asyncio
+    async def test_bfs_subgraph_dangling_ref_not_requeried(
+        self, global_config, embed_func, mock_client
+    ):
+        """A dangling edge reference must not re-enter the frontier on every level.
+
+        Graph: A -> Dangling (Dangling has no node document).
+        With max_depth=3 the old code re-queried Dangling in every BFS iteration
+        because it never entered seen_nodes.  The fix tracks attempted IDs in a
+        separate `visited` set so Dangling is skipped after the first mget.
+        """
+        bfs_edge_resp = {
+            "hits": {
+                "hits": [
+                    {
+                        "_id": "e1",
+                        "_source": {
+                            "source_node_id": "A",
+                            "target_node_id": "Dangling",
+                        },
+                    }
+                ],
+                "total": {"value": 1},
+            }
+        }
+        empty_hits = {"hits": {"hits": [], "total": {"value": 0}}}
+        # search: (1) BFS edge query for ["A"], (2) _append_edges PIT scan → empty
+        mock_client.search = AsyncMock(side_effect=[bfs_edge_resp, empty_hits])
+        # mget: (1) get_node("A") → found, (2) BFS mget(["Dangling"]) → not found
+        mock_client.mget = AsyncMock(
+            side_effect=[
+                {
+                    "docs": [
+                        {
+                            "_id": "A",
+                            "found": True,
+                            "_source": {"entity_type": "person"},
+                        }
+                    ]
+                },
+                {"docs": [{"_id": "Dangling", "found": False}]},
+            ]
+        )
+
+        with patch.object(ClientManager, "get_client", return_value=mock_client):
+            s = self._make(global_config, embed_func)
+            await s.initialize()
+            result = await s.get_knowledge_graph("A", max_depth=3)
+
+        assert len(result.nodes) == 1
+        assert result.nodes[0].id == "A"
+        # Exactly two mget calls: start-node lookup + one attempt at Dangling.
+        # Before the fix this was 4 (1 + 3 re-queries across max_depth iterations).
+        assert mock_client.mget.await_count == 2
+
 
 class TestGraphPPLDetection:
     """Tests for PPL graphlookup detection and server-side BFS."""

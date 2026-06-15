@@ -2757,7 +2757,12 @@ class OpenSearchGraphStorage(BaseGraphStorage):
     ) -> KnowledgeGraph:
         """BFS traversal from a starting node, batching neighbor lookups per level."""
         result = KnowledgeGraph()
-        seen_nodes = set()
+        seen_nodes: set[str] = set()
+        # visited tracks every ID we have attempted to look up, including dangling
+        # refs that mget could not find. Without this, edges that reference a
+        # non-existent node re-add it to the frontier on every BFS level because
+        # the ID never enters seen_nodes.
+        visited: set[str] = set()
 
         # Verify start node exists
         start_node = await self.get_node(start_label)
@@ -2765,6 +2770,7 @@ class OpenSearchGraphStorage(BaseGraphStorage):
             return result
 
         seen_nodes.add(start_label)
+        visited.add(start_label)
         result.nodes.append(self._construct_graph_node(start_label, start_node))
 
         current_level = [start_label]
@@ -2819,9 +2825,9 @@ class OpenSearchGraphStorage(BaseGraphStorage):
             for hit in level_hits:
                 src = hit["_source"]["source_node_id"]
                 tgt = hit["_source"]["target_node_id"]
-                if src not in seen_nodes:
+                if src not in visited:
                     next_level.add(src)
-                if tgt not in seen_nodes:
+                if tgt not in visited:
                     next_level.add(tgt)
 
             # Limit to max_nodes
@@ -2831,7 +2837,11 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                     break
                 new_ids.append(nid)
 
+            found_ids: list[str] = []
             if new_ids:
+                # Mark all candidates as visited before mget so that dangling refs
+                # are never re-added to the frontier on subsequent levels.
+                visited.update(new_ids)
                 # Batch fetch node data
                 node_resp = await self.client.mget(
                     index=self._nodes_index, body={"ids": new_ids}
@@ -2839,11 +2849,13 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                 for doc in node_resp["docs"]:
                     if doc.get("found"):
                         seen_nodes.add(doc["_id"])
+                        found_ids.append(doc["_id"])
                         result.nodes.append(
                             self._construct_graph_node(doc["_id"], doc["_source"])
                         )
 
-            current_level = new_ids
+            # Only traverse edges from nodes that actually exist.
+            current_level = found_ids
 
         # Fetch all edges between seen nodes using PIT scrolling
         all_ids = list(seen_nodes)
