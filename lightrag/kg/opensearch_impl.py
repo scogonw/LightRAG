@@ -12,6 +12,7 @@ Requirements:
 import os
 import re
 import json
+import hashlib
 import ssl as ssl_module
 import time
 import asyncio
@@ -294,10 +295,17 @@ def _get_pit_keep_alive() -> str:
 
 
 def _sanitize_index_name(name: str) -> str:
-    """Sanitize a string to be a valid OpenSearch index name."""
+    """Sanitize a string to be a valid OpenSearch index name.
+
+    Appends an 8-char MD5 suffix whenever the sanitized form differs from the
+    original input, preventing distinct namespaces (e.g. 'ws.A', 'ws_A', 'WS_a')
+    from silently collapsing to the same index.
+    """
     sanitized = re.sub(r"[^a-z0-9_-]", "_", name.lower())
     if sanitized and sanitized[0] in "-_+":
         sanitized = "x" + sanitized
+    if sanitized != name:
+        sanitized = f"{sanitized}-{hashlib.md5(name.encode()).hexdigest()[:8]}"
     return sanitized
 
 
