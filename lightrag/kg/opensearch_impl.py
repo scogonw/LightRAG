@@ -417,6 +417,39 @@ def _is_missing_index_error(exc: Exception) -> bool:
     return "index_not_found_exception" in str(exc)
 
 
+async def _fetch_stored_create_times(
+    client: AsyncOpenSearch,
+    index_name: str,
+    ids: list[str],
+    field: str,
+    workspace: str,
+) -> dict[str, Any]:
+    """Fetch stored creation timestamps so re-upserts preserve the original value.
+
+    Bulk upserts use ``_op_type: index`` (full replace), which would otherwise
+    reset ``create_time``/``created_at`` on every update. Returns a mapping of
+    doc id -> stored ``field`` value for documents that already exist. On
+    lookup failure an empty mapping is returned so the upsert still proceeds,
+    falling back to fresh timestamps.
+    """
+    if not ids:
+        return {}
+    try:
+        response = await client.mget(
+            index=index_name, body={"ids": ids}, _source_includes=[field]
+        )
+    except OpenSearchException as e:
+        if not _is_missing_index_error(e):
+            logger.error(f"[{workspace}] Error fetching stored {field} values: {e}")
+        return {}
+    stored: dict[str, Any] = {}
+    for doc in response.get("docs", []):
+        source = doc.get("_source") or {}
+        if doc.get("found") and field in source:
+            stored[doc["_id"]] = source[field]
+    return stored
+
+
 @final
 @dataclass
 class OpenSearchKVStorage(BaseKVStorage):
@@ -608,10 +641,15 @@ class OpenSearchKVStorage(BaseKVStorage):
             f"[{self.workspace}] Upserting {len(data)} documents to {self.namespace}"
         )
         current_time = int(time.time())
+        stored_create_times = await _fetch_stored_create_times(
+            self.client, self._index_name, list(data.keys()), "create_time", self.workspace
+        )
         actions = []
         for i, (doc_id, doc_data) in enumerate(data.items(), start=1):
             doc_data["update_time"] = current_time
             doc_data.setdefault("create_time", current_time)
+            if doc_id in stored_create_times:
+                doc_data["create_time"] = stored_create_times[doc_id]
             actions.append(
                 {
                     "_op_type": "index",
@@ -3160,13 +3198,16 @@ class OpenSearchVectorDBStorage(BaseVectorStorage):
             f"[{self.workspace}] Upserting {len(data)} vectors to {self.namespace}"
         )
         current_time = int(time.time())
+        stored_create_times = await _fetch_stored_create_times(
+            self.client, self._index_name, list(data.keys()), "created_at", self.workspace
+        )
 
         list_data = []
         for i, (k, v) in enumerate(data.items(), start=1):
             list_data.append(
                 {
                     "_id": k,
-                    "created_at": current_time,
+                    "created_at": stored_create_times.get(k, current_time),
                     **{k1: v1 for k1, v1 in v.items() if k1 in self.meta_fields},
                 }
             )
