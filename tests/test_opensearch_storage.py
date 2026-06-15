@@ -15,7 +15,7 @@ pytest.importorskip(
     reason="opensearchpy is required for OpenSearch storage tests",
 )
 
-from opensearchpy.exceptions import NotFoundError, OpenSearchException  # type: ignore
+from opensearchpy.exceptions import NotFoundError, OpenSearchException, RequestError  # type: ignore
 from lightrag.kg.opensearch_impl import (
     OpenSearchKVStorage,
     OpenSearchDocStatusStorage,
@@ -1648,15 +1648,16 @@ class TestGraphPPLDetection:
     async def test_ppl_not_detected_when_endpoint_fails(
         self, global_config, embed_func, mock_client
     ):
-        """When PPL endpoint fails, should fall back to client-side BFS."""
+        """Transient failure during probe should leave the probe non-conclusive."""
         mock_client.transport = AsyncMock()
         mock_client.transport.perform_request = AsyncMock(
-            side_effect=Exception("PPL not supported")
+            side_effect=Exception("connection refused")
         )
         with patch.object(ClientManager, "get_client", return_value=mock_client):
             s = self._make(global_config, embed_func)
             await s.initialize()
             assert s._ppl_graphlookup_available is False
+            assert s._ppl_probe_conclusive is False
 
     @pytest.mark.asyncio
     async def test_env_override_true(self, global_config, embed_func, mock_client):
@@ -1997,6 +1998,133 @@ class TestGraphPPLDetection:
             mock_client.count.assert_awaited()
             call_kwargs = mock_client.count.call_args
             assert s._edges_index in str(call_kwargs)
+
+    @pytest.mark.asyncio
+    async def test_ppl_detection_conclusive_on_success(
+        self, global_config, embed_func, mock_client
+    ):
+        """Successful probe should mark both available and conclusive."""
+        mock_client.transport = AsyncMock()
+        mock_client.transport.perform_request = AsyncMock(
+            return_value={"datarows": [], "schema": []}
+        )
+        with patch.object(ClientManager, "get_client", return_value=mock_client):
+            s = self._make(global_config, embed_func)
+            await s.initialize()
+            assert s._ppl_graphlookup_available is True
+            assert s._ppl_probe_conclusive is True
+
+    @pytest.mark.asyncio
+    async def test_ppl_not_found_error_is_conclusive(
+        self, global_config, embed_func, mock_client
+    ):
+        """HTTP 404 (PPL plugin absent) is a permanent signal: conclusive=True, available=False."""
+        mock_client.transport = AsyncMock()
+        mock_client.transport.perform_request = AsyncMock(
+            side_effect=NotFoundError(404, "Not Found", {})
+        )
+        with patch.object(ClientManager, "get_client", return_value=mock_client):
+            s = self._make(global_config, embed_func)
+            await s.initialize()
+            assert s._ppl_graphlookup_available is False
+            assert s._ppl_probe_conclusive is True
+
+    @pytest.mark.asyncio
+    async def test_ppl_request_error_no_index_not_found_is_conclusive(
+        self, global_config, embed_func, mock_client
+    ):
+        """HTTP 400 without index_not_found means PPL command not supported: conclusive=True."""
+        mock_client.transport = AsyncMock()
+        mock_client.transport.perform_request = AsyncMock(
+            side_effect=RequestError(400, "SemanticCheckException: graphLookup not supported", {})
+        )
+        with patch.object(ClientManager, "get_client", return_value=mock_client):
+            s = self._make(global_config, embed_func)
+            await s.initialize()
+            assert s._ppl_graphlookup_available is False
+            assert s._ppl_probe_conclusive is True
+
+    @pytest.mark.asyncio
+    async def test_ppl_index_not_found_race_is_non_conclusive(
+        self, global_config, embed_func, mock_client
+    ):
+        """index_not_found during probe is a race condition: probe deferred, conclusive=False."""
+        mock_client.transport = AsyncMock()
+        mock_client.transport.perform_request = AsyncMock(
+            side_effect=RequestError(
+                400,
+                "index_not_found_exception",
+                {"error": {"type": "index_not_found_exception", "reason": "no such index"}},
+            )
+        )
+        with patch.object(ClientManager, "get_client", return_value=mock_client):
+            s = self._make(global_config, embed_func)
+            await s.initialize()
+            assert s._ppl_graphlookup_available is False
+            assert s._ppl_probe_conclusive is False
+
+    @pytest.mark.asyncio
+    async def test_ppl_reprobe_on_first_graph_query_after_race(
+        self, global_config, embed_func, mock_client
+    ):
+        """When init probe was non-conclusive, the first get_knowledge_graph call re-probes."""
+        probe_calls: list[int] = []
+
+        async def probe_side_effect(*args, **kwargs):
+            probe_calls.append(1)
+            if len(probe_calls) <= 1:
+                # Init probe fails with race condition
+                raise RequestError(
+                    400,
+                    "index_not_found_exception",
+                    {"error": {"type": "index_not_found_exception"}},
+                )
+            # Re-probe on first use succeeds
+            return {"datarows": [], "schema": []}
+
+        mock_client.transport = AsyncMock()
+        mock_client.transport.perform_request = AsyncMock(side_effect=probe_side_effect)
+        mock_client.mget = AsyncMock(
+            return_value={"docs": [{"_id": "A", "found": False}]}
+        )
+        with patch.object(ClientManager, "get_client", return_value=mock_client):
+            s = self._make(global_config, embed_func)
+            await s.initialize()
+            # After init: non-conclusive, available=False
+            assert s._ppl_probe_conclusive is False
+
+            await s.get_knowledge_graph("A", max_depth=1)
+            # After first use: re-probe succeeded, now conclusive and available
+            assert s._ppl_probe_conclusive is True
+            assert s._ppl_graphlookup_available is True
+
+    @pytest.mark.asyncio
+    async def test_ppl_no_reprobe_once_conclusive(
+        self, global_config, embed_func, mock_client
+    ):
+        """Once probe is conclusive, _probe_ppl_graphlookup is not called again."""
+        mock_client.transport = AsyncMock()
+        mock_client.transport.perform_request = AsyncMock(
+            return_value={"datarows": [], "schema": []}
+        )
+        with patch.object(ClientManager, "get_client", return_value=mock_client):
+            s = self._make(global_config, embed_func)
+            await s.initialize()
+            assert s._ppl_probe_conclusive is True
+
+            # Patch _probe_ppl_graphlookup to detect if it gets called again
+            probe_call_count = {"n": 0}
+            original_probe = s._probe_ppl_graphlookup
+
+            async def counting_probe():
+                probe_call_count["n"] += 1
+                await original_probe()
+
+            s._probe_ppl_graphlookup = counting_probe
+
+            await s.get_knowledge_graph("A", max_depth=1)
+            await s.get_knowledge_graph("B", max_depth=1)
+            assert probe_call_count["n"] == 0, "_probe_ppl_graphlookup called unexpectedly"
 
 
 # ---------------------------------------------------------------------------
