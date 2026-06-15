@@ -1869,39 +1869,7 @@ class OpenSearchGraphStorage(BaseGraphStorage):
         self, source_node_id: str, target_node_id: str, edge_data: dict[str, str]
     ) -> None:
         """Insert or update an edge with deterministic ID for bidirectional handling."""
-        try:
-            await self._ensure_indices_ready()
-            # Ensure source node exists (don't overwrite if it already has data)
-            if not await self.has_node(source_node_id):
-                await self.upsert_node(source_node_id, {})
-
-            doc = {k: v for k, v in edge_data.items() if k != "_id"}
-            doc["source_node_id"] = source_node_id
-            doc["target_node_id"] = target_node_id
-            if edge_data.get("source_id", ""):
-                doc["source_ids"] = edge_data["source_id"].split(GRAPH_FIELD_SEP)
-
-            # Use a deterministic ID for the edge so upserts work
-            edge_id = compute_mdhash_id(
-                f"{source_node_id}-{target_node_id}", prefix="edge-"
-            )
-
-            # Check if reverse edge exists
-            reverse_id = compute_mdhash_id(
-                f"{target_node_id}-{source_node_id}", prefix="edge-"
-            )
-            try:
-                if await self.client.exists(index=self._edges_index, id=reverse_id):
-                    edge_id = reverse_id
-            except OpenSearchException:
-                pass
-
-            await self.client.index(index=self._edges_index, id=edge_id, body=doc)
-            self._edges_dirty = True
-        except OpenSearchException as e:
-            logger.error(
-                f"[{self.workspace}] Error upserting edge {source_node_id}->{target_node_id}: {e}"
-            )
+        await self.upsert_edges_batch([(source_node_id, target_node_id, edge_data)])
 
     async def upsert_nodes_batch(self, nodes: list[tuple[str, dict[str, str]]]) -> None:
         """Batch insert/update multiple nodes using the OpenSearch bulk API.
