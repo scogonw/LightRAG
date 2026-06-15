@@ -30,7 +30,7 @@ from ..base import (
 )
 from ..utils import logger, compute_mdhash_id, _cooperative_yield
 from ..types import KnowledgeGraph, KnowledgeGraphNode, KnowledgeGraphEdge
-from ..constants import GRAPH_FIELD_SEP
+from ..constants import GRAPH_FIELD_SEP, DEFAULT_COSINE_THRESHOLD
 from ..kg.shared_storage import get_data_init_lock
 
 import pipmaster as pm
@@ -3099,7 +3099,10 @@ class OpenSearchVectorDBStorage(BaseVectorStorage):
         cosine_threshold = kwargs.get("cosine_better_than_threshold")
         if cosine_threshold is None:
             raise ValueError(
-                "cosine_better_than_threshold must be specified in vector_db_storage_cls_kwargs"
+                "cosine_better_than_threshold must be specified in vector_db_storage_cls_kwargs. "
+                f"Suggested default: {DEFAULT_COSINE_THRESHOLD}. "
+                "Set it via: LightRAG(..., vector_db_storage_cls_kwargs="
+                '{"cosine_better_than_threshold": <value>})'
             )
         self.cosine_better_than_threshold = cosine_threshold
         self._max_batch_size = self.global_config["embedding_batch_num"]
