@@ -2715,26 +2715,51 @@ class OpenSearchGraphStorage(BaseGraphStorage):
             if not current_level or len(seen_nodes) >= max_nodes:
                 break
 
-            # Batch fetch all edges for current level
-            body = {
-                "query": {
-                    "bool": {
-                        "should": [
-                            {"terms": {"source_node_id": current_level}},
-                            {"terms": {"target_node_id": current_level}},
-                        ]
-                    }
-                },
-                "_source": ["source_node_id", "target_node_id"],
-                "size": 10000,
+            # Batch fetch all edges for current level using PIT + search_after
+            level_query = {
+                "bool": {
+                    "should": [
+                        {"terms": {"source_node_id": current_level}},
+                        {"terms": {"target_node_id": current_level}},
+                    ]
+                }
             }
+            level_hits: list[dict] = []
             try:
-                resp = await self.client.search(index=self._edges_index, body=body)
+                level_pit = await self.client.create_pit(
+                    index=self._edges_index, params={"keep_alive": "1m"}
+                )
+                level_pit_id = level_pit["pit_id"]
+                try:
+                    level_search_after = None
+                    while True:
+                        body = {
+                            "query": level_query,
+                            "_source": ["source_node_id", "target_node_id"],
+                            "size": 10000,
+                            "pit": {"id": level_pit_id, "keep_alive": "1m"},
+                            "sort": [{"_shard_doc": "asc"}],
+                        }
+                        if level_search_after:
+                            body["search_after"] = level_search_after
+                        resp = await self.client.search(body=body)
+                        hits = resp["hits"]["hits"]
+                        if not hits:
+                            break
+                        level_hits.extend(hits)
+                        level_search_after = hits[-1]["sort"]
+                        if len(hits) < 10000:
+                            break
+                finally:
+                    try:
+                        await self.client.delete_pit(body={"pit_id": [level_pit_id]})
+                    except Exception:
+                        pass
             except OpenSearchException:
                 break
 
             next_level = set()
-            for hit in resp["hits"]["hits"]:
+            for hit in level_hits:
                 src = hit["_source"]["source_node_id"]
                 tgt = hit["_source"]["target_node_id"]
                 if src not in seen_nodes:
