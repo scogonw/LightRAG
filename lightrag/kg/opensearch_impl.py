@@ -270,6 +270,10 @@ def _get_index_number_of_replicas() -> int:
     return int(_get_opensearch_env("OPENSEARCH_NUMBER_OF_REPLICAS", "0"))
 
 
+def _get_pit_keep_alive() -> str:
+    return _get_opensearch_env("OPENSEARCH_PIT_KEEP_ALIVE", "1m")
+
+
 def _sanitize_index_name(name: str) -> str:
     """Sanitize a string to be a valid OpenSearch index name."""
     sanitized = re.sub(r"[^a-z0-9_-]", "_", name.lower())
@@ -538,7 +542,7 @@ class OpenSearchKVStorage(BaseKVStorage):
 
         try:
             pit = await self.client.create_pit(
-                index=self._index_name, params={"keep_alive": "1m"}
+                index=self._index_name, params={"keep_alive": _get_pit_keep_alive()}
             )
             pit_id = pit["pit_id"]
             try:
@@ -547,7 +551,7 @@ class OpenSearchKVStorage(BaseKVStorage):
                     body = {
                         "query": {"match_all": {}},
                         "size": batch_size,
-                        "pit": {"id": pit_id, "keep_alive": "1m"},
+                        "pit": {"id": pit_id, "keep_alive": _get_pit_keep_alive()},
                         "sort": [{"_shard_doc": "asc"}],
                     }
                     if search_after:
@@ -1022,7 +1026,7 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
         batch_size = 10000
         try:
             pit = await self.client.create_pit(
-                index=self._index_name, params={"keep_alive": "1m"}
+                index=self._index_name, params={"keep_alive": _get_pit_keep_alive()}
             )
             pit_id = pit["pit_id"]
             try:
@@ -1031,7 +1035,7 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
                     body = {
                         "query": query,
                         "size": batch_size,
-                        "pit": {"id": pit_id, "keep_alive": "1m"},
+                        "pit": {"id": pit_id, "keep_alive": _get_pit_keep_alive()},
                         "sort": [{"_shard_doc": "asc"}],
                     }
                     if search_after:
@@ -1132,7 +1136,7 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
             sort_clause = [{sort_field: {"order": sort_order}}, {"_shard_doc": "asc"}]
 
             pit = await self.client.create_pit(
-                index=self._index_name, params={"keep_alive": "1m"}
+                index=self._index_name, params={"keep_alive": _get_pit_keep_alive()}
             )
             pit_id = pit["pit_id"]
             try:
@@ -1144,7 +1148,7 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
                         "query": query,
                         "sort": sort_clause,
                         "size": batch,
-                        "pit": {"id": pit_id, "keep_alive": "1m"},
+                        "pit": {"id": pit_id, "keep_alive": _get_pit_keep_alive()},
                     }
                     if search_after:
                         body["search_after"] = search_after
@@ -1159,7 +1163,7 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
                     "query": query,
                     "sort": sort_clause,
                     "size": page_size,
-                    "pit": {"id": pit_id, "keep_alive": "1m"},
+                    "pit": {"id": pit_id, "keep_alive": _get_pit_keep_alive()},
                 }
                 if search_after:
                     body["search_after"] = search_after
@@ -1637,7 +1641,7 @@ class OpenSearchGraphStorage(BaseGraphStorage):
             }
             edges = []
             pit = await self.client.create_pit(
-                index=self._edges_index, params={"keep_alive": "1m"}
+                index=self._edges_index, params={"keep_alive": _get_pit_keep_alive()}
             )
             pit_id = pit["pit_id"]
             try:
@@ -1647,7 +1651,7 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                         "query": query,
                         "_source": ["source_node_id", "target_node_id"],
                         "size": 10000,
-                        "pit": {"id": pit_id, "keep_alive": "1m"},
+                        "pit": {"id": pit_id, "keep_alive": _get_pit_keep_alive()},
                         "sort": [{"_shard_doc": "asc"}],
                     }
                     if search_after:
@@ -1815,7 +1819,7 @@ class OpenSearchGraphStorage(BaseGraphStorage):
             else:
                 query = node_match
             pit = await self.client.create_pit(
-                index=self._edges_index, params={"keep_alive": "1m"}
+                index=self._edges_index, params={"keep_alive": _get_pit_keep_alive()}
             )
             pit_id = pit["pit_id"]
             try:
@@ -1825,7 +1829,7 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                         "query": query,
                         "_source": ["source_node_id", "target_node_id"],
                         "size": 10000,
-                        "pit": {"id": pit_id, "keep_alive": "1m"},
+                        "pit": {"id": pit_id, "keep_alive": _get_pit_keep_alive()},
                         "sort": [{"_shard_doc": "asc"}],
                     }
                     if search_after:
@@ -2029,7 +2033,7 @@ class OpenSearchGraphStorage(BaseGraphStorage):
         """
         query = {"terms": {"source_ids": chunk_ids}}
         hits_out: list[dict] = []
-        pit = await self.client.create_pit(index=index, params={"keep_alive": "1m"})
+        pit = await self.client.create_pit(index=index, params={"keep_alive": _get_pit_keep_alive()})
         pit_id = pit["pit_id"]
         try:
             search_after = None
@@ -2038,7 +2042,7 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                     "query": query,
                     "_source": source_fields,
                     "size": 10000,
-                    "pit": {"id": pit_id, "keep_alive": "1m"},
+                    "pit": {"id": pit_id, "keep_alive": _get_pit_keep_alive()},
                     "sort": [{"_shard_doc": "asc"}],
                 }
                 if search_after:
@@ -2282,7 +2286,7 @@ class OpenSearchGraphStorage(BaseGraphStorage):
             await self._refresh_graph_indices_if_dirty(refresh_nodes=True)
             labels = []
             pit = await self.client.create_pit(
-                index=self._nodes_index, params={"keep_alive": "1m"}
+                index=self._nodes_index, params={"keep_alive": _get_pit_keep_alive()}
             )
             pit_id = pit["pit_id"]
             try:
@@ -2292,7 +2296,7 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                         "query": {"match_all": {}},
                         "_source": False,
                         "size": 10000,
-                        "pit": {"id": pit_id, "keep_alive": "1m"},
+                        "pit": {"id": pit_id, "keep_alive": _get_pit_keep_alive()},
                         "sort": [{"_shard_doc": "asc"}],
                     }
                     if search_after:
@@ -2337,7 +2341,7 @@ class OpenSearchGraphStorage(BaseGraphStorage):
 
         node_ids: list[str] = []
         pit = await self.client.create_pit(
-            index=self._nodes_index, params={"keep_alive": "1m"}
+            index=self._nodes_index, params={"keep_alive": _get_pit_keep_alive()}
         )
         pit_id = pit["pit_id"]
         try:
@@ -2347,7 +2351,7 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                     "query": {"match_all": {}},
                     "_source": False,
                     "size": 10000,
-                    "pit": {"id": pit_id, "keep_alive": "1m"},
+                    "pit": {"id": pit_id, "keep_alive": _get_pit_keep_alive()},
                     "sort": [{"_shard_doc": "asc"}],
                 }
                 if search_after:
@@ -2408,7 +2412,7 @@ class OpenSearchGraphStorage(BaseGraphStorage):
         }
         seen_edges = set()
         pit = await self.client.create_pit(
-            index=self._edges_index, params={"keep_alive": "1m"}
+            index=self._edges_index, params={"keep_alive": _get_pit_keep_alive()}
         )
         pit_id = pit["pit_id"]
         try:
@@ -2417,7 +2421,7 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                 edge_body = {
                     "query": edge_query,
                     "size": 10000,
-                    "pit": {"id": pit_id, "keep_alive": "1m"},
+                    "pit": {"id": pit_id, "keep_alive": _get_pit_keep_alive()},
                     "sort": [{"_shard_doc": "asc"}],
                 }
                 if search_after:
@@ -2841,7 +2845,7 @@ class OpenSearchGraphStorage(BaseGraphStorage):
             await self._refresh_graph_indices_if_dirty(refresh_nodes=True)
             nodes = []
             pit = await self.client.create_pit(
-                index=self._nodes_index, params={"keep_alive": "1m"}
+                index=self._nodes_index, params={"keep_alive": _get_pit_keep_alive()}
             )
             pit_id = pit["pit_id"]
             try:
@@ -2850,7 +2854,7 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                     body = {
                         "query": {"match_all": {}},
                         "size": 10000,
-                        "pit": {"id": pit_id, "keep_alive": "1m"},
+                        "pit": {"id": pit_id, "keep_alive": _get_pit_keep_alive()},
                         "sort": [{"_shard_doc": "asc"}],
                     }
                     if search_after:
@@ -2885,7 +2889,7 @@ class OpenSearchGraphStorage(BaseGraphStorage):
             await self._refresh_graph_indices_if_dirty(refresh_edges=True)
             edges = []
             pit = await self.client.create_pit(
-                index=self._edges_index, params={"keep_alive": "1m"}
+                index=self._edges_index, params={"keep_alive": _get_pit_keep_alive()}
             )
             pit_id = pit["pit_id"]
             try:
@@ -2894,7 +2898,7 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                     body = {
                         "query": {"match_all": {}},
                         "size": 10000,
-                        "pit": {"id": pit_id, "keep_alive": "1m"},
+                        "pit": {"id": pit_id, "keep_alive": _get_pit_keep_alive()},
                         "sort": [{"_shard_doc": "asc"}],
                     }
                     if search_after:
