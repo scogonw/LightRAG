@@ -1180,28 +1180,10 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
 
     async def get_all_status_counts(self) -> dict[str, int]:
         """Get document counts for all statuses including an 'all' total."""
-        if not self._index_ready:
-            return {}
-        try:
-            body = {
-                "size": 0,
-                "query": {"match_all": {}},
-                "aggs": {"status_counts": {"terms": {"field": "status", "size": 100}}},
-            }
-            response = await self.client.search(index=self._index_name, body=body)
-            counts = {}
-            total = 0
-            for bucket in response["aggregations"]["status_counts"]["buckets"]:
-                counts[bucket["key"]] = bucket["doc_count"]
-                total += bucket["doc_count"]
-            counts["all"] = total
-            return counts
-        except OpenSearchException as e:
-            if _is_missing_index_error(e):
-                self._mark_index_missing()
-                return {}
-            logger.error(f"[{self.workspace}] Error getting all status counts: {e}")
-            return {}
+        counts = await self.get_status_counts()
+        if counts:
+            counts["all"] = sum(counts.values())
+        return counts
 
     async def get_doc_by_file_path(self, file_path: str) -> Union[dict[str, Any], None]:
         """Find a document status record by its file_path field."""
