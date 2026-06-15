@@ -315,11 +315,15 @@ class ClientManager:
                         "verification is OFF. Set OPENSEARCH_VERIFY_CERTS=true in "
                         "production to prevent man-in-the-middle attacks."
                     )
-                if username in ("admin", "") or password in ("admin", ""):
+                if not username:
                     logger.warning(
-                        "OpenSearch is configured with default or empty credentials. "
-                        "Set OPENSEARCH_USER and OPENSEARCH_PASSWORD to strong, "
-                        "unique values before deploying to production."
+                        "No credentials configured — connecting to OpenSearch unauthenticated. "
+                        "Set OPENSEARCH_USER and OPENSEARCH_PASSWORD if your cluster requires authentication."
+                    )
+                elif username == "admin" or password in ("admin", ""):
+                    logger.warning(
+                        "Default or well-known credentials detected — "
+                        "change OPENSEARCH_USER and OPENSEARCH_PASSWORD before deploying to production."
                     )
 
                 ssl_context = None
