@@ -2245,21 +2245,26 @@ class OpenSearchGraphStorage(BaseGraphStorage):
             return
         logger.info(f"[{self.workspace}] Deleting {len(edges)} edges")
         try:
-            operations = []
+            actions = []
             for src, tgt in edges:
                 for edge_id in (
                     compute_mdhash_id(f"{src}-{tgt}", prefix="edge-"),
                     compute_mdhash_id(f"{tgt}-{src}", prefix="edge-"),
                 ):
-                    operations.append(
+                    actions.append(
                         {
-                            "delete": {
-                                "_index": self._edges_index,
-                                "_id": edge_id,
-                            }
+                            "_op_type": "delete",
+                            "_index": self._edges_index,
+                            "_id": edge_id,
                         }
                     )
-            await self.client.bulk(body=operations)
+            success, failed = await helpers.async_bulk(
+                self.client, actions, raise_on_error=False
+            )
+            if failed:
+                logger.warning(
+                    f"[{self.workspace}] {len(failed)} edge deletes failed"
+                )
             self._edges_dirty = True
         except OpenSearchException as e:
             logger.error(f"[{self.workspace}] Error removing edges: {e}")
