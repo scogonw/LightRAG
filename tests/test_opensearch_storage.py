@@ -493,6 +493,82 @@ class TestKVStorage:
             assert await s.is_empty() is True
 
     @pytest.mark.asyncio
+    async def test_is_empty_after_upsert_triggers_refresh(
+        self, global_config, embed_func, mock_client
+    ):
+        """is_empty() must refresh before counting when _dirty is set by upsert."""
+        mock_client.count = AsyncMock(return_value={"count": 1})
+        with patch.object(ClientManager, "get_client", return_value=mock_client):
+            with patch(
+                "lightrag.kg.opensearch_impl.helpers.async_bulk", new_callable=AsyncMock
+            ) as mock_bulk:
+                mock_bulk.return_value = (1, [])
+                s = self._make(global_config, embed_func)
+                await s.initialize()
+                await s.upsert({"k1": {"content": "v1"}})
+                assert s._dirty is True
+                mock_client.indices.refresh.reset_mock()
+                result = await s.is_empty()
+                mock_client.indices.refresh.assert_awaited_once_with(
+                    index=s._index_name
+                )
+                assert result is False
+                assert s._dirty is False
+
+    @pytest.mark.asyncio
+    async def test_is_empty_after_delete_triggers_refresh(
+        self, global_config, embed_func, mock_client
+    ):
+        """is_empty() must refresh before counting when _dirty is set by delete."""
+        mock_client.count = AsyncMock(return_value={"count": 0})
+        with patch.object(ClientManager, "get_client", return_value=mock_client):
+            with patch(
+                "lightrag.kg.opensearch_impl.helpers.async_bulk", new_callable=AsyncMock
+            ) as mock_bulk:
+                mock_bulk.return_value = (1, [])
+                s = self._make(global_config, embed_func)
+                await s.initialize()
+                await s.delete(["k1"])
+                assert s._dirty is True
+                mock_client.indices.refresh.reset_mock()
+                result = await s.is_empty()
+                mock_client.indices.refresh.assert_awaited_once_with(
+                    index=s._index_name
+                )
+                assert result is True
+                assert s._dirty is False
+
+    @pytest.mark.asyncio
+    async def test_is_empty_no_refresh_when_clean(
+        self, global_config, embed_func, mock_client
+    ):
+        """is_empty() must not trigger a refresh when _dirty is False."""
+        mock_client.count = AsyncMock(return_value={"count": 0})
+        with patch.object(ClientManager, "get_client", return_value=mock_client):
+            s = self._make(global_config, embed_func)
+            await s.initialize()
+            assert s._dirty is False
+            await s.is_empty()
+            mock_client.indices.refresh.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_index_done_callback_clears_dirty(
+        self, global_config, embed_func, mock_client
+    ):
+        """index_done_callback() should clear _dirty after refreshing."""
+        with patch.object(ClientManager, "get_client", return_value=mock_client):
+            with patch(
+                "lightrag.kg.opensearch_impl.helpers.async_bulk", new_callable=AsyncMock
+            ) as mock_bulk:
+                mock_bulk.return_value = (1, [])
+                s = self._make(global_config, embed_func)
+                await s.initialize()
+                await s.upsert({"k1": {"content": "v1"}})
+                assert s._dirty is True
+                await s.index_done_callback()
+                assert s._dirty is False
+
+    @pytest.mark.asyncio
     async def test_delete(self, global_config, embed_func, mock_client):
         with patch.object(ClientManager, "get_client", return_value=mock_client):
             with patch(
