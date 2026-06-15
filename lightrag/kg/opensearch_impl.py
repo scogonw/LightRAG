@@ -1740,6 +1740,12 @@ class OpenSearchGraphStorage(BaseGraphStorage):
             else:
                 query = node_match
 
+            # Restrict the terms aggs to the requested IDs: matched edges also
+            # touch far-endpoint nodes, and without `include` those extra
+            # buckets can evict low-degree requested nodes (terms aggs keep
+            # only the top-N buckets by doc count), silently returning 0.
+            unique_ids = list(dict.fromkeys(node_ids))
+            node_id_set = set(unique_ids)
             body = {
                 "size": 0,
                 "query": query,
@@ -1747,13 +1753,17 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                     "source_degrees": {
                         "terms": {
                             "field": "source_node_id",
-                            "size": len(node_ids) * 2,
+                            "size": len(unique_ids),
+                            "shard_size": len(unique_ids),
+                            "include": unique_ids,
                         }
                     },
                     "target_degrees": {
                         "terms": {
                             "field": "target_node_id",
-                            "size": len(node_ids) * 2,
+                            "size": len(unique_ids),
+                            "shard_size": len(unique_ids),
+                            "include": unique_ids,
                         }
                     },
                 },
@@ -1761,12 +1771,12 @@ class OpenSearchGraphStorage(BaseGraphStorage):
             response = await self.client.search(index=self._edges_index, body=body)
             result = {}
             for bucket in response["aggregations"]["source_degrees"]["buckets"]:
-                if bucket["key"] in node_ids:
+                if bucket["key"] in node_id_set:
                     result[bucket["key"]] = (
                         result.get(bucket["key"], 0) + bucket["doc_count"]
                     )
             for bucket in response["aggregations"]["target_degrees"]["buckets"]:
-                if bucket["key"] in node_ids:
+                if bucket["key"] in node_id_set:
                     result[bucket["key"]] = (
                         result.get(bucket["key"], 0) + bucket["doc_count"]
                     )
