@@ -6452,14 +6452,22 @@ class PGGraphStorage(BaseGraphStorage):
             return result[(source_node_id, target_node_id)]
         return None
 
-    async def get_node_edges(self, source_node_id: str) -> list[tuple[str, str]] | None:
+    async def get_node_edges(self, source_node_id: str, limit: int | None = None) -> list[tuple[str, str]] | None:
         """
         Retrieves all edges (relationships) for a particular node identified by its label.
         :return: list of dictionaries containing edge information
         """
-        cypher_query = """MATCH (n:base {entity_id: $entity_id})
-                      OPTIONAL MATCH (n)-[]-(connected:base)
-                      RETURN n.entity_id AS source_id, connected.entity_id AS connected_id"""
+        if limit is not None:
+            cypher_query = f"""MATCH (n:base {{entity_id: $entity_id}})
+                          OPTIONAL MATCH (n)-[r]-(connected:base)
+                          WITH n, r, connected
+                          ORDER BY r.weight DESC
+                          LIMIT {int(limit)}
+                          RETURN n.entity_id AS source_id, connected.entity_id AS connected_id"""
+        else:
+            cypher_query = """MATCH (n:base {entity_id: $entity_id})
+                          OPTIONAL MATCH (n)-[r]-(connected:base)
+                          RETURN n.entity_id AS source_id, connected.entity_id AS connected_id"""
 
         query = f"SELECT * FROM cypher({_dollar_quote(self.graph_name)}::name, {_dollar_quote(cypher_query)}::cstring, $1::agtype) AS (source_id text, connected_id text)"
         pg_params = {
@@ -7379,13 +7387,17 @@ class PGGraphStorage(BaseGraphStorage):
         return edges_dict
 
     async def get_nodes_edges_batch(
-        self, node_ids: list[str], batch_size: int = 500
+        self, node_ids: list[str], metadata_filter: dict | None = None, org_id: str | None = None, limit: int | None = None, batch_size: int = 500
     ) -> dict[str, list[tuple[str, str]]]:
         """
         Get all edges (both outgoing and incoming) for multiple nodes in a single batch operation.
 
         Args:
             node_ids: List of node IDs to get edges for
+            metadata_filter: Ignored for this implementation.
+            org_id: Ignored for this implementation.
+            limit: When provided, return only the top-N edges per node sorted by
+                weight descending. Falls back to serial per-node queries.
             batch_size: Batch size for the query
 
         Returns:
@@ -7393,6 +7405,13 @@ class PGGraphStorage(BaseGraphStorage):
         """
         if not node_ids:
             return {}
+
+        if limit is not None:
+            result = {}
+            for node_id in node_ids:
+                edges = await self.get_node_edges(node_id, limit=limit)
+                result[node_id] = edges if edges is not None else []
+            return result
 
         seen = set()
         unique_ids: list[str] = []

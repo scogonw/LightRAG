@@ -2752,7 +2752,7 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                 self._mark_indices_missing()
             return None
 
-    async def get_node_edges(self, source_node_id: str) -> list[tuple[str, str]] | None:
+    async def get_node_edges(self, source_node_id: str, limit: int | None = None) -> list[tuple[str, str]] | None:
         """Get all (source, target) edge tuples connected to a node."""
         if not self._indices_ready:
             return None
@@ -2767,6 +2767,22 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                 }
             }
             edges = []
+            if limit is not None:
+                body = {
+                    "query": query,
+                    "_source": ["source_node_id", "target_node_id"],
+                    "sort": [{"weight": {"order": "desc"}}, {"_doc": "asc"}],
+                    "size": limit,
+                }
+                response = await self.client.search(index=self._edges_index, body=body)
+                for hit in response["hits"]["hits"]:
+                    edges.append(
+                        (
+                            hit["_source"]["source_node_id"],
+                            hit["_source"]["target_node_id"],
+                        )
+                    )
+                return edges
             pit = await self.client.create_pit(
                 index=self._edges_index, params={"keep_alive": "1m"}
             )
@@ -2913,9 +2929,16 @@ class OpenSearchGraphStorage(BaseGraphStorage):
             return {}
 
     async def get_nodes_edges_batch(
-        self, node_ids: list[str], metadata_filter: dict | None = None, org_id: str | None = None
+        self, node_ids: list[str], metadata_filter: dict | None = None, org_id: str | None = None, limit: int | None = None
     ) -> dict[str, list[tuple[str, str]]]:
         """Batch-fetch edge tuples for multiple nodes, optionally filtered by metadata."""
+        if limit is not None:
+            result = {}
+            for node_id in node_ids:
+                edges = await self.get_node_edges(node_id, limit=limit)
+                result[node_id] = edges if edges is not None else []
+            return result
+
         result = {nid: [] for nid in node_ids}
         if not self._indices_ready:
             return result

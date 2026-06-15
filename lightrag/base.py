@@ -539,11 +539,13 @@ class BaseGraphStorage(StorageNameSpace, ABC):
         """
 
     @abstractmethod
-    async def get_node_edges(self, source_node_id: str) -> list[tuple[str, str]] | None:
+    async def get_node_edges(self, source_node_id: str, limit: int | None = None) -> list[tuple[str, str]] | None:
         """Get all edges connected to a node.
 
         Args:
             source_node_id: The ID of the node to get edges for
+            limit: When provided, return only the top-N edges sorted by weight
+                descending. None returns all edges (existing behavior).
 
         Returns:
             A list of (source_id, target_id) tuples representing edges,
@@ -631,7 +633,7 @@ class BaseGraphStorage(StorageNameSpace, ABC):
         return result
 
     async def get_nodes_edges_batch(
-        self, node_ids: list[str], metadata_filter: dict | None = None, org_id: str | None = None
+        self, node_ids: list[str], metadata_filter: dict | None = None, org_id: str | None = None, limit: int | None = None
     ) -> dict[str, list[tuple[str, str]]]:
         """Get nodes edges as a batch using UNWIND
 
@@ -642,10 +644,13 @@ class BaseGraphStorage(StorageNameSpace, ABC):
         Args:
             node_ids: List of node IDs
             metadata_filter: Optional MongoDB-style filter applied to edge metadata
+            org_id: Optional organization ID for access-control filtering
+            limit: When provided, return only the top-N edges per node sorted by
+                weight descending.
         """
         result = {}
         for node_id in node_ids:
-            edges = await self.get_node_edges(node_id)
+            edges = await self.get_node_edges(node_id, limit=limit)
             result[node_id] = edges if edges is not None else []
         return result
 

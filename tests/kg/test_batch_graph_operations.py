@@ -942,3 +942,127 @@ class TestMongoBatchOrdering:
         node_ops = storage.collection.bulk_write.await_args.args[0]
         assert len(node_ops) == 1
         assert node_ops[0]._filter == {"_id": "EntityA"}
+
+
+# ---------------------------------------------------------------------------
+# Tests for get_node_edges limit parameter (NetworkX backend, unit-testable)
+# ---------------------------------------------------------------------------
+
+
+class TestGetNodeEdgesLimit:
+    """Verify get_node_edges and get_nodes_edges_batch respect the limit parameter."""
+
+    @pytest.mark.offline
+    @pytest.mark.asyncio
+    async def test_get_node_edges_no_limit_returns_all(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            storage = make_networkx_storage(tmp)
+            await storage.initialize()
+
+            await storage.upsert_node("Hub", _make_node("Hub"))
+            for i in range(5):
+                node_id = f"Spoke{i}"
+                await storage.upsert_node(node_id, _make_node(node_id))
+                await storage.upsert_edge("Hub", node_id, _make_edge(float(i)))
+
+            edges = await storage.get_node_edges("Hub")
+            assert edges is not None
+            assert len(edges) == 5
+
+    @pytest.mark.offline
+    @pytest.mark.asyncio
+    async def test_get_node_edges_limit_truncates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            storage = make_networkx_storage(tmp)
+            await storage.initialize()
+
+            await storage.upsert_node("Hub", _make_node("Hub"))
+            for i in range(5):
+                node_id = f"Spoke{i}"
+                await storage.upsert_node(node_id, _make_node(node_id))
+                await storage.upsert_edge("Hub", node_id, _make_edge(float(i)))
+
+            edges = await storage.get_node_edges("Hub", limit=3)
+            assert edges is not None
+            assert len(edges) == 3
+
+    @pytest.mark.offline
+    @pytest.mark.asyncio
+    async def test_get_node_edges_limit_returns_highest_weight(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            storage = make_networkx_storage(tmp)
+            await storage.initialize()
+
+            await storage.upsert_node("Hub", _make_node("Hub"))
+            weights = [1.0, 5.0, 3.0, 2.0, 4.0]
+            for i, w in enumerate(weights):
+                node_id = f"Spoke{i}"
+                await storage.upsert_node(node_id, _make_node(node_id))
+                await storage.upsert_edge("Hub", node_id, _make_edge(w))
+
+            edges = await storage.get_node_edges("Hub", limit=2)
+            assert edges is not None
+            assert len(edges) == 2
+            # The two returned edges should include Spoke1 (weight 5.0) and Spoke4 (weight 4.0)
+            returned_targets = {tgt for _, tgt in edges}
+            assert "Spoke1" in returned_targets
+            assert "Spoke4" in returned_targets
+
+    @pytest.mark.offline
+    @pytest.mark.asyncio
+    async def test_get_node_edges_limit_zero_returns_empty(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            storage = make_networkx_storage(tmp)
+            await storage.initialize()
+
+            await storage.upsert_node("Hub", _make_node("Hub"))
+            await storage.upsert_node("Spoke", _make_node("Spoke"))
+            await storage.upsert_edge("Hub", "Spoke", _make_edge(1.0))
+
+            edges = await storage.get_node_edges("Hub", limit=0)
+            assert edges is not None
+            assert len(edges) == 0
+
+    @pytest.mark.offline
+    @pytest.mark.asyncio
+    async def test_get_node_edges_nonexistent_node_returns_none(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            storage = make_networkx_storage(tmp)
+            await storage.initialize()
+
+            edges = await storage.get_node_edges("NoSuchNode", limit=5)
+            assert edges is None
+
+    @pytest.mark.offline
+    @pytest.mark.asyncio
+    async def test_get_nodes_edges_batch_with_limit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            storage = make_networkx_storage(tmp)
+            await storage.initialize()
+
+            await storage.upsert_node("Hub", _make_node("Hub"))
+            for i in range(5):
+                node_id = f"Spoke{i}"
+                await storage.upsert_node(node_id, _make_node(node_id))
+                await storage.upsert_edge("Hub", node_id, _make_edge(float(i + 1)))
+
+            result = await storage.get_nodes_edges_batch(["Hub"], limit=2)
+            assert "Hub" in result
+            assert len(result["Hub"]) == 2
+
+    @pytest.mark.offline
+    @pytest.mark.asyncio
+    async def test_get_nodes_edges_batch_no_limit_returns_all(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            storage = make_networkx_storage(tmp)
+            await storage.initialize()
+
+            await storage.upsert_node("Hub", _make_node("Hub"))
+            for i in range(5):
+                node_id = f"Spoke{i}"
+                await storage.upsert_node(node_id, _make_node(node_id))
+                await storage.upsert_edge("Hub", node_id, _make_edge(float(i + 1)))
+
+            result = await storage.get_nodes_edges_batch(["Hub"])
+            assert "Hub" in result
+            assert len(result["Hub"]) == 5

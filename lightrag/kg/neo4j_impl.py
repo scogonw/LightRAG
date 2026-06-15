@@ -899,11 +899,13 @@ class Neo4JStorage(BaseGraphStorage):
             return edges_dict
 
     @READ_RETRY
-    async def get_node_edges(self, source_node_id: str) -> list[tuple[str, str]] | None:
+    async def get_node_edges(self, source_node_id: str, limit: int | None = None) -> list[tuple[str, str]] | None:
         """Retrieves all edges (relationships) for a particular node identified by its label.
 
         Args:
             source_node_id: Label of the node to get edges for
+            limit: When provided, return only the top-N edges sorted by weight
+                descending.
 
         Returns:
             list[tuple[str, str]]: List of (source_label, target_label) tuples representing edges
@@ -920,11 +922,21 @@ class Neo4JStorage(BaseGraphStorage):
                 results = None
                 try:
                     workspace_label = self._get_workspace_label()
-                    query = f"""MATCH (n:`{workspace_label}` {{entity_id: $entity_id}})
-                            OPTIONAL MATCH (n)-[r]-(connected:`{workspace_label}`)
-                            WHERE connected.entity_id IS NOT NULL
-                            RETURN n, r, connected"""
-                    results = await session.run(query, entity_id=source_node_id)
+                    if limit is not None:
+                        query = f"""MATCH (n:`{workspace_label}` {{entity_id: $entity_id}})
+                                OPTIONAL MATCH (n)-[r]-(connected:`{workspace_label}`)
+                                WHERE connected.entity_id IS NOT NULL
+                                WITH n, r, connected
+                                ORDER BY r.weight DESC
+                                LIMIT $limit
+                                RETURN n, r, connected"""
+                        results = await session.run(query, entity_id=source_node_id, limit=limit)
+                    else:
+                        query = f"""MATCH (n:`{workspace_label}` {{entity_id: $entity_id}})
+                                OPTIONAL MATCH (n)-[r]-(connected:`{workspace_label}`)
+                                WHERE connected.entity_id IS NOT NULL
+                                RETURN n, r, connected"""
+                        results = await session.run(query, entity_id=source_node_id)
 
                     edges = []
                     async for record in results:
@@ -968,7 +980,7 @@ class Neo4JStorage(BaseGraphStorage):
 
     @READ_RETRY
     async def get_nodes_edges_batch(
-        self, node_ids: list[str]
+        self, node_ids: list[str], metadata_filter: dict | None = None, org_id: str | None = None, limit: int | None = None
     ) -> dict[str, list[tuple[str, str]]]:
         """
         Batch retrieve edges for multiple nodes in one query using UNWIND.
@@ -977,6 +989,10 @@ class Neo4JStorage(BaseGraphStorage):
 
         Args:
             node_ids: List of node IDs (entity_id) for which to retrieve edges.
+            metadata_filter: Ignored (Neo4j uses workspace-label scoping).
+            org_id: Ignored (Neo4j uses workspace-label scoping).
+            limit: When provided, return only the top-N edges per node sorted by
+                weight descending. Falls back to serial per-node queries.
 
         Returns:
             A dictionary mapping each node ID to its list of edge tuples (source, target).
@@ -984,6 +1000,13 @@ class Neo4JStorage(BaseGraphStorage):
             - Outgoing edges: (queried_node, connected_node)
             - Incoming edges: (connected_node, queried_node)
         """
+        if limit is not None:
+            result = {}
+            for node_id in node_ids:
+                edges = await self.get_node_edges(node_id, limit=limit)
+                result[node_id] = edges if edges is not None else []
+            return result
+
         async with self._driver.session(
             database=self._DATABASE, default_access_mode="READ"
         ) as session:
