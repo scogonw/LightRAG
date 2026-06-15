@@ -229,6 +229,75 @@ class TestClientManager:
             await ClientManager.release_client(c)
             inner.close.assert_awaited_once()
 
+    @pytest.mark.asyncio
+    async def test_tls_warning_fires_when_verify_certs_false(self):
+        ClientManager._instances = {"client": None, "ref_count": 0}
+        env = {
+            "OPENSEARCH_VERIFY_CERTS": "false",
+            "OPENSEARCH_USER": "myuser",
+            "OPENSEARCH_PASSWORD": "strongpass",
+        }
+        with patch("lightrag.kg.opensearch_impl.AsyncOpenSearch") as mock_cls, \
+             patch("lightrag.kg.opensearch_impl.logger") as mock_logger, \
+             patch.dict("os.environ", env, clear=False):
+            mock_cls.return_value = AsyncMock()
+            await ClientManager.get_client()
+            warning_calls = [str(c) for c in mock_logger.warning.call_args_list]
+            assert any("OPENSEARCH_VERIFY_CERTS" in w for w in warning_calls), (
+                "Expected TLS warning when OPENSEARCH_VERIFY_CERTS=false"
+            )
+
+    @pytest.mark.asyncio
+    async def test_credential_warnings_fire_for_empty_and_admin_creds(self):
+        for user, pwd, expected_fragment in [
+            ("", "", "unauthenticated"),
+            ("admin", "admin", "Default or well-known"),
+            ("myuser", "admin", "Default or well-known"),
+            ("myuser", "", "Default or well-known"),
+        ]:
+            ClientManager._instances = {"client": None, "ref_count": 0}
+            env = {
+                "OPENSEARCH_VERIFY_CERTS": "true",
+                "OPENSEARCH_USER": user,
+                "OPENSEARCH_PASSWORD": pwd,
+            }
+            with patch("lightrag.kg.opensearch_impl.AsyncOpenSearch") as mock_cls, \
+                 patch("lightrag.kg.opensearch_impl.logger") as mock_logger, \
+                 patch.dict("os.environ", env, clear=False):
+                mock_cls.return_value = AsyncMock()
+                await ClientManager.get_client()
+                warning_calls = [str(c) for c in mock_logger.warning.call_args_list]
+                assert any(expected_fragment in w for w in warning_calls), (
+                    f"Expected '{expected_fragment}' warning for user={user!r}, pwd={pwd!r}; "
+                    f"got: {warning_calls}"
+                )
+
+    @pytest.mark.asyncio
+    async def test_port_defaults_to_9200_when_env_unset(self):
+        ClientManager._instances = {"client": None, "ref_count": 0}
+        env = {
+            "OPENSEARCH_USER": "myuser",
+            "OPENSEARCH_PASSWORD": "strongpass",
+            "OPENSEARCH_VERIFY_CERTS": "true",
+        }
+        # Ensure OPENSEARCH_PORT is not set
+        env_without_port = {k: v for k, v in env.items()}
+        import os as _os
+        saved = _os.environ.pop("OPENSEARCH_PORT", None)
+        try:
+            with patch("lightrag.kg.opensearch_impl.AsyncOpenSearch") as mock_cls, \
+                 patch.dict("os.environ", env_without_port, clear=False):
+                mock_cls.return_value = AsyncMock()
+                await ClientManager.get_client()
+                call_kwargs = mock_cls.call_args
+                hosts_arg = call_kwargs[1]["hosts"] if call_kwargs[1] else call_kwargs[0][0]
+                assert hosts_arg[0]["port"] == 9200, (
+                    f"Expected default port 9200, got {hosts_arg[0]['port']}"
+                )
+        finally:
+            if saved is not None:
+                _os.environ["OPENSEARCH_PORT"] = saved
+
 
 # ---------------------------------------------------------------------------
 # KV Storage
