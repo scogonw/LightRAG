@@ -262,12 +262,22 @@ def _get_opensearch_env(key, fallback):
     return os.environ.get(key, config.get("opensearch", cfg_key, fallback=fallback))
 
 
+def _get_opensearch_env_int(key: str, fallback: str) -> int:
+    raw = _get_opensearch_env(key, fallback)
+    try:
+        return int(raw)
+    except ValueError:
+        raise ValueError(
+            f"Invalid value for {key}: {raw!r} — expected an integer"
+        ) from None
+
+
 def _get_index_number_of_shards() -> int:
-    return int(_get_opensearch_env("OPENSEARCH_NUMBER_OF_SHARDS", "1"))
+    return _get_opensearch_env_int("OPENSEARCH_NUMBER_OF_SHARDS", "1")
 
 
 def _get_index_number_of_replicas() -> int:
-    return int(_get_opensearch_env("OPENSEARCH_NUMBER_OF_REPLICAS", "0"))
+    return _get_opensearch_env_int("OPENSEARCH_NUMBER_OF_REPLICAS", "0")
 
 
 def _sanitize_index_name(name: str) -> str:
@@ -293,7 +303,7 @@ class ClientManager:
     def _make_config_key(cls) -> tuple:
         """Build a hashable key from the current OpenSearch env configuration."""
         hosts_str = _get_opensearch_env("OPENSEARCH_HOSTS", "localhost:9200")
-        port = _get_opensearch_env("OPENSEARCH_PORT", "80")
+        port = _get_opensearch_env_int("OPENSEARCH_PORT", "80")
         username = _get_opensearch_env("OPENSEARCH_USER", "admin")
         password = _get_opensearch_env("OPENSEARCH_PASSWORD", "admin")
         use_ssl = _get_opensearch_env("OPENSEARCH_USE_SSL", "true").lower() in (
@@ -302,8 +312,8 @@ class ClientManager:
         verify_certs = _get_opensearch_env("OPENSEARCH_VERIFY_CERTS", "false").lower() in (
             "true", "1", "yes",
         )
-        timeout = int(_get_opensearch_env("OPENSEARCH_TIMEOUT", "30"))
-        max_retries = int(_get_opensearch_env("OPENSEARCH_MAX_RETRIES", "3"))
+        timeout = _get_opensearch_env_int("OPENSEARCH_TIMEOUT", "30")
+        max_retries = _get_opensearch_env_int("OPENSEARCH_MAX_RETRIES", "3")
         return (hosts_str, port, username, password, use_ssl, verify_certs, timeout, max_retries)
 
     @classmethod
@@ -314,7 +324,7 @@ class ClientManager:
             entry = cls._instances.get(key)
             if entry is None:
                 hosts_str, port, username, password, use_ssl, verify_certs, timeout, max_retries = key
-                hosts = [{"host": hosts_str, "port": int(port)}]
+                hosts = [{"host": hosts_str, "port": port}]
 
                 ssl_context = None
                 if use_ssl and not verify_certs:
@@ -3049,11 +3059,9 @@ class OpenSearchVectorDBStorage(BaseVectorStorage):
                     )
                 return
 
-            ef_construction = int(
-                _get_opensearch_env("OPENSEARCH_KNN_EF_CONSTRUCTION", "200")
-            )
-            m = int(_get_opensearch_env("OPENSEARCH_KNN_M", "16"))
-            ef_search = int(_get_opensearch_env("OPENSEARCH_KNN_EF_SEARCH", "100"))
+            ef_construction = _get_opensearch_env_int("OPENSEARCH_KNN_EF_CONSTRUCTION", "200")
+            m = _get_opensearch_env_int("OPENSEARCH_KNN_M", "16")
+            ef_search = _get_opensearch_env_int("OPENSEARCH_KNN_EF_SEARCH", "100")
 
             body = {
                 "settings": {
