@@ -2150,6 +2150,8 @@ class OpenSearchGraphStorage(BaseGraphStorage):
         next search/count-based graph read. Uses conflicts="proceed" to
         tolerate already-deleted matches.
         """
+        if not self._indices_ready:
+            return
         try:
             # Refresh edge search view so delete_by_query sees all un-flushed writes.
             await self._refresh_graph_indices_if_dirty(refresh_edges=True)
@@ -2177,6 +2179,9 @@ class OpenSearchGraphStorage(BaseGraphStorage):
             self._nodes_dirty = True
             self._edges_dirty = True
         except OpenSearchException as e:
+            if _is_missing_index_error(e):
+                self._mark_indices_missing()
+                return
             logger.error(f"[{self.workspace}] Error deleting node {node_id}: {e}")
 
     async def remove_nodes(self, nodes: list[str]) -> None:
@@ -2187,6 +2192,8 @@ class OpenSearchGraphStorage(BaseGraphStorage):
         tolerate already-deleted matches.
         """
         if not nodes:
+            return
+        if not self._indices_ready:
             return
         logger.info(f"[{self.workspace}] Deleting {len(nodes)} nodes")
         try:
@@ -2217,6 +2224,9 @@ class OpenSearchGraphStorage(BaseGraphStorage):
             self._nodes_dirty = True
             self._edges_dirty = True
         except OpenSearchException as e:
+            if _is_missing_index_error(e):
+                self._mark_indices_missing()
+                return
             logger.error(f"[{self.workspace}] Error removing nodes: {e}")
 
     async def remove_edges(self, edges: list[tuple[str, str]]) -> None:
