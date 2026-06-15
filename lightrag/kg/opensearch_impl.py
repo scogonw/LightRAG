@@ -3437,7 +3437,7 @@ class OpenSearchVectorDBStorage(BaseVectorStorage):
         return _summarize_bulk_update_errors(success, errors)
 
     async def drop(self) -> dict[str, str]:
-        """Delete and recreate the vector index."""
+        """Delete the vector index; the index is recreated lazily on next write."""
         try:
             try:
                 await self.client.indices.delete(index=self._index_name)
@@ -3448,15 +3448,10 @@ class OpenSearchVectorDBStorage(BaseVectorStorage):
                 logger.info(
                     f"[{self.workspace}] Vector index already missing during drop: {self._index_name}"
                 )
-            # Recreate the index
-            await self._create_knn_index_if_not_exists()
-            self._index_ready = True
-            logger.info(
-                f"[{self.workspace}] Dropped and recreated vector index: {self._index_name}"
-            )
+            self._mark_index_missing()
             return {
                 "status": "success",
-                "message": f"Vector index {self._index_name} dropped and recreated",
+                "message": f"Vector index {self._index_name} dropped",
             }
         except OpenSearchException as e:
             self._mark_index_missing()
