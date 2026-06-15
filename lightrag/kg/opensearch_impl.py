@@ -437,7 +437,16 @@ async def _mget_optional_doc(
 
 def _is_missing_index_error(exc: Exception) -> bool:
     """Return True when an OpenSearch exception means the target index is missing."""
-    return "index_not_found_exception" in str(exc)
+    if not isinstance(exc, NotFoundError):
+        return False
+    if exc.error == "index_not_found_exception":
+        return True
+    info = exc.info
+    if isinstance(info, dict):
+        error_block = info.get("error", {})
+        if isinstance(error_block, dict):
+            return error_block.get("type") == "index_not_found_exception"
+    return False
 
 
 async def _fetch_stored_create_times(
