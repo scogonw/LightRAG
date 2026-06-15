@@ -3007,16 +3007,28 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                 "query": {
                     "bool": {
                         "should": [
-                            {"term": {"entity_id": {"value": query, "boost": 10}}},
+                            {
+                                "term": {
+                                    "entity_id": {
+                                        "value": query,
+                                        "case_insensitive": True,
+                                        "boost": 10,
+                                    }
+                                }
+                            },
                             {
                                 "prefix": {
-                                    "entity_id": {"value": query.lower(), "boost": 5}
+                                    "entity_id": {
+                                        "value": query,
+                                        "case_insensitive": True,
+                                        "boost": 5,
+                                    }
                                 }
                             },
                             {
                                 "wildcard": {
                                     "entity_id": {
-                                        "value": f"*{query.lower()}*",
+                                        "value": f"*{query}*",
                                         "case_insensitive": True,
                                         "boost": 2,
                                     }
