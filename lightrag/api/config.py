@@ -439,7 +439,12 @@ def parse_args() -> argparse.Namespace:
     )
     args.cosine_threshold = get_env_value(
         # "COSINE_THRESHOLD", DEFAULT_COSINE_THRESHOLD, float,
-        "COSINE_THRESHOLD", 0.4, float
+        # 0.1 in raw cosine space (= Lucene-normalized score ~0.55). The previous
+        # value of 0.4 was calibrated against Lucene-normalized scores before the
+        # H1 fix; in raw cosine terms 0.4 Lucene ≈ -0.2 raw cosine (very loose
+        # floor). 0.1 raw cosine preserves the wide-recall intent while requiring
+        # at least minimal positive cosine similarity.
+        "COSINE_THRESHOLD", 0.1, float
     )
     args.related_chunk_number = get_env_value(
         "RELATED_CHUNK_NUMBER", DEFAULT_RELATED_CHUNK_NUMBER, int

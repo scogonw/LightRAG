@@ -2074,7 +2074,8 @@ class TestVectorStorage:
     async def test_query_cosine_score_conversion(
         self, global_config, embed_func, mock_client
     ):
-        """Test that scores are used directly and threshold filtering works."""
+        """Lucene cosinesimil returns score=(1+cosine)/2; query() converts to raw cosine."""
+        # _score=0.85 → raw_cosine = 2*0.85 - 1 = 0.70
         mock_client.search = AsyncMock(
             return_value={
                 "hits": {
@@ -2099,21 +2100,22 @@ class TestVectorStorage:
             await s.initialize()
             results = await s.query("test", top_k=5)
             assert len(results) == 1
-            assert results[0]["distance"] == 0.85
+            # Conversion: 2*0.85 - 1 = 0.70; also confirms hit passes threshold (0.70 > 0.2)
+            assert results[0]["distance"] == pytest.approx(0.70)
 
     @pytest.mark.asyncio
     async def test_query_filters_below_threshold(
         self, global_config, embed_func, mock_client
     ):
-        """Low scores should be filtered out."""
-        # score 0.15 < threshold 0.2
+        """Hits whose raw cosine falls below the threshold must be filtered out."""
+        # _score=0.55 → raw_cosine = 2*0.55 - 1 = 0.10 < threshold 0.2 → rejected
         mock_client.search = AsyncMock(
             return_value={
                 "hits": {
                     "hits": [
                         {
                             "_id": "v1",
-                            "_score": 0.15,
+                            "_score": 0.55,
                             "_source": {"content": "weak match"},
                         },
                     ],
@@ -2133,9 +2135,42 @@ class TestVectorStorage:
             assert len(results) == 0
 
     @pytest.mark.asyncio
+    async def test_query_passes_above_threshold(
+        self, global_config, embed_func, mock_client
+    ):
+        """Hits just above the threshold boundary in raw cosine space must be kept."""
+        # _score=0.65 → raw_cosine = 2*0.65 - 1 = 0.30 > threshold 0.2 → accepted
+        mock_client.search = AsyncMock(
+            return_value={
+                "hits": {
+                    "hits": [
+                        {
+                            "_id": "v2",
+                            "_score": 0.65,
+                            "_source": {"content": "borderline match"},
+                        },
+                    ],
+                    "total": {"value": 1},
+                },
+                "aggregations": {
+                    "status_counts": {"buckets": []},
+                    "src": {"buckets": []},
+                    "tgt": {"buckets": []},
+                },
+            }
+        )
+        with patch.object(ClientManager, "get_client", return_value=mock_client):
+            s = self._make(global_config, embed_func)
+            await s.initialize()
+            results = await s.query("test", top_k=5)
+            assert len(results) == 1
+            assert results[0]["distance"] == pytest.approx(0.30)
+
+    @pytest.mark.asyncio
     async def test_query_with_provided_embedding(
         self, global_config, embed_func, mock_client
     ):
+        # _score=1.0 → raw_cosine = 2*1.0 - 1 = 1.0 (perfect match; conversion is a no-op at the boundary)
         mock_client.search = AsyncMock(
             return_value={
                 "hits": {
@@ -2157,7 +2192,8 @@ class TestVectorStorage:
             vec = np.random.rand(128).astype(np.float32)
             results = await s.query("test", top_k=5, query_embedding=vec)
             assert len(results) == 1
-            assert results[0]["distance"] == 1.0
+            # 2*1.0 - 1 = 1.0; contrast with _score=0.5 → raw_cosine=0.0 (orthogonal)
+            assert results[0]["distance"] == pytest.approx(1.0)
 
     @pytest.mark.asyncio
     async def test_get_by_id(self, global_config, embed_func, mock_client):
@@ -2354,14 +2390,35 @@ class TestVectorStorage:
 # ---------------------------------------------------------------------------
 
 
-class TestScoreThreshold:
-    """Verify that raw OpenSearch scores are compared directly against threshold."""
+class TestScoreConversionArithmetic:
+    """Unit-test the Lucene→raw-cosine conversion formula in isolation."""
 
-    def test_above_threshold(self):
-        assert 0.85 >= 0.2
+    @pytest.mark.parametrize(
+        "lucene_score, expected_raw_cosine",
+        [
+            (0.0, -1.0),   # worst possible Lucene score → raw cosine -1
+            (0.5, 0.0),    # orthogonal → raw cosine 0
+            (1.0, 1.0),    # perfect match → raw cosine 1
+            (0.85, 0.70),  # typical good hit
+            (0.55, 0.10),  # just below threshold 0.2 in raw cosine
+            (0.65, 0.30),  # just above threshold 0.2 in raw cosine
+        ],
+    )
+    def test_conversion_formula(self, lucene_score, expected_raw_cosine):
+        """raw_cosine = 2 * lucene_score - 1 (inverse of score = (1+cosine)/2)."""
+        assert 2.0 * lucene_score - 1.0 == pytest.approx(expected_raw_cosine)
 
-    def test_below_threshold(self):
-        assert 0.15 < 0.2
-
-    def test_exact_threshold(self):
-        assert 0.2 >= 0.2
+    @pytest.mark.parametrize(
+        "lucene_score, threshold, should_pass",
+        [
+            (0.65, 0.2, True),   # raw_cosine 0.30 > 0.2
+            (0.55, 0.2, False),  # raw_cosine 0.10 < 0.2
+            (0.70, 0.2, True),   # raw_cosine 0.40 clearly above threshold
+            (0.50, 0.2, False),  # raw_cosine 0.00 clearly below threshold
+        ],
+    )
+    def test_threshold_boundary_in_raw_cosine_space(
+        self, lucene_score, threshold, should_pass
+    ):
+        raw_cosine = 2.0 * lucene_score - 1.0
+        assert (raw_cosine >= threshold) == should_pass
