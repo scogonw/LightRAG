@@ -4073,11 +4073,17 @@ def generate_reference_list_from_chunks(
     chunks: list[dict],
 ) -> tuple[list[dict], list[dict]]:
     """
-    Generate reference list from chunks, prioritizing by occurrence frequency.
+    Generate reference list from chunks.
+
+    When reranking was active (chunks carry a ``rerank_score`` field), files are
+    ordered by their highest rerank score (desc) so the most relevant source is
+    labeled ``[1]``.  When reranking is off (no chunk carries ``rerank_score``),
+    ordering falls back to occurrence frequency (desc) then first-appearance
+    (asc) — identical to the previous behaviour.
 
     This function extracts file_paths from chunks, counts their occurrences,
-    sorts by frequency and first appearance order, creates reference_id mappings,
-    and builds a reference_list structure.
+    sorts by rerank score / frequency and first appearance order, creates
+    reference_id mappings, and builds a reference_list structure.
 
     Args:
         chunks: List of chunk dictionaries with file_path information
@@ -4107,11 +4113,28 @@ def generate_reference_list_from_chunks(
             file_path_with_indices.append((file_path, file_path_counts[file_path], i))
             seen_paths.add(file_path)
 
-    # Sort by count (descending), then by first appearance index (ascending)
-    sorted_file_paths = sorted(file_path_with_indices, key=lambda x: (-x[1], x[2]))
+    # Collect max rerank_score per file — only populated when reranking ran.
+    file_path_max_score: dict[str, float] = {}
+    for chunk in chunks:
+        fp = chunk.get("file_path", "")
+        score = chunk.get("rerank_score")
+        if fp and fp != "unknown_source" and score is not None:
+            if fp not in file_path_max_score or score > file_path_max_score[fp]:
+                file_path_max_score[fp] = score
+
+    # Sort by max rerank score (desc) when reranking was active, otherwise fall
+    # back to the original frequency (desc) → first-appearance (asc) ordering so
+    # behaviour is byte-identical when reranking is disabled.
+    if file_path_max_score:
+        sorted_file_paths = sorted(
+            file_path_with_indices,
+            key=lambda x: (-file_path_max_score.get(x[0], -1.0), -x[1], x[2]),
+        )
+    else:
+        sorted_file_paths = sorted(file_path_with_indices, key=lambda x: (-x[1], x[2]))
     unique_file_paths = [item[0] for item in sorted_file_paths]
 
-    # 3. Create mapping from file_path to reference_id (prioritized by frequency)
+    # 3. Create mapping from file_path to reference_id (priority order determined above)
     file_path_to_ref_id = {}
     for i, file_path in enumerate(unique_file_paths):
         file_path_to_ref_id[file_path] = str(i + 1)
