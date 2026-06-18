@@ -4185,6 +4185,38 @@ class TestVectorStorage:
             assert len(results) == 0
 
     @pytest.mark.asyncio
+    async def test_unfiltered_query_oversamples_and_caps_at_top_k(
+        self, global_config, embed_func, mock_client
+    ):
+        """Unfiltered queries must request top_k*3 candidates and return at most top_k results."""
+        top_k = 3
+        # Return top_k*3 hits: top_k+1 pass threshold (score 0.9), rest fail (score 0.1 < 0.2).
+        above = [
+            {"_id": f"above{i}", "_score": 0.9, "_source": {"content": f"match{i}"}}
+            for i in range(top_k + 1)
+        ]
+        below = [
+            {"_id": f"below{i}", "_score": 0.1, "_source": {"content": f"weak{i}"}}
+            for i in range(top_k * 3 - (top_k + 1))
+        ]
+        mock_client.search = AsyncMock(
+            return_value={"hits": {"hits": above + below}}
+        )
+        with patch.object(ClientManager, "get_client", return_value=mock_client):
+            s = self._make(global_config, embed_func)
+            await s.initialize()
+            results = await s.query("test", top_k=top_k)
+
+        # Verify oversampling: search was called with size=top_k*3 and k=top_k*3
+        call_body = mock_client.search.call_args.kwargs["body"]
+        assert call_body["size"] == top_k * 3
+        assert call_body["query"]["knn"]["vector"]["k"] == top_k * 3
+        # Verify no metadata filter was sent (unfiltered path)
+        assert "filter" not in call_body["query"]["knn"]["vector"]
+        # Verify result is capped at top_k, not the top_k+1 that passed threshold
+        assert len(results) == top_k
+
+    @pytest.mark.asyncio
     async def test_query_with_provided_embedding(
         self, global_config, embed_func, mock_client
     ):
