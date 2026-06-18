@@ -3581,6 +3581,13 @@ class TestGraphOrgIdPushDown:
                         ]
                     }
                 },
+                # node_degrees_batch aggregation (called because len(candidates) > remaining)
+                {
+                    "aggregations": {
+                        "source_degrees": {"buckets": []},
+                        "target_degrees": {"buckets": []},
+                    }
+                },
                 # _append_edges_between_nodes
                 {
                     "hits": {
@@ -3606,6 +3613,205 @@ class TestGraphOrgIdPushDown:
             result = await s.get_knowledge_graph("A", max_depth=1, max_nodes=2, org_id="org_X")
 
         assert {n.id for n in result.nodes} == {"A", "B"}
+        assert result.is_truncated is True
+
+    @pytest.mark.asyncio
+    async def test_bfs_truncation_prefers_higher_weight_edge(
+        self, global_config, embed_func, mock_client
+    ):
+        """When budget forces truncation, the node reachable via a higher-weight edge wins."""
+        mock_client.transport = AsyncMock()
+        mock_client.transport.perform_request = AsyncMock(
+            side_effect=Exception("PPL not available")
+        )
+        # max_nodes=2; A + one neighbour.  B has weight=5, C has weight=1 → B wins.
+        mock_client.mget = AsyncMock(
+            side_effect=[
+                # get_node for start A
+                {
+                    "docs": [
+                        {
+                            "_id": "A",
+                            "found": True,
+                            "_source": {"entity_type": "person", "org_id": "org_X"},
+                        }
+                    ]
+                },
+                # level-1: only B (the winner) is fetched
+                {
+                    "docs": [
+                        {
+                            "_id": "B",
+                            "found": True,
+                            "_source": {"entity_type": "person", "org_id": "org_X"},
+                        }
+                    ]
+                },
+            ]
+        )
+        mock_client.search = AsyncMock(
+            side_effect=[
+                # BFS edge query: A->B (weight=5), A->C (weight=1)
+                {
+                    "hits": {
+                        "hits": [
+                            {
+                                "_id": "e1",
+                                "_source": {
+                                    "source_node_id": "A",
+                                    "target_node_id": "B",
+                                    "weight": 5.0,
+                                },
+                            },
+                            {
+                                "_id": "e2",
+                                "_source": {
+                                    "source_node_id": "A",
+                                    "target_node_id": "C",
+                                    "weight": 1.0,
+                                },
+                            },
+                        ]
+                    }
+                },
+                # node_degrees_batch: equal degrees so weight tiebreaker applies
+                {
+                    "aggregations": {
+                        "source_degrees": {"buckets": []},
+                        "target_degrees": {"buckets": []},
+                    }
+                },
+                # _append_edges_between_nodes page 1
+                {
+                    "hits": {
+                        "hits": [
+                            {
+                                "_id": "e1",
+                                "_source": {
+                                    "source_node_id": "A",
+                                    "target_node_id": "B",
+                                    "org_id": "org_X",
+                                },
+                                "sort": [1],
+                            }
+                        ]
+                    }
+                },
+                # _append_edges_between_nodes page 2 (empty)
+                {"hits": {"hits": []}},
+            ]
+        )
+        with patch.object(ClientManager, "get_client", return_value=mock_client):
+            s = self._make(global_config, embed_func)
+            await s.initialize()
+            result = await s.get_knowledge_graph("A", max_depth=1, max_nodes=2, org_id="org_X")
+
+        assert {n.id for n in result.nodes} == {"A", "B"}, "Higher-weight neighbour B should survive truncation"
+        assert "C" not in {n.id for n in result.nodes}
+        assert result.is_truncated is True
+
+    @pytest.mark.asyncio
+    async def test_bfs_truncation_prefers_higher_degree_node(
+        self, global_config, embed_func, mock_client
+    ):
+        """When edge weights are equal, the node with higher graph degree survives truncation."""
+        mock_client.transport = AsyncMock()
+        mock_client.transport.perform_request = AsyncMock(
+            side_effect=Exception("PPL not available")
+        )
+        # max_nodes=2; A + one neighbour. B and C have equal weight; B has degree=3, C has degree=1 → B wins.
+        mock_client.mget = AsyncMock(
+            side_effect=[
+                # get_node for start A
+                {
+                    "docs": [
+                        {
+                            "_id": "A",
+                            "found": True,
+                            "_source": {"entity_type": "person", "org_id": "org_X"},
+                        }
+                    ]
+                },
+                # level-1: only B (the winner) is fetched
+                {
+                    "docs": [
+                        {
+                            "_id": "B",
+                            "found": True,
+                            "_source": {"entity_type": "person", "org_id": "org_X"},
+                        }
+                    ]
+                },
+            ]
+        )
+        mock_client.search = AsyncMock(
+            side_effect=[
+                # BFS edge query: A->B and A->C, equal weight
+                {
+                    "hits": {
+                        "hits": [
+                            {
+                                "_id": "e1",
+                                "_source": {
+                                    "source_node_id": "A",
+                                    "target_node_id": "B",
+                                    "weight": 1.0,
+                                },
+                            },
+                            {
+                                "_id": "e2",
+                                "_source": {
+                                    "source_node_id": "A",
+                                    "target_node_id": "C",
+                                    "weight": 1.0,
+                                },
+                            },
+                        ]
+                    }
+                },
+                # node_degrees_batch: B has degree 3, C has degree 1
+                {
+                    "aggregations": {
+                        "source_degrees": {
+                            "buckets": [
+                                {"key": "B", "doc_count": 2},
+                                {"key": "C", "doc_count": 1},
+                            ]
+                        },
+                        "target_degrees": {
+                            "buckets": [
+                                {"key": "B", "doc_count": 1},
+                            ]
+                        },
+                    }
+                },
+                # _append_edges_between_nodes page 1
+                {
+                    "hits": {
+                        "hits": [
+                            {
+                                "_id": "e1",
+                                "_source": {
+                                    "source_node_id": "A",
+                                    "target_node_id": "B",
+                                    "org_id": "org_X",
+                                },
+                                "sort": [1],
+                            }
+                        ]
+                    }
+                },
+                # _append_edges_between_nodes page 2 (empty)
+                {"hits": {"hits": []}},
+            ]
+        )
+        with patch.object(ClientManager, "get_client", return_value=mock_client):
+            s = self._make(global_config, embed_func)
+            await s.initialize()
+            result = await s.get_knowledge_graph("A", max_depth=1, max_nodes=2, org_id="org_X")
+
+        assert {n.id for n in result.nodes} == {"A", "B"}, "Higher-degree hub B should survive truncation"
+        assert "C" not in {n.id for n in result.nodes}
         assert result.is_truncated is True
 
     @pytest.mark.asyncio

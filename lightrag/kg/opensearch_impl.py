@@ -3960,7 +3960,7 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                 edge_bool["filter"] = [{"term": {"org_id": org_id}}]
             body = {
                 "query": {"bool": edge_bool},
-                "_source": ["source_node_id", "target_node_id"],
+                "_source": ["source_node_id", "target_node_id", "weight"],
                 "size": 10000,
             }
             try:
@@ -3968,21 +3968,43 @@ class OpenSearchGraphStorage(BaseGraphStorage):
             except OpenSearchException:
                 break
 
-            next_level = set()
+            # Fix #4: track best edge weight per candidate node so strongest
+            # relationships are prioritised when the budget is tight.
+            next_level_weights: dict[str, float] = {}
             for hit in resp["hits"]["hits"]:
                 src = hit["_source"]["source_node_id"]
                 tgt = hit["_source"]["target_node_id"]
-                if src not in seen_nodes:
-                    next_level.add(src)
-                if tgt not in seen_nodes:
-                    next_level.add(tgt)
+                try:
+                    weight = float(hit["_source"].get("weight") or 0)
+                except (TypeError, ValueError):
+                    weight = 0.0
+                for nid in (src, tgt):
+                    if nid not in seen_nodes:
+                        if weight > next_level_weights.get(nid, -1.0):
+                            next_level_weights[nid] = weight
 
-            # Limit to max_nodes
-            new_ids = []
-            for nid in next_level:
-                if len(seen_nodes) + len(new_ids) >= max_nodes:
-                    break
-                new_ids.append(nid)
+            # Sort candidates by edge weight DESC (strongest relationship first).
+            candidates = sorted(
+                next_level_weights, key=next_level_weights.__getitem__, reverse=True
+            )
+
+            # Limit to remaining node budget.
+            remaining = max_nodes - len(seen_nodes)
+            if len(candidates) > remaining:
+                # Fix #3: fetch degrees so hub nodes survive truncation by rank,
+                # not by arbitrary set iteration order. Degree is the primary key;
+                # edge weight breaks ties.
+                degrees = await self.node_degrees_batch(candidates, org_id=org_id)
+                candidates.sort(
+                    key=lambda nid: (
+                        degrees.get(nid, 0),
+                        next_level_weights.get(nid, 0.0),
+                    ),
+                    reverse=True,
+                )
+                new_ids = candidates[:remaining]
+            else:
+                new_ids = candidates
 
             if new_ids:
                 # Batch fetch node data
