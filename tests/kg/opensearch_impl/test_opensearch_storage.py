@@ -3220,6 +3220,52 @@ class TestGraphStorage:
             assert await s.search_labels("") == []
 
     @pytest.mark.asyncio
+    async def test_search_labels_degree_reranking(
+        self, global_config, embed_func, mock_client
+    ):
+        """High-degree entity with equal text score ranks above a low-degree entity."""
+        text_search_response = {
+            "hits": {
+                "hits": [
+                    {"_id": "Apple Grower Association", "_score": 5.0},
+                    {"_id": "Apple Inc.", "_score": 5.0},
+                ],
+                "total": {"value": 2},
+            },
+            "aggregations": {
+                "status_counts": {"buckets": []},
+                "src": {"buckets": []},
+                "tgt": {"buckets": []},
+                "source_degrees": {"buckets": []},
+                "target_degrees": {"buckets": []},
+            },
+        }
+        degree_agg_response = {
+            "hits": {"hits": [], "total": {"value": 0}},
+            "aggregations": {
+                "status_counts": {"buckets": []},
+                "src": {"buckets": []},
+                "tgt": {"buckets": []},
+                "source_degrees": {
+                    "buckets": [
+                        {"key": "Apple Inc.", "doc_count": 400},
+                        {"key": "Apple Grower Association", "doc_count": 1},
+                    ]
+                },
+                "target_degrees": {"buckets": []},
+            },
+        }
+        mock_client.search = AsyncMock(
+            side_effect=[text_search_response, degree_agg_response]
+        )
+        with patch.object(ClientManager, "get_client", return_value=mock_client):
+            s = self._make(global_config, embed_func)
+            await s.initialize()
+            result = await s.search_labels("Apple", limit=10)
+        assert result[0] == "Apple Inc.", f"Expected 'Apple Inc.' first, got {result}"
+        assert result[1] == "Apple Grower Association"
+
+    @pytest.mark.asyncio
     async def test_drop(self, global_config, embed_func, mock_client):
         with patch.object(ClientManager, "get_client", return_value=mock_client):
             s = self._make(global_config, embed_func)

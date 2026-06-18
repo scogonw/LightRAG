@@ -12,6 +12,7 @@ Requirements:
 import os
 import re
 import json
+import math
 import ssl as ssl_module
 import time
 import asyncio
@@ -4133,7 +4134,7 @@ class OpenSearchGraphStorage(BaseGraphStorage):
             return []
 
     async def search_labels(self, query: str, limit: int = 50) -> list[str]:
-        """Search node labels with wildcard and prefix matching."""
+        """Search node labels with wildcard and prefix matching, reranked by graph degree."""
         query = query.strip()
         if not query:
             return []
@@ -4167,7 +4168,18 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                 "size": limit,
             }
             response = await self.client.search(index=self._nodes_index, body=body)
-            return [hit["_id"] for hit in response["hits"]["hits"]]
+            hits = response["hits"]["hits"]
+            if not hits:
+                return []
+            candidates = [(hit["_id"], hit.get("_score") or 0.0) for hit in hits]
+            candidate_ids = [c[0] for c in candidates]
+            degrees = await self.node_degrees_batch(candidate_ids)
+            reranked = sorted(
+                candidates,
+                key=lambda item: item[1] * math.log1p(degrees.get(item[0], 0)),
+                reverse=True,
+            )
+            return [item[0] for item in reranked]
         except OpenSearchException as e:
             if _is_missing_index_error(e):
                 self._mark_indices_missing()
