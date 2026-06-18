@@ -4111,8 +4111,8 @@ class OpenSearchGraphStorage(BaseGraphStorage):
             body = {
                 "size": 0,
                 "aggs": {
-                    "src": {"terms": {"field": "source_node_id", "size": limit * 2}},
-                    "tgt": {"terms": {"field": "target_node_id", "size": limit * 2}},
+                    "src": {"terms": {"field": "source_node_id", "size": min(limit * 10, 10000)}},
+                    "tgt": {"terms": {"field": "target_node_id", "size": min(limit * 10, 10000)}},
                 },
             }
             response = await self.client.search(index=self._edges_index, body=body)

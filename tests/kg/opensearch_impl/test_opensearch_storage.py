@@ -3073,6 +3073,43 @@ class TestGraphStorage:
             assert labels[0] == "A"  # degree 8 > B degree 2
 
     @pytest.mark.asyncio
+    async def test_get_popular_labels_bucket_cap_includes_nodes_beyond_old_2x_limit(
+        self, global_config, embed_func, mock_client
+    ):
+        """Nodes ranked beyond position limit*2 are now reachable with the min(limit*10, 10000) cap."""
+        limit = 2
+        # With old cap (limit*2=4), only 4 buckets sampled. Node "Z" at position 5 would be invisible.
+        # With new cap (limit*10=20), all nodes are sampled and "Z" with degree 10 ranks first.
+        buckets_src = [
+            {"key": f"node{i}", "doc_count": 1} for i in range(limit * 2)
+        ] + [{"key": "Z", "doc_count": 10}]
+
+        mock_client.search = AsyncMock(
+            return_value={
+                "hits": {"hits": [], "total": {"value": 0}},
+                "aggregations": {
+                    "src": {"buckets": buckets_src},
+                    "tgt": {"buckets": []},
+                    "status_counts": {"buckets": []},
+                },
+            }
+        )
+        with patch.object(ClientManager, "get_client", return_value=mock_client):
+            s = self._make(global_config, embed_func)
+            await s.initialize()
+            labels = await s.get_popular_labels(limit=limit)
+
+        # Verify the query used min(limit*10, 10000) as the aggregation size
+        call_body = mock_client.search.call_args.kwargs.get(
+            "body", mock_client.search.call_args.args[0] if mock_client.search.call_args.args else {}
+        )
+        assert call_body["aggs"]["src"]["terms"]["size"] == min(limit * 10, 10000)
+        assert call_body["aggs"]["tgt"]["terms"]["size"] == min(limit * 10, 10000)
+
+        # "Z" has degree 10 and should rank first — it would have been invisible under the old cap
+        assert labels[0] == "Z"
+
+    @pytest.mark.asyncio
     async def test_get_knowledge_graph_all_backfills_isolated_nodes_when_truncated(
         self, global_config, embed_func, mock_client
     ):
