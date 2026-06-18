@@ -73,6 +73,7 @@ from lightrag.constants import (
     DEFAULT_SUMMARY_PRIORITY,
     DEFAULT_RELATED_CHUNK_NUMBER,
     DEFAULT_KG_CHUNK_PICK_METHOD,
+    DEFAULT_KG_CHUNK_OVERSAMPLING_FACTOR,
     DEFAULT_SUMMARY_LANGUAGE,
     SOURCE_IDS_LIMIT_METHOD_KEEP,
     SOURCE_IDS_LIMIT_METHOD_FIFO,
@@ -5620,7 +5621,18 @@ async def _find_related_text_unit_from_entities(
     #     The order of text chunks aligns with the naive retrieval's destination.
     #     When reranking is disabled, the text chunks delivered to the LLM tend to favor naive retrieval.
     if kg_chunk_pick_method == "VECTOR" and query and chunks_vdb:
-        num_of_chunks = int(max_related_chunks * len(entities_with_chunks) / 2)
+        oversampling_factor = text_chunks_db.global_config.get(
+            "kg_chunk_oversampling_factor", DEFAULT_KG_CHUNK_OVERSAMPLING_FACTOR
+        )
+        num_of_chunks = int(
+            max(max_related_chunks, int(max_related_chunks * len(entities_with_chunks) / 2))
+            * oversampling_factor
+        )
+        if total_entity_chunks < num_of_chunks:
+            logger.debug(
+                f"[_find_related_text_unit_from_entities] Pool size {total_entity_chunks} < "
+                f"requested {num_of_chunks}; VDB search may return fewer chunks than target"
+            )
 
         # Get embedding function from global config
         actual_embedding_func = text_chunks_db.embedding_func
@@ -5958,7 +5970,18 @@ async def _find_related_text_unit_from_relations(
     selected_chunk_ids = []  # Initialize to avoid UnboundLocalError
 
     if kg_chunk_pick_method == "VECTOR" and query and chunks_vdb:
-        num_of_chunks = int(max_related_chunks * len(relations_with_chunks) / 2)
+        oversampling_factor = text_chunks_db.global_config.get(
+            "kg_chunk_oversampling_factor", DEFAULT_KG_CHUNK_OVERSAMPLING_FACTOR
+        )
+        num_of_chunks = int(
+            max(max_related_chunks, int(max_related_chunks * len(relations_with_chunks) / 2))
+            * oversampling_factor
+        )
+        if total_relation_chunks < num_of_chunks:
+            logger.debug(
+                f"[_find_related_text_unit_from_relations] Pool size {total_relation_chunks} < "
+                f"requested {num_of_chunks}; VDB search may return fewer chunks than target"
+            )
 
         # Get embedding function from global config
         actual_embedding_func = text_chunks_db.embedding_func
