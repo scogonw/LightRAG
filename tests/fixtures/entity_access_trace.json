@@ -1,0 +1,4552 @@
+{
+ "note": "Entity metadata captured from a real query response, then pseudonymised: organization, user, knowledge-base and resource identifiers are replaced with stable placeholders, and entity names with entity-NN. Access levels and the structure (which entries share a knowledge base, how many entries each entity carries) are preserved verbatim, which is what the assertions depend on. Descriptions are omitted.",
+ "metadata_filter": {
+  "user_id": "user-1",
+  "agent_kb_ids": [],
+  "user_kb_ids": [
+   "kb-01"
+  ],
+  "team_kb_ids": [
+   "kb-02",
+   "kb-03"
+  ]
+ },
+ "org_id": "org-1",
+ "entities": [
+  {
+   "entity_name": "entity-01",
+   "metadata": [
+    {
+     "resource_id": "res-0001",
+     "knowledgebase_id": "kb-04",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0002",
+     "knowledgebase_id": "kb-04",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0003",
+     "knowledgebase_id": "kb-04",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0004",
+     "knowledgebase_id": "kb-04",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0005",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0006",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0007",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0008",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0009",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0010",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "access_level": "CHAT_WIDGET",
+     "knowledgebase_id": "kb-06",
+     "resource_id": "res-0011"
+    },
+    {
+     "resource_id": "res-0012",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "access_level": "CHAT_WIDGET",
+     "knowledgebase_id": "kb-06",
+     "resource_id": "res-0013"
+    },
+    {
+     "resource_id": "res-0014",
+     "knowledgebase_id": "kb-07",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0015",
+     "knowledgebase_id": "kb-08",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0016",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0017",
+     "knowledgebase_id": "kb-09",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0018",
+     "knowledgebase_id": "kb-10",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0019",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0020",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0021",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0022",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0023",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0024",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0025",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0026",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0027",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0028",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0029",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0030",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0031",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0032",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0033",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0034",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0035",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0036",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0037",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0038",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0039",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0040",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0041",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0042",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0043",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0044",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0045",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0046",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0047",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0048",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0049",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0050",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0051",
+     "knowledgebase_id": "kb-04",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0052",
+     "knowledgebase_id": "kb-04",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0053",
+     "knowledgebase_id": "kb-04",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0054",
+     "knowledgebase_id": "kb-04",
+     "access_level": "CHAT_WIDGET"
+    }
+   ]
+  },
+  {
+   "entity_name": "entity-02",
+   "metadata": [
+    {
+     "resource_id": "res-0055",
+     "knowledgebase_id": "kb-04",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0056",
+     "knowledgebase_id": "kb-04",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0057",
+     "knowledgebase_id": "kb-04",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0058",
+     "knowledgebase_id": "kb-04",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0003",
+     "knowledgebase_id": "kb-04",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0059",
+     "knowledgebase_id": "kb-04",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0060",
+     "knowledgebase_id": "kb-04",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0005",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0061",
+     "knowledgebase_id": "kb-04",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0062",
+     "knowledgebase_id": "kb-04",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0063",
+     "knowledgebase_id": "kb-04",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0064",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0065",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0066",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0067",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0068",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0069",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0070",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0071",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0072",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0073",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0074",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0008",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0009",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0075",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0076",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0077",
+     "knowledgebase_id": "kb-07",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0078",
+     "knowledgebase_id": "kb-07",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0079",
+     "knowledgebase_id": "kb-07",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0080",
+     "knowledgebase_id": "kb-10",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0081",
+     "knowledgebase_id": "kb-10",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0082",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0083",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0084",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0085",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0086",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0087",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0088",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0089",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0090",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0091",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0092",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0016",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0093",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0094",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0095",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0096",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0097",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0098",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0099",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0100",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0101",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0102",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0103",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0104",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0105",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0106",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0107",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0108",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0109",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0110",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0111",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0112",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0113",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0114",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0115",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0116",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0117",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0118",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0119",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0120",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0121",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0122",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0123",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0124",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0125",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0126",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0127",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0128",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0129",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0130",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0131",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0132",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0133",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0134",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0135",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0136",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0137",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0138",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0139",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0140",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0141",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0142",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0143",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0144",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0145",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0146",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0147",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0148",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0149",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0150",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0024",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0151",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0152",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0153",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0154",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0155",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0156",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0157",
+     "knowledgebase_id": "kb-13",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0158",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0159",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0160",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0161",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0162",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0163",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0164",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0165",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0166",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0167",
+     "knowledgebase_id": "kb-04",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0168",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0169",
+     "knowledgebase_id": "kb-13",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0170",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0171",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0172",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0173",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0174",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0175",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0176",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0177",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0178",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0179",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0180",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0181",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0182",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0183",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0184",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0185",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0186",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0187",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0188",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0189",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0190",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0191",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0192",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0193",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0194",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0195",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0041",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0196",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0047",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0197",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0198",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0199",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0049",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0200",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0201",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0202",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0203",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0204",
+     "knowledgebase_id": "kb-04",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0205",
+     "knowledgebase_id": "kb-04",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0051",
+     "knowledgebase_id": "kb-04",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0206",
+     "knowledgebase_id": "kb-04",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0207",
+     "knowledgebase_id": "kb-04",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0208",
+     "knowledgebase_id": "kb-04",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0209",
+     "knowledgebase_id": "kb-04",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0053",
+     "knowledgebase_id": "kb-04",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0210",
+     "knowledgebase_id": "kb-04",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0211",
+     "knowledgebase_id": "kb-04",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0054",
+     "knowledgebase_id": "kb-04",
+     "access_level": "CHAT_WIDGET"
+    }
+   ]
+  },
+  {
+   "entity_name": "entity-03",
+   "metadata": [
+    {
+     "resource_id": "res-0058",
+     "knowledgebase_id": "kb-04",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0212",
+     "knowledgebase_id": "kb-04",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0005",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0061",
+     "knowledgebase_id": "kb-04",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0063",
+     "knowledgebase_id": "kb-04",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0213",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0006",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0017",
+     "knowledgebase_id": "kb-09",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0018",
+     "knowledgebase_id": "kb-10",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0021",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0022",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0214",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0024",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0215",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0216",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0217",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0218",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0219",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0220",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0221",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0222",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0223",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0224",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0225",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0226",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0227",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0228",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0229",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0230",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0231",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0232",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0233",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0234",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0198",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0202",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0207",
+     "knowledgebase_id": "kb-04",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0209",
+     "knowledgebase_id": "kb-04",
+     "access_level": "CHAT_WIDGET"
+    }
+   ]
+  },
+  {
+   "entity_name": "entity-04",
+   "metadata": [
+    {
+     "resource_id": "res-0055",
+     "knowledgebase_id": "kb-04",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0056",
+     "knowledgebase_id": "kb-04",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0001",
+     "knowledgebase_id": "kb-04",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0004",
+     "knowledgebase_id": "kb-04",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0005",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0061",
+     "knowledgebase_id": "kb-04",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0063",
+     "knowledgebase_id": "kb-04",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0070",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0235",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0072",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0010",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0077",
+     "knowledgebase_id": "kb-07",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0078",
+     "knowledgebase_id": "kb-07",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0079",
+     "knowledgebase_id": "kb-07",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0082",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0086",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0087",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0089",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0092",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0016",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0094",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0096",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0099",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0100",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0101",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0017",
+     "knowledgebase_id": "kb-09",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0018",
+     "knowledgebase_id": "kb-10",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0102",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0116",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0119",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0121",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0122",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0123",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0126",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0127",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0132",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0147",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0149",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0150",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0024",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0236",
+     "knowledgebase_id": "kb-06",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0237",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0238",
+     "knowledgebase_id": "kb-13",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0239",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0240",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0241",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0242",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0173",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0243",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0175",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0198",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0199",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0201",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0203",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0244",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0245",
+     "knowledgebase_id": "kb-04",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0205",
+     "knowledgebase_id": "kb-04",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0207",
+     "knowledgebase_id": "kb-04",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0208",
+     "knowledgebase_id": "kb-04",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0211",
+     "knowledgebase_id": "kb-04",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0246",
+     "knowledgebase_id": "kb-14",
+     "access_level": "TEAM_MEMBERS"
+    }
+   ]
+  },
+  {
+   "entity_name": "entity-05",
+   "metadata": [
+    {
+     "resource_id": "res-0060",
+     "knowledgebase_id": "kb-04",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0061",
+     "knowledgebase_id": "kb-04",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0063",
+     "knowledgebase_id": "kb-04",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0076",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0247",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0215",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0025",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0248",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0249",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0250",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0251",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0252",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0253",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0254",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0255",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0045",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0256",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0257",
+     "knowledgebase_id": "kb-04",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0258",
+     "knowledgebase_id": "kb-04",
+     "access_level": "ORGANIZATION"
+    }
+   ]
+  },
+  {
+   "entity_name": "entity-06",
+   "metadata": [
+    {
+     "resource_id": "res-0012",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "access_level": "CHAT_WIDGET",
+     "knowledgebase_id": "kb-06",
+     "resource_id": "res-0013"
+    },
+    {
+     "resource_id": "res-0259",
+     "knowledgebase_id": "kb-10",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0260",
+     "knowledgebase_id": "kb-10",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0261",
+     "knowledgebase_id": "kb-10",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0262",
+     "knowledgebase_id": "kb-10",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0263",
+     "knowledgebase_id": "kb-10",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0017",
+     "knowledgebase_id": "kb-09",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0018",
+     "knowledgebase_id": "kb-10",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0109",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0264",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0113",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0265",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0266",
+     "knowledgebase_id": "kb-03",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0267",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0268",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0269",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0270",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0133",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0271",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0138",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0272",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0273",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0274",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0275",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0276",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    }
+   ]
+  },
+  {
+   "entity_name": "entity-07",
+   "metadata": [
+    {
+     "resource_id": "res-0055",
+     "knowledgebase_id": "kb-04",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0056",
+     "knowledgebase_id": "kb-04",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0057",
+     "knowledgebase_id": "kb-04",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0058",
+     "knowledgebase_id": "kb-04",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0277",
+     "knowledgebase_id": "kb-04",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0005",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0278",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0061",
+     "knowledgebase_id": "kb-04",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0062",
+     "knowledgebase_id": "kb-04",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0063",
+     "knowledgebase_id": "kb-04",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0279",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0280",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0281",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0282",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0235",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0072",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0073",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0075",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0283",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0284",
+     "knowledgebase_id": "kb-07",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0285",
+     "knowledgebase_id": "kb-07",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0014",
+     "knowledgebase_id": "kb-07",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0079",
+     "knowledgebase_id": "kb-07",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0286",
+     "knowledgebase_id": "kb-07",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0287",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0091",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0092",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0016",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0093",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0094",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0288",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0019",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0289",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0020",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0290",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0291",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0292",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0293",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0294",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0295",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0296",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0297",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0298",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0299",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0300",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0301",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0302",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0214",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0303",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0304",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0023",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0305",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0306",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0307",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0308",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0024",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0309",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0157",
+     "knowledgebase_id": "kb-13",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0310",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0311",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0158",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0247",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0312",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0313",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0314",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0164",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0238",
+     "knowledgebase_id": "kb-13",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0169",
+     "knowledgebase_id": "kb-13",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0315",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0316",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0317",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0318",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0319",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0320",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0321",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0322",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0323",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0324",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0325",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0326",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0327",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0328",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0329",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0330",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0331",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0332",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0333",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0334",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0335",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0336",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0337",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0338",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0339",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0340",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0341",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0342",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0343",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0344",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0345",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0346",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0347",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0348",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0349",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0350",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0351",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0352",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0353",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0354",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0355",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0356",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0357",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0358",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0359",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0360",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0361",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0250",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0362",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0363",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0364",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0365",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0366",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0367",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0368",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0369",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0370",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0371",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0372",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0373",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0374",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0375",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0376",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0377",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0378",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0379",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0380",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0381",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0171",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0382",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0383",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0384",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0385",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0386",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0387",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0388",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0252",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0389",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0390",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0037",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0391",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0178",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0392",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0393",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0394",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0395",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0396",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0397",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0398",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0399",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0179",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0400",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0401",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0402",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0196",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0198",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0199",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0403",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0203",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0244",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0404",
+     "knowledgebase_id": "kb-04",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0204",
+     "knowledgebase_id": "kb-04",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0245",
+     "knowledgebase_id": "kb-04",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0205",
+     "knowledgebase_id": "kb-04",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0207",
+     "knowledgebase_id": "kb-04",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0208",
+     "knowledgebase_id": "kb-04",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0405",
+     "knowledgebase_id": "kb-04",
+     "access_level": "CHAT_WIDGET"
+    }
+   ]
+  },
+  {
+   "entity_name": "entity-08",
+   "metadata": [
+    {
+     "resource_id": "res-0012",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "access_level": "CHAT_WIDGET",
+     "knowledgebase_id": "kb-06",
+     "resource_id": "res-0013"
+    },
+    {
+     "resource_id": "res-0406",
+     "knowledgebase_id": "kb-09",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0407",
+     "knowledgebase_id": "kb-10",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0408",
+     "knowledgebase_id": "kb-04",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0409",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    }
+   ]
+  },
+  {
+   "entity_name": "entity-09",
+   "metadata": [
+    {
+     "resource_id": "res-0278",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0310",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0311",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0410",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    }
+   ]
+  },
+  {
+   "entity_name": "entity-10",
+   "metadata": [
+    {
+     "resource_id": "res-0001",
+     "knowledgebase_id": "kb-04",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0057",
+     "knowledgebase_id": "kb-04",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0058",
+     "knowledgebase_id": "kb-04",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0212",
+     "knowledgebase_id": "kb-04",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0005",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0278",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0279",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0280",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0006",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0235",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0073",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0012",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "access_level": "CHAT_WIDGET",
+     "knowledgebase_id": "kb-06",
+     "resource_id": "res-0013"
+    },
+    {
+     "resource_id": "res-0078",
+     "knowledgebase_id": "kb-07",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0285",
+     "knowledgebase_id": "kb-07",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0014",
+     "knowledgebase_id": "kb-07",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0287",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0411",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0412",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0092",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0016",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0093",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0094",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0413",
+     "knowledgebase_id": "kb-06",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0414",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0017",
+     "knowledgebase_id": "kb-09",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0018",
+     "knowledgebase_id": "kb-10",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0289",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0020",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0290",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0291",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0295",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0265",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0266",
+     "knowledgebase_id": "kb-03",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0267",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0269",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0303",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0307",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0024",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0272",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0273",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0157",
+     "knowledgebase_id": "kb-13",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0310",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0276",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0311",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0247",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0415",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0312",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0025",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0416",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0026",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0313",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0417",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0216",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0418",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0217",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0419",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0164",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0420",
+     "knowledgebase_id": "kb-02",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0421",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0422",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0423",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0238",
+     "knowledgebase_id": "kb-13",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0424",
+     "knowledgebase_id": "kb-15",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0425",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0426",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0427",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0428",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0429",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0430",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0431",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0432",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0028",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0433",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0434",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0229",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0435",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0436",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0437",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0438",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0439",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0440",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0441",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0442",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0443",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0444",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0445",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0446",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0447",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0448",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0449",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0450",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0451",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0452",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0453",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0454",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0455",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0456",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0457",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0458",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0459",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0460",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0461",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0462",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0463",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0464",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0465",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0466",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0467",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0468",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0469",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0470",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0471",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0472",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0473",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0474",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0475",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0476",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0477",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0478",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0479",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0480",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0481",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0482",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0483",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0484",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0485",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0486",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0487",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0488",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0489",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0490",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0491",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0492",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0493",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0494",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0495",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0496",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0497",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0498",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0499",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0500",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0501",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0502",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0503",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0504",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0505",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0506",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0507",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0508",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0509",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0510",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0511",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0512",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0513",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0514",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0515",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0516",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0517",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0518",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0519",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0520",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0521",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0522",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0523",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0524",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0525",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0526",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0527",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0528",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0529",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0530",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0531",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0532",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0533",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0534",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0535",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0536",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0537",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0538",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0539",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0540",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0541",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0542",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0543",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0544",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0545",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0546",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0547",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0548",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0549",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0550",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0551",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0552",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0553",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0554",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0555",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0556",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0557",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0558",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0559",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0560",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0561",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0562",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0563",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0564",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0565",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0566",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0567",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0568",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0408",
+     "knowledgebase_id": "kb-04",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0409",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0170",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0369",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0171",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0389",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0390",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0254",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0173",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0569",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0570",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0571",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0572",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0243",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0573",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0177",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0037",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0391",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0178",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0392",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0393",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0394",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0395",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0396",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0397",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0398",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0399",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0179",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0400",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0574",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0040",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0042",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0043",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0401",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0044",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0575",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0402",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0198",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0199",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0403",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0201",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0244",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0576",
+     "knowledgebase_id": "kb-04",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0404",
+     "knowledgebase_id": "kb-04",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0245",
+     "knowledgebase_id": "kb-04",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0207",
+     "knowledgebase_id": "kb-04",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0208",
+     "knowledgebase_id": "kb-04",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0405",
+     "knowledgebase_id": "kb-04",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0211",
+     "knowledgebase_id": "kb-04",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "access_level": "CHAT_WIDGET",
+     "knowledgebase_id": "kb-06",
+     "resource_id": "res-0577"
+    }
+   ]
+  },
+  {
+   "entity_name": "entity-11",
+   "metadata": [
+    {
+     "resource_id": "res-0578",
+     "knowledgebase_id": "kb-04",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0282",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0281",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0579",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0070",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0580",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0412",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0019",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0291",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0292",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0293",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0296",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0306",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0307",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0308",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0581",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0312",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0416",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0026",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0313",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0216",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0027",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0217",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0164",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0582",
+     "knowledgebase_id": "kb-11",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0568",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0240",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0241",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0172",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0583",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0173",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0569",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0570",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0571",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0584",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0572",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0175",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0176",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0394",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0396",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0179",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0255",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0038",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0041",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0042",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0585",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0586",
+     "knowledgebase_id": "kb-06",
+     "access_level": "CHAT_WIDGET"
+    },
+    {
+     "resource_id": "res-0587",
+     "knowledgebase_id": "kb-04",
+     "access_level": "CHAT_WIDGET"
+    }
+   ]
+  },
+  {
+   "entity_name": "entity-12",
+   "metadata": [
+    {
+     "resource_id": "res-0005",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0082",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0083",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0084",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0086",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0087",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0088",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0092",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0016",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0095",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0097",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0098",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0099",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0102",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0109",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0112",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0117",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0118",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0119",
+     "knowledgebase_id": "kb-12",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0126",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0127",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0021",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0588",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0138",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0139",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0149",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0024",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0589",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0155",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0156",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0312",
+     "knowledgebase_id": "kb-03",
+     "access_level": "ORGANIZATION"
+    },
+    {
+     "resource_id": "res-0313",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0590",
+     "knowledgebase_id": "kb-05",
+     "access_level": "TEAM_MEMBERS"
+    },
+    {
+     "resource_id": "res-0208",
+     "knowledgebase_id": "kb-04",
+     "access_level": "CHAT_WIDGET"
+    }
+   ]
+  },
+  {
+   "entity_name": "entity-13",
+   "metadata": [
+    {
+     "resource_id": "res-0023",
+     "knowledgebase_id": "kb-03",
+     "access_level": "TEAM_MEMBERS"
+    }
+   ]
+  }
+ ]
+}

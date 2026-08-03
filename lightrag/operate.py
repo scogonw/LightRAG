@@ -167,6 +167,53 @@ def _filter_chunks_by_kb_access(
     return out
 
 
+def _filter_records_by_kb_access(
+    records: list[dict], metadata_filter: dict, org_id: str | None
+) -> list[dict]:
+    """Drop and prune entity/relation records the caller cannot access.
+
+    Entities and relations are merged across every document they were extracted
+    from, so their ``metadata`` is a LIST of per-document entries. The OpenSearch
+    filter evaluates that list with ``object``-mapping semantics: the
+    ``knowledgebase_id`` and ``access_level`` clauses are matched against
+    flattened arrays, so they can be satisfied by *different* entries — a record
+    can come back on a combination that no single source document grants. Graph
+    reads that take the unfiltered path (see ``get_edges_batch``) are not checked
+    server-side at all.
+
+    Each entry is therefore re-checked independently here, and entries the caller
+    cannot access are stripped from the record so they never reach the API
+    response. A record with no accessible entry is dropped.
+
+    This bounds *identifiers*, not prose: an entity's ``description`` is
+    synthesised across all of its source documents, so a record kept on the
+    strength of one accessible entry still carries text derived from the others.
+    Closing that requires per-source descriptions, which is a separate change.
+    """
+    out: list[dict] = []
+    for record in records:
+        meta = record.get("metadata")
+        if meta is None:
+            continue
+        if isinstance(meta, dict):
+            meta_list = [meta]
+        elif isinstance(meta, list):
+            meta_list = meta
+        else:
+            continue
+        accessible = [
+            m
+            for m in meta_list
+            if _chunk_meta_matches_kb_filter(m, metadata_filter, org_id)
+        ]
+        if not accessible:
+            continue
+        pruned = dict(record)
+        pruned["metadata"] = accessible[0] if isinstance(meta, dict) else accessible
+        out.append(pruned)
+    return out
+
+
 def _truncate_entity_identifier(
     identifier: str, limit: int, chunk_key: str, identifier_role: str
 ) -> str:
@@ -4690,6 +4737,16 @@ async def _get_node_data(
         if n is not None
     ]
 
+    if query_param.metadata_filter and node_datas:
+        before_count = len(node_datas)
+        node_datas = _filter_records_by_kb_access(
+            node_datas, query_param.metadata_filter, query_param.org_id
+        )
+        logger.info(
+            f"[_get_node_data] Per-entry access filter applied: "
+            f"{len(node_datas)}/{before_count} entities passed"
+        )
+
     use_relations = await _find_most_related_edges_from_entities(
         node_datas,
         query_param,
@@ -4753,6 +4810,19 @@ async def _find_most_related_edges_from_entities(
                 **edge_props,
             }
             all_edges_data.append(combined)
+
+    # get_edges_batch / edge_degrees_batch fall back to the base implementations
+    # on some backends, which ignore metadata_filter entirely — so these edges
+    # may have had no access check at all before this point.
+    if query_param.metadata_filter and all_edges_data:
+        before_count = len(all_edges_data)
+        all_edges_data = _filter_records_by_kb_access(
+            all_edges_data, query_param.metadata_filter, query_param.org_id
+        )
+        logger.info(
+            f"[_find_most_related_edges_from_entities] Per-entry access filter "
+            f"applied: {len(all_edges_data)}/{before_count} relations passed"
+        )
 
     all_edges_data = sorted(
         all_edges_data, key=lambda x: (x["rank"], x["weight"]), reverse=True
@@ -5008,6 +5078,17 @@ async def _get_edge_data(
 
     # Relations maintain vector search order (sorted by similarity)
 
+    # As above: get_edges_batch may not filter server-side on this backend.
+    if query_param.metadata_filter and edge_datas:
+        before_count = len(edge_datas)
+        edge_datas = _filter_records_by_kb_access(
+            edge_datas, query_param.metadata_filter, query_param.org_id
+        )
+        logger.info(
+            f"[_get_edge_data] Per-entry access filter applied: "
+            f"{len(edge_datas)}/{before_count} relations passed"
+        )
+
     use_entities = await _find_most_related_entities_from_relationships(
         edge_datas,
         query_param,
@@ -5050,6 +5131,16 @@ async def _find_most_related_entities_from_relationships(
         # Combine the node data with the entity name, no rank needed
         combined = {**node, "entity_name": entity_name}
         node_datas.append(combined)
+
+    if query_param.metadata_filter and node_datas:
+        before_count = len(node_datas)
+        node_datas = _filter_records_by_kb_access(
+            node_datas, query_param.metadata_filter, query_param.org_id
+        )
+        logger.info(
+            f"[_find_most_related_entities_from_relationships] Per-entry access "
+            f"filter applied: {len(node_datas)}/{before_count} entities passed"
+        )
 
     return node_datas
 

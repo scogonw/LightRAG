@@ -1728,6 +1728,103 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                 self._mark_indices_missing()
             return {}
 
+    def _edge_id_candidates(self, src: str, tgt: str) -> tuple[str, str]:
+        """Both candidate document IDs for an edge, which is bidirectional."""
+        return (
+            compute_mdhash_id(f"{src}-{tgt}", prefix="edge-"),
+            compute_mdhash_id(f"{tgt}-{src}", prefix="edge-"),
+        )
+
+    async def get_edges_batch(
+        self,
+        pairs: list[dict[str, str]],
+        metadata_filter: dict | None = None,
+        org_id: str | None = None,
+    ) -> dict[tuple[str, str], dict]:
+        """Batch-fetch edges by (src, tgt) pair, optionally filtered by metadata.
+
+        Overrides the base implementation, which loops over ``get_edge`` and
+        **ignores metadata_filter entirely** — meaning every relation fetched by
+        pair would otherwise bypass access control on this backend.
+        """
+        if not pairs:
+            return {}
+        if not self._indices_ready:
+            return {}
+        try:
+            # Both orientations are candidates; only one is stored.
+            id_to_pair: dict[str, tuple[str, str]] = {}
+            for pair in pairs:
+                src, tgt = pair["src"], pair["tgt"]
+                for edge_id in self._edge_id_candidates(src, tgt):
+                    id_to_pair[edge_id] = (src, tgt)
+            edge_ids = list(id_to_pair)
+
+            if metadata_filter:
+                os_filter = _build_knowledgebase_filter(metadata_filter, org_id)
+                must_clauses: list[dict] = [{"ids": {"values": edge_ids}}]
+                if os_filter:
+                    must_clauses.append(os_filter)
+                response = await self.client.search(
+                    index=self._edges_index,
+                    body={
+                        "query": {"bool": {"must": must_clauses}},
+                        "size": len(edge_ids),
+                    },
+                )
+                found = [
+                    (hit["_id"], hit["_source"]) for hit in response["hits"]["hits"]
+                ]
+            else:
+                response = await self.client.mget(
+                    index=self._edges_index, body={"ids": edge_ids}
+                )
+                found = [
+                    (doc["_id"], doc["_source"])
+                    for doc in response.get("docs", [])
+                    if doc.get("found")
+                ]
+
+            result: dict[tuple[str, str], dict] = {}
+            for edge_id, source in found:
+                pair = id_to_pair.get(edge_id)
+                if pair is None or pair in result:
+                    continue
+                data = dict(source)
+                data["_id"] = edge_id
+                result[pair] = data
+            return result
+        except OpenSearchException as e:
+            if _is_missing_index_error(e):
+                self._mark_indices_missing()
+            logger.error(f"[{self.workspace}] Error batch-getting edges: {e}")
+            return {}
+
+    async def edge_degrees_batch(
+        self,
+        edge_pairs: list[tuple[str, str]],
+        metadata_filter: dict | None = None,
+        org_id: str | None = None,
+    ) -> dict[tuple[str, str], int]:
+        """Batch edge degrees (src degree + tgt degree), honouring the filter.
+
+        Overrides the base implementation, which loops over ``edge_degree`` and
+        ignores ``metadata_filter``. Degree is the sum of the two endpoints'
+        node degrees, matching ``BaseGraphStorage.edge_degree``.
+        """
+        if not edge_pairs:
+            return {}
+        if not self._indices_ready:
+            return {}
+        node_ids = list({n for pair in edge_pairs for n in pair})
+        degrees = await self.node_degrees_batch(
+            node_ids, metadata_filter=metadata_filter, org_id=org_id
+        )
+        return {
+            (src, tgt): degrees.get(src, 0) + degrees.get(tgt, 0)
+            for src, tgt in edge_pairs
+        }
+
     async def node_degrees_batch(self, node_ids: list[str], metadata_filter: dict | None = None, org_id: str | None = None) -> dict[str, int]:
         """Batch-fetch edge counts for multiple nodes using aggregations."""
         if not node_ids:

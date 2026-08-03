@@ -2897,6 +2897,10 @@ class LightRAG:
             user_prompt=param.user_prompt,
             enable_rerank=param.enable_rerank,
             metadata_filter=param.metadata_filter,
+            # Must be carried over: without it the org condition is never added
+            # to the knowledgebase filter, and a request with no metadata_filter
+            # at all produces no filter whatsoever (i.e. cross-org results).
+            org_id=param.org_id,
         )
 
         query_result = None
