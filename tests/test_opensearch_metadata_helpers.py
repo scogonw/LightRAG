@@ -145,3 +145,106 @@ def test_upsert_is_idempotent():
 def test_upsert_noop_when_resource_id_missing():
     old = [{"resource_id": "r2"}]
     assert _apply_upsert(old, None, {"x": 1}) == old
+
+
+# ---------------------------------------------------------------------------
+# OpenSearchKVStorage.get_metadata / set_metadata
+#
+# These back the metadata PATCH route, which reads and writes a document's
+# tenant metadata (org_id / knowledgebase_id / access_level / resource_id) in
+# full_docs. Both must avoid touching the document's ``content``.
+# ---------------------------------------------------------------------------
+
+
+class _FakeClient:
+    """Records the OpenSearch calls made against it."""
+
+    def __init__(self, *, mget_response=None, update_error=None):
+        self.mget_response = mget_response
+        self.update_error = update_error
+        self.mget_calls = []
+        self.update_calls = []
+
+    async def mget(self, index, body):
+        self.mget_calls.append({"index": index, "body": body})
+        return self.mget_response
+
+    async def update(self, index, id, body, refresh=None):
+        self.update_calls.append(
+            {"index": index, "id": id, "body": body, "refresh": refresh}
+        )
+        if self.update_error is not None:
+            raise self.update_error
+        return {"result": "updated"}
+
+
+def _make_kv(client):
+    kv = opensearch_impl.OpenSearchKVStorage.__new__(
+        opensearch_impl.OpenSearchKVStorage
+    )
+    kv.client = client
+    kv._index_name = "idx"
+    kv._index_ready = True
+    kv.workspace = "ws"
+    return kv
+
+
+async def test_get_metadata_source_filters_to_metadata_only():
+    """Must not pull the document's full content off the cluster."""
+    client = _FakeClient(
+        mget_response={
+            "docs": [
+                {
+                    "found": True,
+                    "_id": "doc-1",
+                    "_source": {"metadata": {"resource_id": "r1"}},
+                }
+            ]
+        }
+    )
+    kv = _make_kv(client)
+
+    assert await kv.get_metadata("doc-1") == {"resource_id": "r1"}
+    assert client.mget_calls[0]["body"] == {
+        "docs": [{"_id": "doc-1", "_source": ["metadata"]}]
+    }
+
+
+async def test_get_metadata_missing_record_is_none():
+    client = _FakeClient(mget_response={"docs": [{"found": False, "_id": "doc-1"}]})
+    assert await _make_kv(client).get_metadata("doc-1") is None
+
+
+async def test_get_metadata_record_without_metadata_is_empty_dict():
+    """Distinct from a missing record: the document exists, it just has no
+    metadata. The route treats these differently (409 vs. mergeable)."""
+    client = _FakeClient(
+        mget_response={"docs": [{"found": True, "_id": "doc-1", "_source": {}}]}
+    )
+    assert await _make_kv(client).get_metadata("doc-1") == {}
+
+
+async def test_set_metadata_uses_partial_update():
+    client = _FakeClient()
+    kv = _make_kv(client)
+
+    assert await kv.set_metadata("doc-1", {"access_level": "ONLY_ME"}) is True
+    call = client.update_calls[0]
+    assert call["id"] == "doc-1"
+    assert call["refresh"] is True
+    # A partial "doc" update, so content is left untouched.
+    assert set(call["body"]) == {"doc"}
+    assert call["body"]["doc"]["metadata"] == {"access_level": "ONLY_ME"}
+    assert "content" not in call["body"]["doc"]
+
+
+async def test_set_metadata_missing_record_returns_false():
+    client = _FakeClient(update_error=opensearch_impl.NotFoundError(404, "missing", {}))
+    assert await _make_kv(client).set_metadata("doc-1", {"a": 1}) is False
+
+
+async def test_metadata_methods_noop_when_index_missing():
+    kv = _make_kv(_FakeClient())
+    kv._index_ready = False
+    assert await kv.get_metadata("doc-1") is None
+    assert await kv.set_metadata("doc-1", {"a": 1}) is False

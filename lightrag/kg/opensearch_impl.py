@@ -374,10 +374,21 @@ def _build_index_name(workspace: str, namespace: str) -> tuple[str, str, str]:
 
 
 async def _mget_optional_doc(
-    client: AsyncOpenSearch, index_name: str, doc_id: str
+    client: AsyncOpenSearch,
+    index_name: str,
+    doc_id: str,
+    source_includes: list[str] | None = None,
 ) -> dict[str, Any] | None:
-    """Fetch a single document via mget and return None when it is absent."""
-    response = await client.mget(index=index_name, body={"ids": [doc_id]})
+    """Fetch a single document via mget and return None when it is absent.
+
+    ``source_includes`` restricts the returned ``_source`` to the listed fields,
+    which matters for indices holding large payloads (e.g. ``full_docs`` stores
+    the whole document ``content``).
+    """
+    body: dict[str, Any] = {"ids": [doc_id]}
+    if source_includes is not None:
+        body = {"docs": [{"_id": doc_id, "_source": source_includes}]}
+    response = await client.mget(index=index_name, body=body)
     docs = response.get("docs", [])
     if not docs:
         return None
@@ -556,6 +567,66 @@ class OpenSearchKVStorage(BaseKVStorage):
                 return [None] * len(ids)
             logger.error(f"[{self.workspace}] Error getting documents: {e}")
             return [None] * len(ids)
+
+    async def get_metadata(self, doc_id: str) -> dict[str, Any] | None:
+        """Return just the ``metadata`` field of a record, or None if absent.
+
+        Source-filtered so callers reading a document's tenant metadata (org_id,
+        knowledgebase_id, access_level, resource_id) do not pull its full
+        ``content`` off the cluster. A record that exists but carries no
+        metadata yields ``{}``; a missing record yields ``None``.
+        """
+        if not self._index_ready:
+            return None
+        try:
+            response = await _mget_optional_doc(
+                self.client, self._index_name, doc_id, source_includes=["metadata"]
+            )
+            if response is None:
+                return None
+            return response.get("_source", {}).get("metadata") or {}
+        except OpenSearchException as e:
+            if _is_missing_index_error(e):
+                self._mark_index_missing()
+                return None
+            logger.error(
+                f"[{self.workspace}] Error getting metadata for {doc_id}: {e}"
+            )
+            return None
+
+    async def set_metadata(self, doc_id: str, metadata: dict[str, Any]) -> bool:
+        """Replace a record's ``metadata`` field in place.
+
+        A partial update rather than the full-replace ``index`` op used by
+        ``upsert``, so the document's ``content`` is neither read nor rewritten
+        and cannot be clobbered by a concurrent pipeline write.
+
+        Returns True when the record was updated, False when it is missing or
+        the update failed.
+        """
+        if not self._index_ready:
+            return False
+        try:
+            await self.client.update(
+                index=self._index_name,
+                id=doc_id,
+                body={"doc": {"metadata": metadata, "update_time": int(time.time())}},
+                refresh=True,
+            )
+            return True
+        except NotFoundError:
+            logger.warning(
+                f"[{self.workspace}] Cannot set metadata: {doc_id} not found"
+            )
+            return False
+        except OpenSearchException as e:
+            if _is_missing_index_error(e):
+                self._mark_index_missing()
+                return False
+            logger.error(
+                f"[{self.workspace}] Error setting metadata for {doc_id}: {e}"
+            )
+            return False
 
     async def filter_keys(self, keys: set[str]) -> set[str]:
         """Return the subset of keys that do not exist in storage."""

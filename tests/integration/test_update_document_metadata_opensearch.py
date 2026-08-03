@@ -2,8 +2,9 @@
 OpenSearch cluster. Skipped unless --run-integration is passed AND
 LIGHTRAG_RUN_INTEGRATION=true is set.
 
-These tests exercise the full route: synchronous doc-status update +
-background cascade to chunks vector index.
+These tests exercise the full route: synchronous metadata write to full_docs
+(the source of truth chunks are rebuilt from) plus the cascade to the chunks
+vector index and to the document's entities and relations.
 """
 
 import asyncio
@@ -82,7 +83,7 @@ async def _ingest_one_doc(
 
 
 @pytest.mark.asyncio
-async def test_patch_updates_doc_status_metadata(opensearch_rag):
+async def test_patch_updates_full_docs_metadata(opensearch_rag):
     rag = opensearch_rag
     org_id = f"org-{uuid.uuid4().hex[:6]}"
     doc_id = await _ingest_one_doc(
@@ -90,7 +91,11 @@ async def test_patch_updates_doc_status_metadata(opensearch_rag):
         content="The quick brown fox jumps over the lazy dog.",
         file_path=f"happy-{uuid.uuid4().hex[:6]}.txt",
         org_id=org_id,
-        metadata={"department": "engineering", "year": 2025},
+        metadata={
+            "department": "engineering",
+            "year": 2025,
+            "resource_id": "res-happy",
+        },
     )
 
     client = _make_client(rag)
@@ -104,18 +109,128 @@ async def test_patch_updates_doc_status_metadata(opensearch_rag):
     body = response.json()
     assert body["status"] == "update_started"
     assert body["doc_id"] == doc_id
-    assert body["metadata"] == {
+    expected = {
         "department": "engineering",
         "year": 2026,
         "tag": "added",
+        "resource_id": "res-happy",
     }
+    assert body["metadata"] == expected
 
+    # full_docs is the source of truth: it is what chunks are rebuilt from, so
+    # the patch has to land here or a reprocess resurrects the old values.
+    assert await rag.full_docs.get_metadata(doc_id) == expected
+
+    # doc-status carries the same keys mirrored alongside the pipeline's own
+    # bookkeeping, which the mirror must not drop.
     stored = await rag.doc_status.get_by_id(doc_id)
-    assert stored["metadata"] == {
-        "department": "engineering",
-        "year": 2026,
-        "tag": "added",
+    assert stored["metadata"].items() >= expected.items()
+
+
+@pytest.mark.asyncio
+async def test_patch_without_resource_id_returns_409(opensearch_rag):
+    """No anchor means the cascade cannot find the document's entry on its
+    chunks/entities/relations, so the request must fail rather than report a
+    success it did not deliver."""
+    rag = opensearch_rag
+    org_id = f"org-{uuid.uuid4().hex[:6]}"
+    doc_id = await _ingest_one_doc(
+        rag,
+        content="Legacy document ingested before resource_id existed.",
+        file_path=f"legacy-{uuid.uuid4().hex[:6]}.txt",
+        org_id=org_id,
+        metadata={"department": "engineering"},
+    )
+
+    client = _make_client(rag)
+    response = client.patch(
+        f"/documents/{doc_id}/metadata",
+        headers={"X-Org-Id": org_id},
+        json={"metadata": {"access_level": "ONLY_ME"}},
+    )
+
+    assert response.status_code == 409, response.text
+    assert "resource_id" in response.json()["detail"]
+    # Nothing was written.
+    assert await rag.full_docs.get_metadata(doc_id) == {"department": "engineering"}
+
+
+@pytest.mark.asyncio
+async def test_patch_changing_resource_id_returns_422(opensearch_rag):
+    rag = opensearch_rag
+    org_id = f"org-{uuid.uuid4().hex[:6]}"
+    doc_id = await _ingest_one_doc(
+        rag,
+        content="Document whose identity key must stay put.",
+        file_path=f"anchor-{uuid.uuid4().hex[:6]}.txt",
+        org_id=org_id,
+        metadata={"resource_id": "res-anchor", "access_level": "ORGANIZATION"},
+    )
+
+    client = _make_client(rag)
+    response = client.patch(
+        f"/documents/{doc_id}/metadata",
+        headers={"X-Org-Id": org_id},
+        json={"metadata": {"resource_id": "res-other"}},
+    )
+
+    assert response.status_code == 422, response.text
+    stored = await rag.full_docs.get_metadata(doc_id)
+    assert stored["resource_id"] == "res-anchor"
+
+
+@pytest.mark.asyncio
+async def test_patch_wait_reports_cascade_counts(opensearch_rag):
+    """With wait=true the cascade runs inline and reports what it touched, so a
+    caller can tell a real propagation from a silent no-op."""
+    rag = opensearch_rag
+    org_id = f"org-{uuid.uuid4().hex[:6]}"
+    doc_id = await _ingest_one_doc(
+        rag,
+        content=(
+            "Alice works at Acme Corporation in Berlin. "
+            "Bob reports to Alice on the platform team."
+        ),
+        file_path=f"wait-{uuid.uuid4().hex[:6]}.txt",
+        org_id=org_id,
+        metadata={
+            "resource_id": "res-wait",
+            "knowledgebase_id": "kb-wait",
+            "access_level": "ORGANIZATION",
+        },
+    )
+
+    client = _make_client(rag)
+    response = client.patch(
+        f"/documents/{doc_id}/metadata?wait=true",
+        headers={"X-Org-Id": org_id},
+        json={"metadata": {"access_level": "ONLY_ME"}},
+    )
+
+    assert response.status_code == 200, response.text
+    cascade = response.json()["cascade"]
+    assert set(cascade) == {
+        "chunks",
+        "nodes",
+        "edges",
+        "entities_vdb",
+        "relations_vdb",
     }
+    assert cascade["chunks"]["updated"] > 0
+    assert cascade["chunks"]["failures"] == 0
+
+    # The cascade wrote the COMPLETE merged blob, not just the patched key:
+    # a partial entry would have stripped knowledgebase_id off every record and
+    # silently detached the document from its knowledge base.
+    stored = await rag.doc_status.get_by_id(doc_id)
+    chunks = await rag.chunks_vdb.get_by_ids(stored["chunks_list"])
+    for chunk in chunks:
+        assert chunk is not None
+        assert chunk["metadata"] == {
+            "resource_id": "res-wait",
+            "knowledgebase_id": "kb-wait",
+            "access_level": "ONLY_ME",
+        }, chunk
 
 
 @pytest.mark.asyncio
@@ -180,12 +295,15 @@ async def test_patch_null_value_removes_key(opensearch_rag):
     assert response.status_code == 200, response.text
     assert response.json()["metadata"] == {"keep": "yes", "resource_id": "res-null"}
 
-    stored = await rag.doc_status.get_by_id(doc_id)
-    assert stored["metadata"] == {"keep": "yes", "resource_id": "res-null"}
+    assert await rag.full_docs.get_metadata(doc_id) == {
+        "keep": "yes",
+        "resource_id": "res-null",
+    }
 
     await asyncio.sleep(2)
     await rag.chunks_vdb.index_done_callback()
 
+    stored = await rag.doc_status.get_by_id(doc_id)
     chunks = await rag.chunks_vdb.get_by_ids(stored["chunks_list"])
     for chunk in chunks:
         assert "remove" not in (chunk["metadata"] or {})
@@ -460,7 +578,7 @@ async def test_patch_empty_metadata_returns_no_change(opensearch_rag):
         content="Content for empty-patch test.",
         file_path=f"empty-{uuid.uuid4().hex[:6]}.txt",
         org_id=org_id,
-        metadata={"original": True},
+        metadata={"original": True, "resource_id": "res-empty"},
     )
 
     client = _make_client(rag)
@@ -472,10 +590,13 @@ async def test_patch_empty_metadata_returns_no_change(opensearch_rag):
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["status"] == "no_change"
-    assert body["metadata"] == {"original": True}
+    # Reports the document's real metadata, not doc-status' processing keys.
+    assert body["metadata"] == {"original": True, "resource_id": "res-empty"}
 
-    stored = await rag.doc_status.get_by_id(doc_id)
-    assert stored["metadata"] == {"original": True}
+    assert await rag.full_docs.get_metadata(doc_id) == {
+        "original": True,
+        "resource_id": "res-empty",
+    }
 
 
 @pytest.mark.asyncio
@@ -507,8 +628,7 @@ async def test_patch_returns_busy_when_doc_processing(opensearch_rag):
     body = response.json()
     assert body["status"] == "busy"
     # Metadata should NOT have been updated
-    after = await rag.doc_status.get_by_id(doc_id)
-    assert after["metadata"] == {"v": 1}
+    assert await rag.full_docs.get_metadata(doc_id) == {"v": 1}
 
 
 @pytest.mark.asyncio
@@ -540,7 +660,11 @@ async def test_patch_idempotent(opensearch_rag):
     await rag.chunks_vdb.index_done_callback()
 
     stored = await rag.doc_status.get_by_id(doc_id)
-    assert stored["metadata"] == {"v": 2, "tag": "x", "resource_id": "res-idem"}
+    assert await rag.full_docs.get_metadata(doc_id) == {
+        "v": 2,
+        "tag": "x",
+        "resource_id": "res-idem",
+    }
 
     expected = {"v": 2, "tag": "x", "resource_id": "res-idem"}
     chunks = await rag.chunks_vdb.get_by_ids(stored["chunks_list"])
@@ -566,14 +690,14 @@ async def test_patch_busy_does_not_block_other_docs(opensearch_rag):
         content="Content for busy-doc-A.",
         file_path=f"busyA-{uuid.uuid4().hex[:6]}.txt",
         org_id=org_id,
-        metadata={"name": "A"},
+        metadata={"name": "A", "resource_id": "res-busyA"},
     )
     doc_b = await _ingest_one_doc(
         rag,
         content="Different content for doc-B that should remain editable.",
         file_path=f"busyB-{uuid.uuid4().hex[:6]}.txt",
         org_id=org_id,
-        metadata={"name": "B"},
+        metadata={"name": "B", "resource_id": "res-busyB"},
     )
 
     # Force doc A into PROCESSING.
@@ -601,10 +725,12 @@ async def test_patch_busy_does_not_block_other_docs(opensearch_rag):
     )
     assert r_b.status_code == 200, r_b.text
     assert r_b.json()["status"] == "update_started"
-    assert r_b.json()["metadata"] == {"name": "B2"}
+    assert r_b.json()["metadata"] == {"name": "B2", "resource_id": "res-busyB"}
 
-    after_b = await rag.doc_status.get_by_id(doc_b)
-    assert after_b["metadata"] == {"name": "B2"}
+    assert await rag.full_docs.get_metadata(doc_b) == {
+        "name": "B2",
+        "resource_id": "res-busyB",
+    }
 
 
 @pytest.mark.asyncio
