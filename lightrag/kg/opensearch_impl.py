@@ -140,6 +140,43 @@ def _summarize_bulk_update_errors(success: int, errors: list | None) -> dict:
 _KB_FILTER_KEYS = {"agent_kb_ids", "user_id", "user_kb_ids", "team_kb_ids"}
 
 
+def _org_id_clause(org_id: str) -> dict:
+    """Match an org across both index families, whatever their ``org_id`` mapping.
+
+    The two families map the field differently:
+
+    - The k-NN vector indices declare ``org_id`` explicitly as ``keyword``
+      (see ``_create_index_if_not_exists`` on the vector storage), so
+      ``{"term": {"org_id": ...}}`` matches exactly and there is **no**
+      ``org_id.keyword`` subfield.
+    - The graph ``-nodes``/``-edges`` indices declare no ``org_id`` at all. It
+      arrives only through ``dynamic: True``, which maps a string as ``text``
+      plus a ``.keyword`` subfield. A ``term`` query is not analysed, so it is
+      compared against the *analysed* tokens of the ``text`` field — an id like
+      ``SCOGO`` indexes as ``scogo`` and the exact term never matches.
+
+    The practical effect of that mismatch: a caller whose only qualifying path
+    is the org clause (empty knowledgebase lists) matched in the vector indices
+    but got nothing from ``get_nodes_batch``/``get_edges_batch``, so every
+    entity and relation was dropped as "missing" while chunks still came back.
+
+    Matching both field paths keeps one shared filter correct on both mappings
+    without a reindex: the path that does not exist on a given index simply
+    never matches. The graph indices should still gain an explicit ``keyword``
+    mapping when a reindex is next on the table, after which this clause stays
+    correct and becomes redundant.
+    """
+    return {
+        "bool": {
+            "should": [
+                {"term": {"org_id": org_id}},
+                {"term": {"org_id.keyword": org_id}},
+            ],
+            "minimum_should_match": 1,
+        }
+    }
+
+
 def _build_knowledgebase_filter(
     metadata_filter: dict | None, org_id: str | None = None
 ) -> dict | None:
@@ -166,7 +203,7 @@ def _build_knowledgebase_filter(
     if not metadata_filter:
         # Fallback: if only org_id is provided, filter by it directly
         if org_id:
-            return {"term": {"org_id": org_id}}
+            return _org_id_clause(org_id)
         return None
 
     agent_kb_ids = metadata_filter.get("agent_kb_ids")
@@ -180,7 +217,7 @@ def _build_knowledgebase_filter(
     if not has_kb_params:
         # No knowledgebase params — fall back to org_id filter only
         if org_id:
-            return {"term": {"org_id": org_id}}
+            return _org_id_clause(org_id)
         return None
 
     # --- Agent knowledgebase path ---
@@ -206,7 +243,7 @@ def _build_knowledgebase_filter(
             {
                 "bool": {
                     "must": [
-                        {"term": {"org_id": org_id}},
+                        _org_id_clause(org_id),
                         {"terms": {"metadata.access_level.keyword": resource_access_levels}},
                     ]
                 }
@@ -1457,6 +1494,11 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                             "source_ids": {"type": "keyword"},
                             "file_path": {"type": "keyword"},
                             "created_at": {"type": "long"},
+                            # Declared explicitly so the access-control term query
+                            # matches. Left to `dynamic`, a string maps to `text`
+                            # and an id like "SCOGO" indexes as "scogo", which an
+                            # unanalysed term query never matches. See _org_id_clause.
+                            "org_id": {"type": "keyword"},
                             "metadata": {"type": "object", "dynamic": True},
                         },
                     },
@@ -1491,6 +1533,9 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                             "source_ids": {"type": "keyword"},
                             "file_path": {"type": "keyword"},
                             "created_at": {"type": "long"},
+                            # See the nodes index above — declared explicitly so the
+                            # access-control term query matches.
+                            "org_id": {"type": "keyword"},
                             "metadata": {"type": "object", "dynamic": True},
                         },
                     },
