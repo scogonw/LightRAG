@@ -36,8 +36,21 @@ from ..base import (
 )
 from ..exceptions import DataMigrationError
 from ..namespace import NameSpace, is_namespace
-from ..utils import logger, _cooperative_yield, performance_timing_log
+from ..utils import (
+    logger,
+    _cooperative_yield,
+    performance_timing_log,
+    normalize_search_filter,
+)
 from ..kg.shared_storage import get_data_init_lock
+
+
+def _escape_like_pattern(value: str) -> str:
+    """Escape LIKE/ILIKE wildcards so user input is matched literally.
+
+    Pairs with an explicit ``ESCAPE '\\'`` clause on the comparison.
+    """
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 import pipmaster as pm
 
@@ -4335,6 +4348,7 @@ class PGDocStatusStorage(DocStatusStorage):
         page_size: int = 50,
         sort_field: str = "updated_at",
         sort_direction: str = "desc",
+        file_path_filter: str | None = None,
     ) -> tuple[list[tuple[str, DocProcessingStatus]], int]:
         """Get documents with pagination support
 
@@ -4344,21 +4358,24 @@ class PGDocStatusStorage(DocStatusStorage):
             page_size: Number of documents per page (10-200)
             sort_field: Field to sort by ('created_at', 'updated_at', 'id')
             sort_direction: Sort direction ('asc' or 'desc')
+            file_path_filter: Case-insensitive substring matched against file_path
 
         Returns:
             Tuple of (list of (doc_id, DocProcessingStatus) tuples, total_count)
         """
         start = time.perf_counter()
         status_filter_value = status_filter.value if status_filter is not None else None
+        file_path_filter = normalize_search_filter(file_path_filter)
 
         performance_timing_log(
-            "[%s] PGDocStatusStorage.get_docs_paginated start status_filter=%s page=%s page_size=%s sort_field=%s sort_direction=%s",
+            "[%s] PGDocStatusStorage.get_docs_paginated start status_filter=%s page=%s page_size=%s sort_field=%s sort_direction=%s file_path_filter=%s",
             self.workspace,
             status_filter_value,
             page,
             page_size,
             sort_field,
             sort_direction,
+            file_path_filter,
         )
 
         # Validate parameters
@@ -4385,15 +4402,22 @@ class PGDocStatusStorage(DocStatusStorage):
 
         # Build parameterized query components
         params = {"workspace": self.workspace}
+        conditions = ["workspace=$1"]
         param_count = 1
 
         # Build WHERE clause with parameterized query
         if status_filter is not None:
             param_count += 1
-            where_clause = "WHERE workspace=$1 AND status=$2"
+            conditions.append(f"status=${param_count}")
             params["status"] = status_filter.value
-        else:
-            where_clause = "WHERE workspace=$1"
+
+        if file_path_filter is not None:
+            param_count += 1
+            # ESCAPE '\' so %, _ and \ in user input are matched literally
+            conditions.append(f"file_path ILIKE ${param_count} ESCAPE '\\'")
+            params["file_path"] = f"%{_escape_like_pattern(file_path_filter)}%"
+
+        where_clause = "WHERE " + " AND ".join(conditions)
 
         # Build ORDER BY clause using validated whitelist values.
         # NULLS LAST is applied in both the inner paged CTE and the outer query so
@@ -4503,24 +4527,38 @@ class PGDocStatusStorage(DocStatusStorage):
 
         return documents, total_count
 
-    async def get_all_status_counts(self) -> dict[str, int]:
+    async def get_all_status_counts(
+        self, file_path_filter: str | None = None
+    ) -> dict[str, int]:
         """Get counts of documents in each status for all documents
+
+        Args:
+            file_path_filter: Case-insensitive substring matched against file_path
 
         Returns:
             Dictionary mapping status names to counts, including 'all' field
         """
         start = time.perf_counter()
+        file_path_filter = normalize_search_filter(file_path_filter)
         performance_timing_log(
-            "[%s] PGDocStatusStorage.get_all_status_counts start", self.workspace
+            "[%s] PGDocStatusStorage.get_all_status_counts start file_path_filter=%s",
+            self.workspace,
+            file_path_filter,
         )
 
-        sql = """
+        params = {"workspace": self.workspace}
+        where_clause = "WHERE workspace=$1"
+        if file_path_filter is not None:
+            # ESCAPE '\' so %, _ and \ in user input are matched literally
+            where_clause += " AND file_path ILIKE $2 ESCAPE '\\'"
+            params["file_path"] = f"%{_escape_like_pattern(file_path_filter)}%"
+
+        sql = f"""
             SELECT status, COUNT(*) as count
             FROM LIGHTRAG_DOC_STATUS
-            WHERE workspace=$1
+            {where_clause}
             GROUP BY status
         """
-        params = {"workspace": self.workspace}
         query_timing_label = (
             f"{self.workspace} PGDocStatusStorage.get_all_status_counts"
         )

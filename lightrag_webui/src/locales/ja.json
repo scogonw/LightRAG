@@ -150,6 +150,13 @@
         "scanFailed": "ドキュメントのスキャンに失敗しました\n{{error}}",
         "scanProgressFailed": "スキャン進捗の取得に失敗しました\n{{error}}"
       },
+      "search": {
+        "placeholder": "ファイル名で検索",
+        "ariaLabel": "ファイル名でドキュメントを検索",
+        "clear": "検索をクリア",
+        "noResultsTitle": "一致するドキュメントがありません",
+        "noResultsDescription": "「{{search}}」に一致するドキュメントはありません。別のファイル名をお試しください。"
+      },
       "fileNameLabel": "ファイル名",
       "showButton": "表示",
       "hideButton": "非表示",

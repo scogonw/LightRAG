@@ -3111,6 +3111,29 @@ def get_pinyin_sort_key(text: str) -> str:
         return text.lower()
 
 
+def normalize_search_filter(value: str | None) -> str | None:
+    """Normalize a user-supplied search term to a filter value or None.
+
+    Blank and whitespace-only input carries no filtering intent, so it is
+    collapsed to None (meaning "no filter") rather than matching everything.
+    """
+    if value is None:
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
+def matches_file_path_filter(file_path: str | None, file_path_filter: str) -> bool:
+    """Case-insensitive substring match of a filter against a document file path.
+
+    Shared by the storage backends that filter in memory (JSON, Redis) so both
+    apply identical semantics to the ones pushed down into a query language.
+    """
+    if not file_path:
+        return False
+    return file_path_filter.casefold() in file_path.casefold()
+
+
 def fix_tuple_delimiter_corruption(
     record: str, delimiter_core: str, tuple_delimiter: str
 ) -> str:

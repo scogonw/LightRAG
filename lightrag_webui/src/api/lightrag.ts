@@ -218,6 +218,13 @@ export type DocumentsRequest = {
   page_size: number
   sort_field: 'created_at' | 'updated_at' | 'id' | 'file_path'
   sort_direction: 'asc' | 'desc'
+  /**
+   * Case-insensitive substring matched against the document file path.
+   * Always send a trimmed string or null — never '' or undefined, since the
+   * in-flight dedupe key is JSON.stringify(request) and those would each
+   * produce a distinct key for the same semantic query.
+   */
+  file_path_filter?: string | null
 }
 
 export type PaginationInfo = {

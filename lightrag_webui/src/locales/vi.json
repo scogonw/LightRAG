@@ -150,6 +150,13 @@
         "scanFailed": "Quét tài liệu thất bại\n{{error}}",
         "scanProgressFailed": "Lấy tiến trình quét thất bại\n{{error}}"
       },
+      "search": {
+        "placeholder": "Tìm theo tên tệp",
+        "ariaLabel": "Tìm tài liệu theo tên tệp",
+        "clear": "Xóa tìm kiếm",
+        "noResultsTitle": "Không có tài liệu phù hợp",
+        "noResultsDescription": "Không có tài liệu nào khớp với \"{{search}}\". Hãy thử tên tệp khác."
+      },
       "fileNameLabel": "Tên Tệp",
       "showButton": "Hiện",
       "hideButton": "Ẩn",

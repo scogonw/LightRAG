@@ -754,6 +754,7 @@ class DocumentsRequest(BaseModel):
         page_size: Number of documents per page (10-200)
         sort_field: Field to sort by ('created_at', 'updated_at', 'id', 'file_path')
         sort_direction: Sort direction ('asc' or 'desc')
+        file_path_filter: Case-insensitive substring matched against file_path
     """
 
     status_filter: Optional[DocStatus] = Field(
@@ -769,6 +770,23 @@ class DocumentsRequest(BaseModel):
     sort_direction: Literal["asc", "desc"] = Field(
         default="desc", description="Sort direction"
     )
+    file_path_filter: Optional[str] = Field(
+        default=None,
+        description=(
+            "Case-insensitive substring matched against the document file path. "
+            "None or blank means no filtering. Note that documents with a missing "
+            "file path are listed as 'unknown_source' but stored with an empty "
+            "path, so that display value is not matchable."
+        ),
+    )
+
+    @field_validator("file_path_filter", mode="after")
+    @classmethod
+    def _normalize_file_path_filter(cls, value: Optional[str]) -> Optional[str]:
+        """Treat blank/whitespace-only input as 'no filter' rather than match-all."""
+        if value is None:
+            return None
+        return value.strip() or None
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -778,6 +796,7 @@ class DocumentsRequest(BaseModel):
                 "page_size": 50,
                 "sort_field": "updated_at",
                 "sort_direction": "desc",
+                "file_path_filter": "report",
             }
         }
     )
@@ -3889,11 +3908,17 @@ def create_document_routes(
         Args:
             request (DocumentsRequest): The request body containing pagination parameters
 
+        When ``file_path_filter`` is supplied, it is applied as a case-insensitive
+        substring match on the document file path. Both the returned page and
+        ``status_counts`` reflect the filter, so the tallies stay consistent with
+        the listing.
+
         Returns:
             PaginatedDocsResponse: A response object containing:
                 - documents: List of documents for the current page
                 - pagination: Pagination information (page, total_count, etc.)
-                - status_counts: Count of documents by status for all documents
+                - status_counts: Count of documents by status, restricted to
+                  documents matching file_path_filter when one is supplied
 
         Raises:
             HTTPException: If an error occurs while retrieving documents (500).
@@ -3905,7 +3930,7 @@ def create_document_routes(
         )
 
         performance_timing_log(
-            "[documents/paginated][%s] Request start workspace=%s status_filter=%s page=%s page_size=%s sort_field=%s sort_direction=%s",
+            "[documents/paginated][%s] Request start workspace=%s status_filter=%s page=%s page_size=%s sort_field=%s sort_direction=%s file_path_filter=%s",
             trace_id,
             rag.workspace,
             status_filter_value,
@@ -3913,6 +3938,7 @@ def create_document_routes(
             request.page_size,
             request.sort_field,
             request.sort_direction,
+            request.file_path_filter,
         )
 
         try:
@@ -3955,13 +3981,18 @@ def create_document_routes(
                         page_size=request.page_size,
                         sort_field=request.sort_field,
                         sort_direction=request.sort_direction,
+                        file_path_filter=request.file_path_filter,
                     ),
                 )
             )
             status_counts_task = asyncio.create_task(
                 _timed_call(
                     "get_all_status_counts",
-                    rag.doc_status.get_all_status_counts(),
+                    # Same filter as the listing, so status tab counts describe
+                    # the matching documents rather than the whole corpus.
+                    rag.doc_status.get_all_status_counts(
+                        file_path_filter=request.file_path_filter,
+                    ),
                 )
             )
             query_task_create_elapsed = time.perf_counter() - query_task_create_start

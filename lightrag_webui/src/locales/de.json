@@ -150,6 +150,13 @@
         "scanFailed": "Dokumente konnten nicht gescannt werden\n{{error}}",
         "scanProgressFailed": "Scan-Fortschritt konnte nicht abgerufen werden\n{{error}}"
       },
+      "search": {
+        "placeholder": "Nach Dateiname suchen",
+        "ariaLabel": "Dokumente nach Dateiname durchsuchen",
+        "clear": "Suche zurücksetzen",
+        "noResultsTitle": "Keine passenden Dokumente",
+        "noResultsDescription": "Keine Dokumente entsprechen „{{search}}“. Versuchen Sie einen anderen Dateinamen."
+      },
       "fileNameLabel": "Dateiname",
       "showButton": "Anzeigen",
       "hideButton": "Ausblenden",

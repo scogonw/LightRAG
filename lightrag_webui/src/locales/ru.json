@@ -150,6 +150,13 @@
         "scanFailed": "Не удалось просканировать документы\n{{error}}",
         "scanProgressFailed": "Не удалось получить прогресс сканирования\n{{error}}"
       },
+      "search": {
+        "placeholder": "Поиск по имени файла",
+        "ariaLabel": "Поиск документов по имени файла",
+        "clear": "Очистить поиск",
+        "noResultsTitle": "Нет подходящих документов",
+        "noResultsDescription": "Нет документов, соответствующих «{{search}}». Попробуйте другое имя файла."
+      },
       "fileNameLabel": "Имя файла",
       "showButton": "Показать",
       "hideButton": "Скрыть",

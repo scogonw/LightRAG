@@ -6,6 +6,7 @@ type DocumentsRequest = {
   page_size: number
   sort_field: 'created_at' | 'updated_at' | 'id' | 'file_path'
   sort_direction: 'asc' | 'desc'
+  file_path_filter?: string | null
 }
 
 type LightragApiModule = typeof import('./lightrag')
@@ -238,5 +239,35 @@ describe('getDocumentsPaginated', () => {
       },
       status_counts: { all: 0 }
     })
+  })
+
+  // The dedupe key is JSON.stringify(request), so file_path_filter must take
+  // part in it: sharing an in-flight request across two different searches
+  // would show one search's results under the other's term.
+  test('treats requests differing only by file_path_filter as distinct', async () => {
+    const base: DocumentsRequest = {
+      status_filter: null,
+      page: 1,
+      page_size: 20,
+      sort_field: 'updated_at',
+      sort_direction: 'desc',
+      file_path_filter: null
+    }
+
+    const seenFilters: Array<string | null | undefined> = []
+    apiModule.__setPaginatedDocumentsPostForTests((request: any) => {
+      seenFilters.push(request.file_path_filter)
+      return new Promise(() => {})
+    })
+
+    apiModule.getDocumentsPaginated(base)
+    apiModule.getDocumentsPaginated({ ...base, file_path_filter: 'invoice' })
+    apiModule.getDocumentsPaginated({ ...base, file_path_filter: 'report' })
+
+    expect(seenFilters).toEqual([null, 'invoice', 'report'])
+
+    // Same filter again must still share the in-flight request
+    apiModule.getDocumentsPaginated({ ...base, file_path_filter: 'report' })
+    expect(seenFilters).toHaveLength(3)
   })
 })

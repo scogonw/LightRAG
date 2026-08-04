@@ -13,7 +13,13 @@ if not pm.is_installed("redis"):
 # aioredis is a depricated library, replaced with redis
 from redis.asyncio import Redis, ConnectionPool  # type: ignore
 from redis.exceptions import RedisError, ConnectionError, TimeoutError  # type: ignore
-from lightrag.utils import logger, get_pinyin_sort_key, _cooperative_yield
+from lightrag.utils import (
+    logger,
+    get_pinyin_sort_key,
+    _cooperative_yield,
+    matches_file_path_filter,
+    normalize_search_filter,
+)
 
 from lightrag.base import (
     BaseKVStorage,
@@ -743,8 +749,15 @@ class RedisDocStatusStorage(DocStatusStorage):
                 raise
         return ordered_results
 
-    async def get_status_counts(self) -> dict[str, int]:
-        """Get counts of documents in each status"""
+    async def _scan_status_counts(
+        self, file_path_filter: str | None = None
+    ) -> dict[str, int]:
+        """Scan the namespace and tally documents per status.
+
+        Args:
+            file_path_filter: Already-normalized case-insensitive substring
+                matched against file_path, or None for no filtering.
+        """
         counts = {status.value: 0 for status in DocStatus}
         async with self._get_redis_connection() as redis:
             try:
@@ -766,6 +779,14 @@ class RedisDocStatusStorage(DocStatusStorage):
                             if value:
                                 try:
                                     doc_data = json.loads(value)
+                                    if (
+                                        file_path_filter is not None
+                                        and not matches_file_path_filter(
+                                            doc_data.get("file_path"),
+                                            file_path_filter,
+                                        )
+                                    ):
+                                        continue
                                     status = doc_data.get("status")
                                     if status in counts:
                                         counts[status] += 1
@@ -778,6 +799,10 @@ class RedisDocStatusStorage(DocStatusStorage):
                 logger.error(f"[{self.workspace}] Error getting status counts: {e}")
 
         return counts
+
+    async def get_status_counts(self) -> dict[str, int]:
+        """Get counts of documents in each status"""
+        return await self._scan_status_counts()
 
     async def get_docs_by_status(
         self, status: DocStatus
@@ -985,6 +1010,7 @@ class RedisDocStatusStorage(DocStatusStorage):
         page_size: int = 50,
         sort_field: str = "updated_at",
         sort_direction: str = "desc",
+        file_path_filter: str | None = None,
     ) -> tuple[list[tuple[str, DocProcessingStatus]], int]:
         """Get documents with pagination support
 
@@ -994,6 +1020,7 @@ class RedisDocStatusStorage(DocStatusStorage):
             page_size: Number of documents per page (10-200)
             sort_field: Field to sort by ('created_at', 'updated_at', 'id')
             sort_direction: Sort direction ('asc' or 'desc')
+            file_path_filter: Case-insensitive substring matched against file_path
 
         Returns:
             Tuple of (list of (doc_id, DocProcessingStatus) tuples, total_count)
@@ -1011,6 +1038,8 @@ class RedisDocStatusStorage(DocStatusStorage):
 
         if sort_direction.lower() not in ["asc", "desc"]:
             sort_direction = "desc"
+
+        file_path_filter = normalize_search_filter(file_path_filter)
 
         # For Redis, we need to load all data and sort/filter in memory
         all_docs = []
@@ -1042,6 +1071,16 @@ class RedisDocStatusStorage(DocStatusStorage):
                                         status_filter is not None
                                         and doc_data.get("status")
                                         != status_filter.value
+                                    ):
+                                        continue
+
+                                    # Apply file path filter
+                                    if (
+                                        file_path_filter is not None
+                                        and not matches_file_path_filter(
+                                            doc_data.get("file_path"),
+                                            file_path_filter,
+                                        )
                                     ):
                                         continue
 
@@ -1102,13 +1141,20 @@ class RedisDocStatusStorage(DocStatusStorage):
 
         return paginated_docs, total_count
 
-    async def get_all_status_counts(self) -> dict[str, int]:
+    async def get_all_status_counts(
+        self, file_path_filter: str | None = None
+    ) -> dict[str, int]:
         """Get counts of documents in each status for all documents
+
+        Args:
+            file_path_filter: Case-insensitive substring matched against file_path
 
         Returns:
             Dictionary mapping status names to counts, including 'all' field
         """
-        counts = await self.get_status_counts()
+        counts = await self._scan_status_counts(
+            normalize_search_filter(file_path_filter)
+        )
 
         # Add 'all' field with total count
         total_count = sum(counts.values())

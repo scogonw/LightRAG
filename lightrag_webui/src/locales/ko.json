@@ -150,6 +150,13 @@
         "scanFailed": "문서 스캔 실패\n{{error}}",
         "scanProgressFailed": "스캔 진행 상황 가져오기 실패\n{{error}}"
       },
+      "search": {
+        "placeholder": "파일 이름으로 검색",
+        "ariaLabel": "파일 이름으로 문서 검색",
+        "clear": "검색 지우기",
+        "noResultsTitle": "일치하는 문서가 없습니다",
+        "noResultsDescription": "\"{{search}}\"와(과) 일치하는 문서가 없습니다. 다른 파일 이름을 사용해 보세요."
+      },
       "fileNameLabel": "파일명",
       "showButton": "표시",
       "hideButton": "숨기기",

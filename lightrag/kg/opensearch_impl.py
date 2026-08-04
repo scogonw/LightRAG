@@ -28,7 +28,12 @@ from ..base import (
     DocStatus,
     DocStatusStorage,
 )
-from ..utils import logger, compute_mdhash_id, _cooperative_yield
+from ..utils import (
+    logger,
+    compute_mdhash_id,
+    _cooperative_yield,
+    normalize_search_filter,
+)
 from ..types import KnowledgeGraph, KnowledgeGraphNode, KnowledgeGraphEdge
 from ..constants import GRAPH_FIELD_SEP
 from ..kg.shared_storage import get_data_init_lock
@@ -43,6 +48,41 @@ from opensearchpy.exceptions import OpenSearchException, NotFoundError, RequestE
 
 config = configparser.ConfigParser()
 config.read("config.ini", "utf-8")
+
+
+def _escape_wildcard_pattern(value: str) -> str:
+    """Escape OpenSearch wildcard metacharacters so input is matched literally."""
+    return value.replace("\\", "\\\\").replace("*", "\\*").replace("?", "\\?")
+
+
+def _build_doc_status_query(
+    status_filter: "DocStatus | None", file_path_filter: str | None
+) -> dict:
+    """Build the doc status bool query shared by listing, counting and aggregating.
+
+    ``file_path`` is mapped as a plain ``keyword`` on this index (see
+    ``_create_index_if_not_exists``), so it is matched directly rather than
+    through a ``.keyword`` subfield.
+    """
+    must_clauses: list[dict] = []
+
+    if status_filter is not None:
+        must_clauses.append({"term": {"status": status_filter.value}})
+
+    file_path_filter = normalize_search_filter(file_path_filter)
+    if file_path_filter is not None:
+        must_clauses.append(
+            {
+                "wildcard": {
+                    "file_path": {
+                        "value": f"*{_escape_wildcard_pattern(file_path_filter)}*",
+                        "case_insensitive": True,
+                    }
+                }
+            }
+        )
+
+    return {"bool": {"must": must_clauses}}
 
 
 def _apply_metadata_filter(
@@ -1138,6 +1178,7 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
         page_size: int = 50,
         sort_field: str = "updated_at",
         sort_direction: str = "desc",
+        file_path_filter: str | None = None,
     ) -> tuple[list[tuple[str, DocProcessingStatus]], int]:
         """Get documents with pagination using PIT + search_after."""
         if not self._index_ready:
@@ -1150,10 +1191,7 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
             sort_field = "updated_at"
         sort_order = "asc" if sort_direction.lower() == "asc" else "desc"
 
-        must_clauses = []
-        if status_filter is not None:
-            must_clauses.append({"term": {"status": status_filter.value}})
-        query = {"bool": {"must": must_clauses}}
+        query = _build_doc_status_query(status_filter, file_path_filter)
 
         skip_count = (page - 1) * page_size
 
@@ -1223,14 +1261,16 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
             logger.error(f"[{self.workspace}] Error in paginated query: {e}")
             return [], 0
 
-    async def get_all_status_counts(self) -> dict[str, int]:
+    async def get_all_status_counts(
+        self, file_path_filter: str | None = None
+    ) -> dict[str, int]:
         """Get document counts for all statuses including an 'all' total."""
         if not self._index_ready:
             return {}
         try:
             body = {
                 "size": 0,
-                "query": {"match_all": {}},
+                "query": _build_doc_status_query(None, file_path_filter),
                 "aggs": {"status_counts": {"terms": {"field": "status", "size": 100}}},
             }
             response = await self.client.search(index=self._index_name, body=body)

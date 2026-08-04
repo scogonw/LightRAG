@@ -17,7 +17,9 @@ import Checkbox from '@/components/ui/Checkbox'
 import UploadDocumentsDialog from '@/components/documents/UploadDocumentsDialog'
 import ClearDocumentsDialog from '@/components/documents/ClearDocumentsDialog'
 import DeleteDocumentsDialog from '@/components/documents/DeleteDocumentsDialog'
+import DocumentSearchBar from '@/components/documents/DocumentSearchBar'
 import PaginationControls from '@/components/ui/PaginationControls'
+import { useDebounce } from '@/hooks/useDebounce'
 
 import {
   scanNewDocuments,
@@ -37,6 +39,17 @@ import PipelineStatusDialog from '@/components/documents/PipelineStatusDialog'
 
 
 type StatusFilter = DocStatus | 'all';
+
+// Shared so every reset site restores the same object identity, which lets
+// React bail out of a re-render when the page memory is already pristine.
+const INITIAL_PAGE_BY_STATUS: Record<StatusFilter, number> = {
+  all: 1,
+  processed: 1,
+  preprocessed: 1,
+  processing: 1,
+  pending: 1,
+  failed: 1,
+}
 
 // Utility functions defined outside component for better performance and to avoid dependency issues
 const getCountValue = (counts: Record<string, number>, ...keys: string[]): number => {
@@ -213,6 +226,7 @@ type QuerySnapshot = {
   pageSize: number
   sortField: SortField
   sortDirection: SortDirection
+  search: string
 }
 type RefreshRequest =
   | {
@@ -283,16 +297,19 @@ export default function DocumentManager() {
   // State for document status filter
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
+  // File name search. searchInput drives the controlled input; searchTerm is the
+  // debounced + trimmed value and is the only one that reaches a request, an
+  // effect dependency or the empty-state copy. Trimming after debouncing means
+  // 'abc' and 'abc ' compare equal, so a trailing space fires no request.
+  const [searchInput, setSearchInput] = useState('')
+  const debouncedSearchInput = useDebounce(searchInput, 300)
+  const searchTerm = useMemo(() => debouncedSearchInput.trim(), [debouncedSearchInput])
+  const isSearchActive = searchTerm.length > 0
+
   // State to store page number for each status filter
-  const [pageByStatus, setPageByStatus] = useState<Record<StatusFilter, number>>({
-    all: 1,
-    processed: 1,
-    preprocessed: 1,
-    processing: 1,
-    pending: 1,
-    failed: 1,
-    deleted: 1,
-  });
+  const [pageByStatus, setPageByStatus] = useState<Record<StatusFilter, number>>(
+    INITIAL_PAGE_BY_STATUS
+  );
 
   // State for document selection
   const [selectedDocIds, setSelectedDocIds] = useState<string[]>([])
@@ -337,6 +354,11 @@ export default function DocumentManager() {
     setSelectedDocIds([])
   }, [])
 
+  // Clearing goes through the same debounce as typing, so behavior stays uniform
+  const handleClearSearch = useCallback(() => {
+    setSearchInput('')
+  }, [])
+
   // Handle sort column click
   const handleSort = (field: SortField) => {
     let actualField = field;
@@ -355,14 +377,7 @@ export default function DocumentManager() {
     setPagination(prev => ({ ...prev, page: 1 }));
 
     // Reset all status filters' page memory since sorting affects all
-    setPageByStatus({
-      all: 1,
-      processed: 1,
-      preprocessed: 1,
-      processing: 1,
-      pending: 1,
-      failed: 1,
-    });
+    setPageByStatus(INITIAL_PAGE_BY_STATUS);
   };
 
   // Sort documents based on current sort field and direction
@@ -603,9 +618,12 @@ export default function DocumentManager() {
     page: overrides.page ?? pagination.page,
     pageSize: overrides.pageSize ?? pagination.page_size,
     sortField: overrides.sortField ?? sortField,
-    sortDirection: overrides.sortDirection ?? sortDirection
-  }), [pagination.page, pagination.page_size, sortField, sortDirection, statusFilter])
+    sortDirection: overrides.sortDirection ?? sortDirection,
+    search: overrides.search ?? searchTerm
+  }), [pagination.page, pagination.page_size, sortField, sortDirection, statusFilter, searchTerm])
 
+  // Key order must stay stable: the in-flight dedupe key is JSON.stringify of
+  // this object, and JSON.stringify is key-order sensitive.
   const buildDocumentsRequest = useCallback((
     query: QuerySnapshot,
     page: number = query.page
@@ -615,6 +633,7 @@ export default function DocumentManager() {
     page_size: query.pageSize,
     sort_field: query.sortField,
     sort_direction: query.sortDirection,
+    file_path_filter: query.search ? query.search : null,
   }), [])
 
   // Utility function to update component state
@@ -725,14 +744,7 @@ export default function DocumentManager() {
     setDocumentsPageSize(newPageSize);
 
     // Reset all status filters to page 1 when page size changes
-    setPageByStatus({
-      all: 1,
-      processed: 1,
-      preprocessed: 1,
-      processing: 1,
-      pending: 1,
-      failed: 1,
-    });
+    setPageByStatus(INITIAL_PAGE_BY_STATUS);
 
     setPagination(prev => ({ ...prev, page: 1, page_size: newPageSize }));
   }, [pagination.page_size, setDocumentsPageSize]);
@@ -752,7 +764,14 @@ export default function DocumentManager() {
 
         if (!isMountedRef.current || isStaleRequest()) return;
 
-        if (response.pagination.total_count < query.pageSize && query.pageSize !== 10) {
+        // Skip the shrink-to-10 heuristic while searching: total_count is the
+        // filtered count, so a narrow search would otherwise persist page size
+        // 10 to localStorage and leave it there after the search is cleared.
+        if (
+          !query.search &&
+          response.pagination.total_count < query.pageSize &&
+          query.pageSize !== 10
+        ) {
           handlePageSizeChange(10);
         } else {
           setPagination(response.pagination);
@@ -1015,9 +1034,27 @@ export default function DocumentManager() {
     });
   }, [buildQuerySnapshot, enqueueRefresh]);
 
+  // Declared before the search reset and fetch effects below: effects run in
+  // declaration order within a commit, so the version must bump before any
+  // fetch captures it, otherwise a slow response for 'inv' can land after the
+  // one for 'invoice' and repaint the table with the wrong rows.
   useEffect(() => {
     latestRefreshRequestVersionRef.current += 1
-  }, [pagination.page, pagination.page_size, statusFilter, sortField, sortDirection])
+  }, [pagination.page, pagination.page_size, statusFilter, sortField, sortDirection, searchTerm])
+
+  // Reset paging when the committed search changes: a different result set
+  // invalidates page memory across every status tab, and leaving the user on an
+  // out-of-range page would trip the boundary refetch below.
+  const isFirstSearchSyncRef = useRef(true)
+  useEffect(() => {
+    if (isFirstSearchSyncRef.current) {
+      isFirstSearchSyncRef.current = false
+      return
+    }
+    // Guarding on page === 1 keeps the common case to a single fetch.
+    setPagination(prev => (prev.page === 1 ? prev : { ...prev, page: 1 }))
+    setPageByStatus(INITIAL_PAGE_BY_STATUS)
+  }, [searchTerm])
 
   // Monitor pipelineBusy changes and trigger immediate refresh with timer reset
   useEffect(() => {
@@ -1167,10 +1204,13 @@ export default function DocumentManager() {
     }
   }, [showFileName, sortField]);
 
-  // Reset selection state when page, status filter, or sort changes
+  // Reset selection state when page, status filter, sort or search changes.
+  // Required for correctness, not tidiness: selections survive fetches and
+  // DeleteDocumentsDialog acts on them, so a stale selection would delete
+  // documents the user can no longer see.
   useEffect(() => {
     setSelectedDocIds([])
-  }, [pagination.page, statusFilter, sortField, sortDirection]);
+  }, [pagination.page, statusFilter, sortField, sortDirection, searchTerm]);
 
   // Central effect to handle all data fetching
   useEffect(() => {
@@ -1184,6 +1224,10 @@ export default function DocumentManager() {
     statusFilter,
     sortField,
     sortDirection,
+    // Listed explicitly even though fetchPaginatedDocuments already depends on
+    // it transitively, so a future memoization change cannot silently break
+    // search refetching.
+    searchTerm,
     fetchPaginatedDocuments
   ]);
 
@@ -1383,6 +1427,17 @@ export default function DocumentManager() {
                 </Button>
               </div>
             </div>
+            {/* Sits under the status tabs so the two read as one filter bar, and
+                outside CardContent so it stays reachable when a search matches
+                nothing. Never disabled on isRefreshing: background polls toggle
+                that every few seconds and would eat keystrokes. */}
+            <div className="flex items-center gap-2 mt-2" dir={i18n.dir()}>
+              <DocumentSearchBar
+                value={searchInput}
+                onValueChange={setSearchInput}
+                onClear={handleClearSearch}
+              />
+            </div>
             <CardDescription aria-hidden="true" className="hidden">{t('documentPanel.documentManager.uploadedDescription')}</CardDescription>
           </CardHeader>
 
@@ -1390,8 +1445,16 @@ export default function DocumentManager() {
             {!docs && (
               <div className="absolute inset-0 p-0">
                 <EmptyCard
-                  title={t('documentPanel.documentManager.emptyTitle')}
-                  description={t('documentPanel.documentManager.emptyDescription')}
+                  title={
+                    isSearchActive
+                      ? t('documentPanel.documentManager.search.noResultsTitle')
+                      : t('documentPanel.documentManager.emptyTitle')
+                  }
+                  description={
+                    isSearchActive
+                      ? t('documentPanel.documentManager.search.noResultsDescription', { search: searchTerm })
+                      : t('documentPanel.documentManager.emptyDescription')
+                  }
                 />
               </div>
             )}

@@ -150,6 +150,13 @@
         "scanFailed": "掃描文件失敗\n{{error}}",
         "scanProgressFailed": "取得掃描進度失敗\n{{error}}"
       },
+      "search": {
+        "placeholder": "依檔案名稱搜尋",
+        "ariaLabel": "依檔案名稱搜尋文件",
+        "clear": "清除搜尋",
+        "noResultsTitle": "沒有符合的文件",
+        "noResultsDescription": "沒有與「{{search}}」相符的文件。請嘗試其他檔案名稱。"
+      },
       "fileNameLabel": "檔案名稱",
       "showButton": "顯示",
       "hideButton": "隱藏",

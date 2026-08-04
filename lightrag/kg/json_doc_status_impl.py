@@ -11,6 +11,8 @@ from lightrag.utils import (
     _cooperative_yield,
     load_json,
     logger,
+    matches_file_path_filter,
+    normalize_search_filter,
     write_json,
     get_pinyin_sort_key,
 )
@@ -280,6 +282,7 @@ class JsonDocStatusStorage(DocStatusStorage):
         page_size: int = 50,
         sort_field: str = "updated_at",
         sort_direction: str = "desc",
+        file_path_filter: str | None = None,
     ) -> tuple[list[tuple[str, DocProcessingStatus]], int]:
         """Get documents with pagination support
 
@@ -289,6 +292,7 @@ class JsonDocStatusStorage(DocStatusStorage):
             page_size: Number of documents per page (10-200)
             sort_field: Field to sort by ('created_at', 'updated_at', 'id')
             sort_direction: Sort direction ('asc' or 'desc')
+            file_path_filter: Case-insensitive substring matched against file_path
 
         Returns:
             Tuple of (list of (doc_id, DocProcessingStatus) tuples, total_count)
@@ -307,6 +311,8 @@ class JsonDocStatusStorage(DocStatusStorage):
         if sort_direction.lower() not in ["asc", "desc"]:
             sort_direction = "desc"
 
+        file_path_filter = normalize_search_filter(file_path_filter)
+
         # For JSON storage, we load all data and sort/filter in memory
         all_docs = []
 
@@ -316,6 +322,12 @@ class JsonDocStatusStorage(DocStatusStorage):
                 if (
                     status_filter is not None
                     and doc_data.get("status") != status_filter.value
+                ):
+                    continue
+
+                # Apply file path filter
+                if file_path_filter is not None and not matches_file_path_filter(
+                    doc_data.get("file_path"), file_path_filter
                 ):
                     continue
 
@@ -372,13 +384,31 @@ class JsonDocStatusStorage(DocStatusStorage):
 
         return paginated_docs, total_count
 
-    async def get_all_status_counts(self) -> dict[str, int]:
+    async def get_all_status_counts(
+        self, file_path_filter: str | None = None
+    ) -> dict[str, int]:
         """Get counts of documents in each status for all documents
+
+        Args:
+            file_path_filter: Case-insensitive substring matched against file_path
 
         Returns:
             Dictionary mapping status names to counts, including 'all' field
         """
-        counts = await self.get_status_counts()
+        file_path_filter = normalize_search_filter(file_path_filter)
+
+        if file_path_filter is None:
+            counts = await self.get_status_counts()
+        else:
+            counts = {status.value: 0 for status in DocStatus}
+            if self._storage_lock is None:
+                raise StorageNotInitializedError("JsonDocStatusStorage")
+            async with self._storage_lock:
+                for doc in self._data.values():
+                    if matches_file_path_filter(
+                        doc.get("file_path"), file_path_filter
+                    ):
+                        counts[doc["status"]] += 1
 
         # Add 'all' field with total count
         total_count = sum(counts.values())

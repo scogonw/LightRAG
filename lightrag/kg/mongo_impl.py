@@ -16,8 +16,32 @@ from ..base import (
     DocStatus,
     DocStatusStorage,
 )
-from ..utils import logger, compute_mdhash_id, _cooperative_yield
+from ..utils import (
+    logger,
+    compute_mdhash_id,
+    _cooperative_yield,
+    normalize_search_filter,
+)
 from ..types import KnowledgeGraph, KnowledgeGraphNode, KnowledgeGraphEdge
+
+
+def _build_doc_status_query_filter(
+    status_filter: DocStatus | None, file_path_filter: str | None
+) -> dict:
+    """Build the MongoDB filter shared by doc status listing and counting."""
+    query_filter: dict[str, Any] = {}
+    if status_filter is not None:
+        query_filter["status"] = status_filter.value
+
+    file_path_filter = normalize_search_filter(file_path_filter)
+    if file_path_filter is not None:
+        # Escaped so user input is matched literally, not as a regex
+        query_filter["file_path"] = {
+            "$regex": re.escape(file_path_filter),
+            "$options": "i",
+        }
+
+    return query_filter
 
 
 def _apply_metadata_filter(
@@ -690,6 +714,7 @@ class MongoDocStatusStorage(DocStatusStorage):
         page_size: int = 50,
         sort_field: str = "updated_at",
         sort_direction: str = "desc",
+        file_path_filter: str | None = None,
     ) -> tuple[list[tuple[str, DocProcessingStatus]], int]:
         """Get documents with pagination support
 
@@ -699,6 +724,7 @@ class MongoDocStatusStorage(DocStatusStorage):
             page_size: Number of documents per page (10-200)
             sort_field: Field to sort by ('created_at', 'updated_at', '_id')
             sort_direction: Sort direction ('asc' or 'desc')
+            file_path_filter: Case-insensitive substring matched against file_path
 
         Returns:
             Tuple of (list of (doc_id, DocProcessingStatus) tuples, total_count)
@@ -718,9 +744,7 @@ class MongoDocStatusStorage(DocStatusStorage):
             sort_direction = "desc"
 
         # Build query filter
-        query_filter = {}
-        if status_filter is not None:
-            query_filter["status"] = status_filter.value
+        query_filter = _build_doc_status_query_filter(status_filter, file_path_filter)
 
         # Get total count
         total_count = await self._data.count_documents(query_filter)
@@ -770,15 +794,24 @@ class MongoDocStatusStorage(DocStatusStorage):
 
         return documents, total_count
 
-    async def get_all_status_counts(self) -> dict[str, int]:
+    async def get_all_status_counts(
+        self, file_path_filter: str | None = None
+    ) -> dict[str, int]:
         """Get counts of documents in each status
+
+        Args:
+            file_path_filter: Case-insensitive substring matched against file_path
 
         Returns:
             Dictionary mapping status names to counts, including 'all' field
         """
-        pipeline = [
-            {"$group": {"_id": "$status", "count": {"$sum": 1}}},
-        ]
+        query_filter = _build_doc_status_query_filter(None, file_path_filter)
+
+        pipeline = []
+        if query_filter:
+            pipeline.append({"$match": query_filter})
+        pipeline.append({"$group": {"_id": "$status", "count": {"$sum": 1}}})
+
         cursor = await self._data.aggregate(pipeline, allowDiskUse=True)
         result = await cursor.to_list()
 

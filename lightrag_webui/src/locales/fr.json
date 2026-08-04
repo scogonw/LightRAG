@@ -150,6 +150,13 @@
         "scanFailed": "Échec de la numérisation des documents\n{{error}}",
         "scanProgressFailed": "Échec de l'obtention de la progression de la numérisation\n{{error}}"
       },
+      "search": {
+        "placeholder": "Rechercher par nom de fichier",
+        "ariaLabel": "Rechercher des documents par nom de fichier",
+        "clear": "Effacer la recherche",
+        "noResultsTitle": "Aucun document correspondant",
+        "noResultsDescription": "Aucun document ne correspond à « {{search}} ». Essayez un autre nom de fichier."
+      },
       "fileNameLabel": "Nom du fichier",
       "showButton": "Afficher",
       "hideButton": "Masquer",

@@ -150,6 +150,13 @@
         "scanFailed": "فشل مسح المستندات\n{{error}}",
         "scanProgressFailed": "فشل الحصول على تقدم المسح\n{{error}}"
       },
+      "search": {
+        "placeholder": "البحث حسب اسم الملف",
+        "ariaLabel": "البحث في المستندات حسب اسم الملف",
+        "clear": "مسح البحث",
+        "noResultsTitle": "لا توجد مستندات مطابقة",
+        "noResultsDescription": "لا توجد مستندات تطابق \"{{search}}\". جرّب اسم ملف آخر."
+      },
       "fileNameLabel": "اسم الملف",
       "showButton": "عرض",
       "hideButton": "إخفاء",

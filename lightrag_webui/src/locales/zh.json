@@ -150,6 +150,13 @@
         "scanFailed": "扫描文档失败\n{{error}}",
         "scanProgressFailed": "获取扫描进度失败\n{{error}}"
       },
+      "search": {
+        "placeholder": "按文件名搜索",
+        "ariaLabel": "按文件名搜索文档",
+        "clear": "清除搜索",
+        "noResultsTitle": "没有匹配的文档",
+        "noResultsDescription": "没有与“{{search}}”匹配的文档。请尝试其他文件名。"
+      },
       "fileNameLabel": "文件名",
       "showButton": "显示",
       "hideButton": "隐藏",

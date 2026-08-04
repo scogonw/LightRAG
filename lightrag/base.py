@@ -900,6 +900,7 @@ class DocStatusStorage(BaseKVStorage, ABC):
         page_size: int = 50,
         sort_field: str = "updated_at",
         sort_direction: str = "desc",
+        file_path_filter: str | None = None,
     ) -> tuple[list[tuple[str, DocProcessingStatus]], int]:
         """Get documents with pagination support
 
@@ -909,14 +910,23 @@ class DocStatusStorage(BaseKVStorage, ABC):
             page_size: Number of documents per page (10-200)
             sort_field: Field to sort by ('created_at', 'updated_at', 'id')
             sort_direction: Sort direction ('asc' or 'desc')
+            file_path_filter: Case-insensitive substring matched against
+                file_path. None or blank means no filtering.
 
         Returns:
             Tuple of (list of (doc_id, DocProcessingStatus) tuples, total_count)
         """
 
     @abstractmethod
-    async def get_all_status_counts(self) -> dict[str, int]:
+    async def get_all_status_counts(
+        self, file_path_filter: str | None = None
+    ) -> dict[str, int]:
         """Get counts of documents in each status for all documents
+
+        Args:
+            file_path_filter: Case-insensitive substring matched against
+                file_path. None or blank means no filtering. Counts reflect the
+                filter so status tallies stay consistent with a filtered listing.
 
         Returns:
             Dictionary mapping status names to counts
