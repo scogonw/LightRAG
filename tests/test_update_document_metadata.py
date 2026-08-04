@@ -124,10 +124,21 @@ def test_patch_returns_501_when_backend_not_opensearch(monkeypatch):
 # End-to-end route tests against stubbed OpenSearch storages.
 #
 # The metadata a document actually carries lives in full_docs; doc_status only
-# ever holds the pipeline's own processing timestamps. These stubs reproduce
-# that split faithfully, which is what makes them able to catch the regression
-# where the route sourced its metadata from doc_status and silently cascaded
-# nothing.
+# ever holds the pipeline's own processing timestamps, because every status
+# transition overwrites that field. The stubs reproduce that split faithfully,
+# which is what lets them exercise the consequences of the route having sourced
+# its metadata from doc_status:
+#
+#   - full_docs was never written, so a reprocess rebuilt the document's chunks
+#     from the stale ingest-time metadata and reverted the change. This was the
+#     failure that actually occurred in production — verified against a patched
+#     document whose chunks, nodes, entities and relations all carried the new
+#     access_level while full_docs still held the old one.
+#   - a patch that omits resource_id left the cascade with no anchor, so it
+#     silently no-opped behind a 200. Clients that send the complete tenant blob
+#     on every patch never hit this; clients that send only changed keys do.
+#   - a patch that omits any other key wrote a partial entry onto the records,
+#     since the painless upsert replaces a matched entry wholesale.
 # ---------------------------------------------------------------------------
 
 TENANT_METADATA = {
@@ -273,9 +284,14 @@ def _make_patch_client(
 
 
 def test_patch_cascades_using_full_docs_metadata(monkeypatch):
-    """The regression guard: doc_status carries only processing timestamps, so
-    a route sourcing its metadata from there finds no resource_id and cascades
-    nothing while still answering 200."""
+    """A partial patch must still cascade.
+
+    doc_status carries only processing timestamps, so a route sourcing its
+    metadata from there sees no resource_id in a patch that does not resend one,
+    and cascades nothing while still answering 200. Not the failure production
+    hit — the caller there always resent the full tenant blob — but the one any
+    client sending only its changed keys would.
+    """
     client, rag = _make_patch_client(monkeypatch)
 
     response = client.patch(
@@ -340,8 +356,14 @@ def test_patch_cascade_entry_keeps_untouched_keys(monkeypatch):
 
 
 def test_patch_writes_back_to_full_docs(monkeypatch):
-    """full_docs is what chunks are rebuilt from, so it must carry the patch or
-    a reprocess resurrects the pre-patch access_level."""
+    """The production failure this fix exists for.
+
+    full_docs is what chunks are rebuilt from, so it must carry the patch or a
+    reprocess resurrects the pre-patch access_level. Before the fix it was never
+    written: patched documents were observed with the new access_level on every
+    chunk, node, entity and relation, and the old one still sitting in full_docs
+    — one reprocess away from silently reverting.
+    """
     client, rag = _make_patch_client(monkeypatch)
 
     client.patch(

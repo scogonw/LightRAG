@@ -140,6 +140,41 @@ def _chunk_meta_matches_kb_filter(
     return False
 
 
+def _entry_with_record_org(entry: dict, record_org: str | None) -> dict:
+    """Supply the record's org to a metadata entry that has none of its own.
+
+    The two access-control layers keep ``org_id`` in different places. The
+    OpenSearch filter matches the record's **top-level** ``org_id`` field
+    (``{"term": {"org_id": ...}}`` in ``_build_knowledgebase_filter``), while
+    ``_chunk_meta_matches_kb_filter`` reads ``org_id`` from **inside** the
+    metadata entry. Ingested entries carry only
+    ``{resource_id, knowledgebase_id, access_level}``, so the Python check would
+    see ``org_id=None`` and reject every record whose sole qualifying path is
+    org-wide access — records the engine had already admitted.
+
+    Reconciling on read keeps the two layers deciding the same thing without
+    rewriting stored data.
+    """
+    if record_org and not entry.get("org_id"):
+        return {**entry, "org_id": record_org}
+    return entry
+
+
+def _meta_entries(record: dict) -> list[dict] | None:
+    """Normalise a record's ``metadata`` to a list of entries, or None.
+
+    Chunks carry a single dict; entities and relations carry a list, one entry
+    per source document. ``None`` means the record has no usable metadata and
+    must not be admitted while a filter is active.
+    """
+    meta = record.get("metadata")
+    if isinstance(meta, dict):
+        return [meta]
+    if isinstance(meta, list):
+        return meta
+    return None
+
+
 def _filter_chunks_by_kb_access(
     chunks: list[dict], metadata_filter: dict, org_id: str | None
 ) -> list[dict]:
@@ -150,17 +185,14 @@ def _filter_chunks_by_kb_access(
     """
     out: list[dict] = []
     for chunk in chunks:
-        chunk_meta = chunk.get("metadata")
-        if chunk_meta is None:
+        meta_list = _meta_entries(chunk)
+        if meta_list is None:
             continue
-        if isinstance(chunk_meta, dict):
-            meta_list = [chunk_meta]
-        elif isinstance(chunk_meta, list):
-            meta_list = chunk_meta
-        else:
-            continue
+        chunk_org = chunk.get("org_id")
         if any(
-            _chunk_meta_matches_kb_filter(m, metadata_filter, org_id)
+            _chunk_meta_matches_kb_filter(
+                _entry_with_record_org(m, chunk_org), metadata_filter, org_id
+            )
             for m in meta_list
         ):
             out.append(chunk)
@@ -192,24 +224,24 @@ def _filter_records_by_kb_access(
     """
     out: list[dict] = []
     for record in records:
-        meta = record.get("metadata")
-        if meta is None:
+        meta_list = _meta_entries(record)
+        if meta_list is None:
             continue
-        if isinstance(meta, dict):
-            meta_list = [meta]
-        elif isinstance(meta, list):
-            meta_list = meta
-        else:
-            continue
+        record_org = record.get("org_id")
         accessible = [
             m
             for m in meta_list
-            if _chunk_meta_matches_kb_filter(m, metadata_filter, org_id)
+            if _chunk_meta_matches_kb_filter(
+                _entry_with_record_org(m, record_org), metadata_filter, org_id
+            )
         ]
         if not accessible:
             continue
         pruned = dict(record)
-        pruned["metadata"] = accessible[0] if isinstance(meta, dict) else accessible
+        # Preserve the stored shape: a single dict stays a dict.
+        pruned["metadata"] = (
+            accessible[0] if isinstance(record.get("metadata"), dict) else accessible
+        )
         out.append(pruned)
     return out
 

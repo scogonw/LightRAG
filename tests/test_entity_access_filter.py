@@ -17,6 +17,7 @@ pytestmark = pytest.mark.offline
 
 from lightrag.operate import (
     _chunk_meta_matches_kb_filter,
+    _filter_chunks_by_kb_access,
     _filter_records_by_kb_access,
 )
 
@@ -352,3 +353,85 @@ def test_aquery_data_copies_access_control_fields():
                 f"aquery_data drops {field!r} when copying QueryParam, "
                 f"which disables access-control filtering on /query/data"
             )
+
+
+# ---------------------------------------------------------------------------
+# Org-wide access with no knowledge-base lists
+#
+# The two enforcement layers keep org_id in different places: the OpenSearch
+# filter matches the record's top-level org_id field, the Python check reads it
+# from inside the metadata entry — where ingested entries never put it. A caller
+# with no team or personal knowledge bases has only the org-wide path available,
+# so getting this wrong makes every org-wide entity and relation invisible while
+# chunks (filtered server-side) still come back.
+# ---------------------------------------------------------------------------
+
+ORG_ONLY_FILTER = {
+    "user_id": "user-1",
+    "agent_kb_ids": [],
+    "user_kb_ids": [],
+    "team_kb_ids": [],
+}
+
+# Exactly the shape ingestion writes — no org_id key.
+STORED_ENTRY = {
+    "resource_id": "res-1",
+    "knowledgebase_id": "kb-99",
+    "access_level": "ORGANIZATION",
+}
+
+
+def test_org_wide_record_kept_when_org_is_on_the_record():
+    record = {"entity_name": "E", "org_id": ORG, "metadata": [STORED_ENTRY]}
+    assert len(_filter_records_by_kb_access([record], ORG_ONLY_FILTER, ORG)) == 1
+
+
+def test_org_wide_chunk_kept_when_org_is_on_the_record():
+    chunk = {"org_id": ORG, "metadata": dict(STORED_ENTRY)}
+    assert len(_filter_chunks_by_kb_access([chunk], ORG_ONLY_FILTER, ORG)) == 1
+
+
+def test_org_wide_record_rejected_when_record_org_differs():
+    record = {"entity_name": "E", "org_id": "org-other", "metadata": [STORED_ENTRY]}
+    assert _filter_records_by_kb_access([record], ORG_ONLY_FILTER, ORG) == []
+
+
+def test_org_wide_record_rejected_when_record_has_no_org():
+    """Fail closed: nothing establishes which organization owns this record."""
+    record = {"entity_name": "E", "metadata": [STORED_ENTRY]}
+    assert _filter_records_by_kb_access([record], ORG_ONLY_FILTER, ORG) == []
+
+
+def test_record_org_does_not_widen_restricted_levels():
+    """The org path admits ORGANIZATION and CHAT_WIDGET only — supplying the
+    record's org must not let TEAM_MEMBERS or ONLY_ME through the back door."""
+    for level in ("TEAM_MEMBERS", "ONLY_ME"):
+        record = {
+            "entity_name": "E",
+            "org_id": ORG,
+            "metadata": [{**STORED_ENTRY, "access_level": level}],
+        }
+        assert _filter_records_by_kb_access([record], ORG_ONLY_FILTER, ORG) == [], level
+
+
+def test_entry_org_id_wins_over_record_org_id():
+    """An entry that carries its own org is authoritative for that entry."""
+    record = {
+        "entity_name": "E",
+        "org_id": ORG,
+        "metadata": [{**STORED_ENTRY, "org_id": "org-other"}],
+    }
+    assert _filter_records_by_kb_access([record], ORG_ONLY_FILTER, ORG) == []
+
+
+def test_org_path_and_team_path_agree_on_the_same_record():
+    """A record reachable by either path is kept, and keeps both entries."""
+    team_entry = _entry(TEAM_KB, "TEAM_MEMBERS", "res-team")
+    record = {
+        "entity_name": "E",
+        "org_id": ORG,
+        "metadata": [STORED_ENTRY, team_entry],
+    }
+    combined = {**FILTER, "user_kb_ids": [], "team_kb_ids": [TEAM_KB]}
+    (kept,) = _filter_records_by_kb_access([record], combined, ORG)
+    assert kept["metadata"] == [STORED_ENTRY, team_entry]
