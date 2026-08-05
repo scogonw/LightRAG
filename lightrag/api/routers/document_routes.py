@@ -152,6 +152,16 @@ def _clean_cascade_entry(metadata: dict | None) -> dict:
     }
 
 
+def _extract_access_level(metadata: dict | None) -> str | None:
+    """Pull ``access_level`` out of a document's ``full_docs`` metadata.
+
+    Metadata is client-supplied and unvalidated, so a non-string or empty value is
+    reported as absent rather than rendered into the document listing.
+    """
+    value = (metadata or {}).get("access_level")
+    return value if isinstance(value, str) and value else None
+
+
 def sanitize_filename(filename: str, input_dir: Path) -> str:
     """
     Sanitize uploaded filename to prevent Path Traversal attacks.
@@ -610,6 +620,15 @@ class DocStatusResponse(BaseModel):
     org_id: Optional[str] = Field(
         default=None, description="Organization ID for multi-tenancy"
     )
+    access_level: Optional[str] = Field(
+        default=None,
+        description=(
+            "Access level governing who can retrieve this document (ORGANIZATION, "
+            "CHAT_WIDGET, TEAM_MEMBERS, ONLY_ME). Read from the document's "
+            "full_docs metadata; None when unset. Only populated by the paginated "
+            "listing endpoint."
+        ),
+    )
     token_usage: Optional[dict[str, Any]] = Field(
         default=None,
         description="Token usage accumulated during document ingestion, broken down by stage",
@@ -630,6 +649,7 @@ class DocStatusResponse(BaseModel):
                 "metadata": {"author": "John Doe", "year": 2025},
                 "file_path": "research_paper.pdf",
                 "org_id": "org_abc123",
+                "access_level": "ORGANIZATION",
             }
         }
     )
@@ -4013,6 +4033,32 @@ def create_document_routes(
                 query_await_elapsed,
             )
 
+            # Join tenant metadata from full_docs for this page's documents.
+            # access_level cannot be read off the doc-status record: ingestion
+            # never writes it there, and every status transition overwrites
+            # doc_status.metadata with its own processing timestamps. full_docs
+            # is the authoritative store, so it is queried here — projected down
+            # to the metadata field so a page render does not pull document
+            # content off the server.
+            doc_ids = [doc_id for doc_id, _ in documents_with_ids]
+            metadata_by_id: dict[str, dict[str, Any]] = {}
+            if doc_ids:
+                metadata_fetch_start = time.perf_counter()
+                try:
+                    metadata_by_id = await rag.full_docs.get_metadata_batch(doc_ids)
+                except Exception as e:
+                    # A metadata lookup failure must not take down the whole
+                    # document listing; the column degrades to empty for this page.
+                    logger.warning(
+                        f"[documents/paginated][{trace_id}] access_level lookup "
+                        f"failed for {len(doc_ids)} documents: {e}"
+                    )
+                performance_timing_log(
+                    "[documents/paginated][%s] Metadata joined in %.4fs",
+                    trace_id,
+                    time.perf_counter() - metadata_fetch_start,
+                )
+
             # Convert documents to response format
             response_assembly_start = time.perf_counter()
             doc_responses = []
@@ -4031,6 +4077,7 @@ def create_document_routes(
                         metadata=doc.metadata,
                         file_path=normalize_file_path(doc.file_path),
                         org_id=doc.org_id or None,
+                        access_level=_extract_access_level(metadata_by_id.get(doc_id)),
                         token_usage=doc.token_usage,
                     )
                 )

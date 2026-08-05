@@ -671,6 +671,37 @@ class OpenSearchKVStorage(BaseKVStorage):
             )
             return None
 
+    async def get_metadata_batch(self, ids: list[str]) -> dict[str, dict[str, Any]]:
+        """Return ``{id: metadata}`` for many records in a single mget.
+
+        Overrides the base implementation, which would fetch whole records: this
+        index holds each document's full ``content``, so listing a page of
+        documents must project down to ``metadata`` alone. Ids with no record are
+        omitted from the result; a record with no metadata maps to ``{}``.
+        """
+        if not ids or not self._index_ready:
+            return {}
+        try:
+            response = await self.client.mget(
+                index=self._index_name,
+                body={
+                    "docs": [{"_id": doc_id, "_source": ["metadata"]} for doc_id in ids]
+                },
+            )
+            return {
+                doc["_id"]: (doc.get("_source", {}).get("metadata") or {})
+                for doc in response.get("docs", [])
+                if doc.get("found")
+            }
+        except OpenSearchException as e:
+            if _is_missing_index_error(e):
+                self._mark_index_missing()
+                return {}
+            logger.error(
+                f"[{self.workspace}] Error getting metadata for {len(ids)} ids: {e}"
+            )
+            return {}
+
     async def set_metadata(self, doc_id: str, metadata: dict[str, Any]) -> bool:
         """Replace a record's ``metadata`` field in place.
 

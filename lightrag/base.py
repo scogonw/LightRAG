@@ -387,6 +387,26 @@ class BaseKVStorage(StorageNameSpace, ABC):
     async def get_by_ids(self, ids: list[str]) -> list[dict[str, Any]]:
         """Get values by ids"""
 
+    async def get_metadata_batch(self, ids: list[str]) -> dict[str, dict[str, Any]]:
+        """Return ``{id: metadata}`` for the given ids, omitting absent records.
+
+        A record that exists but carries no metadata yields ``{}``, so callers can
+        distinguish "no metadata" from "no record" by key presence.
+
+        This default pulls whole records via ``get_by_ids``. Backends whose records
+        hold large payloads (``full_docs`` stores the entire document ``content``)
+        should override it with a projection, so reading one metadata key does not
+        drag every document's text off the server.
+        """
+        if not ids:
+            return {}
+        records = await self.get_by_ids(ids)
+        return {
+            doc_id: (record.get("metadata") or {})
+            for doc_id, record in zip(ids, records)
+            if record is not None
+        }
+
     @abstractmethod
     async def filter_keys(self, keys: set[str]) -> set[str]:
         """Return un-exist keys"""

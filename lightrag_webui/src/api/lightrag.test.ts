@@ -270,4 +270,56 @@ describe('getDocumentsPaginated', () => {
     apiModule.getDocumentsPaginated({ ...base, file_path_filter: 'report' })
     expect(seenFilters).toHaveLength(3)
   })
+
+  test('passes access_level through, and tolerates its absence', async () => {
+    const request: DocumentsRequest = {
+      status_filter: null,
+      page: 1,
+      page_size: 20,
+      sort_field: 'updated_at',
+      sort_direction: 'desc'
+    }
+
+    const doc = (id: string, extra: Record<string, unknown>) => ({
+      id,
+      content_summary: id,
+      content_length: 1,
+      status: 'processed' as const,
+      created_at: '2026-01-01T00:00:00',
+      updated_at: '2026-01-01T00:00:00',
+      file_path: `${id}.pdf`,
+      ...extra
+    })
+
+    // The server sends null when the document has no access_level, and omits the
+    // key entirely on the endpoints that do not join full_docs metadata.
+    const documents = [
+      doc('d1', { access_level: 'ORGANIZATION' }),
+      doc('d2', { access_level: null }),
+      doc('d3', {})
+    ]
+
+    apiModule.__setPaginatedDocumentsPostForTests(() =>
+      Promise.resolve({
+        documents,
+        pagination: {
+          page: 1,
+          page_size: 20,
+          total_count: 3,
+          total_pages: 1,
+          has_next: false,
+          has_prev: false
+        },
+        status_counts: { all: 3 }
+      })
+    )
+
+    const result = await apiModule.getDocumentsPaginated(request)
+
+    expect(result.documents.map((doc) => doc.access_level)).toEqual([
+      'ORGANIZATION',
+      null,
+      undefined
+    ])
+  })
 })
