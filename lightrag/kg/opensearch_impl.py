@@ -176,6 +176,53 @@ def _summarize_bulk_update_errors(success: int, errors: list | None) -> dict:
     return {"updated": success, "failures": failures, "not_found": not_found}
 
 
+async def _bulk_upsert_record_metadata(
+    storage,
+    record_ids: list[str],
+    resource_id: str,
+    entry: dict,
+) -> dict:
+    """Apply the metadata upsert script to ``record_ids`` in ``storage``'s index.
+
+    Shared by the vector and KV storages: the operation is plain OpenSearch
+    ``_update`` bulk traffic and touches nothing vector-specific, and both
+    classes are ``@final`` dataclasses so a mixin is not an option. Keeping one
+    implementation matters because the cascade must reach BOTH indices — chunks
+    live in the vector index *and* in ``text_chunks`` KV, and for a long time
+    only the former was ever updated.
+
+    ``storage`` must expose ``client``, ``_index_name``, ``_index_ready`` and
+    ``_mark_index_missing()``.
+    """
+    if not record_ids or not resource_id:
+        return {"updated": 0, "failures": 0, "not_found": 0}
+    if not storage._index_ready:
+        return {"updated": 0, "failures": 0, "not_found": len(record_ids)}
+
+    script = _metadata_upsert_script(resource_id, entry)
+    actions = [
+        {
+            "_op_type": "update",
+            "_index": storage._index_name,
+            "_id": rid,
+            "script": script,
+        }
+        for rid in record_ids
+    ]
+    try:
+        success, errors = await helpers.async_bulk(
+            storage.client, actions, raise_on_error=False, refresh=True
+        )
+    except OpenSearchException as e:
+        if _is_missing_index_error(e):
+            storage._mark_index_missing()
+            return {"updated": 0, "failures": 0, "not_found": len(record_ids)}
+        logger.error(f"[{storage.workspace}] Error updating record metadata: {e}")
+        return {"updated": 0, "failures": len(record_ids), "not_found": 0}
+
+    return _summarize_bulk_update_errors(success, errors)
+
+
 # Keys in metadata_filter that are consumed by the knowledgebase filter builder
 _KB_FILTER_KEYS = {"agent_kb_ids", "user_id", "user_kb_ids", "team_kb_ids"}
 
@@ -735,6 +782,28 @@ class OpenSearchKVStorage(BaseKVStorage):
                 f"[{self.workspace}] Error setting metadata for {doc_id}: {e}"
             )
             return False
+
+    async def update_metadata_for_ids(
+        self,
+        record_ids: list[str],
+        resource_id: str,
+        entry: dict,
+    ) -> dict:
+        """Upsert a document's metadata ``entry`` on the listed KV records.
+
+        Same semantics as the vector storage's method of the same name, and
+        needed for the same reason: chunks are written to BOTH the chunks vector
+        index and ``text_chunks`` KV, but the metadata cascade only ever updated
+        the former. KG-derived chunks are fetched from KV by id — no DSL runs on
+        that path — so a KV record whose metadata was never written is dropped
+        outright by ``_filter_chunks_by_kb_access``, which is what made every
+        entity- and relation-derived chunk disappear from query results.
+
+        Returns ``{"updated": int, "failures": int, "not_found": int}``.
+        """
+        return await _bulk_upsert_record_metadata(
+            self, record_ids, resource_id, entry
+        )
 
     async def filter_keys(self, keys: set[str]) -> set[str]:
         """Return the subset of keys that do not exist in storage."""
@@ -3690,35 +3759,9 @@ class OpenSearchVectorDBStorage(BaseVectorStorage):
             IDs that no longer exist in the index, ``failures`` counts other
             errors.
         """
-        if not record_ids or not resource_id:
-            return {"updated": 0, "failures": 0, "not_found": 0}
-        if not self._index_ready:
-            return {"updated": 0, "failures": 0, "not_found": len(record_ids)}
-
-        script = _metadata_upsert_script(resource_id, entry)
-        actions = [
-            {
-                "_op_type": "update",
-                "_index": self._index_name,
-                "_id": cid,
-                "script": script,
-            }
-            for cid in record_ids
-        ]
-        try:
-            success, errors = await helpers.async_bulk(
-                self.client, actions, raise_on_error=False, refresh=True
-            )
-        except OpenSearchException as e:
-            if _is_missing_index_error(e):
-                self._mark_index_missing()
-                return {"updated": 0, "failures": 0, "not_found": len(record_ids)}
-            logger.error(
-                f"[{self.workspace}] Error updating record metadata: {e}"
-            )
-            return {"updated": 0, "failures": len(record_ids), "not_found": 0}
-
-        return _summarize_bulk_update_errors(success, errors)
+        return await _bulk_upsert_record_metadata(
+            self, record_ids, resource_id, entry
+        )
 
     async def drop(self) -> dict[str, str]:
         """Delete and recreate the vector index."""

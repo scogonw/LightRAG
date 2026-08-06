@@ -142,14 +142,28 @@ def _zero_graph_counts() -> dict:
     }
 
 
-def _clean_cascade_entry(metadata: dict | None) -> dict:
+def _clean_cascade_entry(metadata: dict | None, org_id: str | None = None) -> dict:
     """Strip doc-status bookkeeping keys to get the metadata entry that should
-    be stored on the document's chunks/entities/relations."""
-    return {
+    be stored on the document's chunks/entities/relations.
+
+    ``org_id`` is stamped onto the entry because the query-side access check
+    reads it from *inside* the entry (``_chunk_meta_matches_kb_filter``), while
+    ingestion only ever wrote it as a top-level record field. Records that
+    predate that field — or that the cascade creates metadata for from scratch —
+    have no top-level org for ``_entry_with_record_org`` to borrow, so without
+    this an org-path caller is rejected even after a successful cascade. Keeping
+    it per-entry is also the more accurate shape: a chunk is content-addressed
+    and an entity is merged by name, so either can carry entries from documents
+    in different orgs, which a single record-level field cannot represent.
+    """
+    entry = {
         k: v
         for k, v in (metadata or {}).items()
         if k not in _DOC_STATUS_ONLY_METADATA_KEYS
     }
+    if org_id:
+        entry["org_id"] = org_id
+    return entry
 
 
 def _extract_access_level(metadata: dict | None) -> str | None:
@@ -2034,7 +2048,10 @@ async def cascade_metadata_to_chunks(
     ignored when dispatched via ``BackgroundTasks`` and consumed when the caller
     runs the cascade inline (``wait=true``).
     """
-    from lightrag.kg.opensearch_impl import OpenSearchVectorDBStorage
+    from lightrag.kg.opensearch_impl import (
+        OpenSearchKVStorage,
+        OpenSearchVectorDBStorage,
+    )
     from lightrag.kg.shared_storage import (
         get_namespace_data,
         get_namespace_lock,
@@ -2060,59 +2077,98 @@ async def cascade_metadata_to_chunks(
                 f"chunk metadata cascade: failed to record pipeline history: {inner}"
             )
 
-    # Defensive: route should already have guarded this, but if backend was
-    # swapped at runtime we still want to fail soft.
-    if not isinstance(rag.chunks_vdb, OpenSearchVectorDBStorage):
+    # Chunks are written to two places at ingest — the chunks vector index and
+    # ``text_chunks`` KV — so the cascade has to reach both. Only the vector
+    # index was ever updated, which is why KG-derived chunks (fetched from KV by
+    # id, with no DSL to fall back on) were dropped wholesale by the query-side
+    # access filter. Each target is guarded independently so an unexpected
+    # backend on one does not silently skip the other.
+    text_chunks = getattr(rag, "text_chunks", None)
+    vdb_ok = isinstance(rag.chunks_vdb, OpenSearchVectorDBStorage)
+    kv_ok = isinstance(text_chunks, OpenSearchKVStorage)
+    if not vdb_ok:
         logger.warning(
-            f"chunk metadata cascade skipped: doc_id={doc_id} org_id={org_id} "
+            f"chunk metadata cascade: doc_id={doc_id} org_id={org_id} "
             f"chunks_vdb is not OpenSearchVectorDBStorage "
-            f"({type(rag.chunks_vdb).__name__})"
+            f"({type(rag.chunks_vdb).__name__}) — vector stage skipped"
         )
-        return {"chunks": _zero_counts()}
+    if not kv_ok:
+        logger.warning(
+            f"chunk metadata cascade: doc_id={doc_id} org_id={org_id} "
+            f"text_chunks is not OpenSearchKVStorage "
+            f"({type(text_chunks).__name__}) — KV stage skipped"
+        )
+    if not (vdb_ok or kv_ok):
+        return {"chunks": _zero_counts(), "text_chunks": _zero_counts()}
 
     if not chunk_ids:
         logger.info(
             f"chunk metadata cascade: doc_id={doc_id} org_id={org_id} "
             f"no chunks to update"
         )
-        return {"chunks": _zero_counts()}
+        return {"chunks": _zero_counts(), "text_chunks": _zero_counts()}
 
     if not resource_id:
         logger.warning(
             f"chunk metadata cascade skipped: doc_id={doc_id} org_id={org_id} "
             f"document metadata has no resource_id to anchor on"
         )
-        return {"chunks": _zero_counts()}
+        return {"chunks": _zero_counts(), "text_chunks": _zero_counts()}
 
     try:
-        result = await rag.chunks_vdb.update_metadata_for_ids(
-            record_ids=chunk_ids,
-            resource_id=resource_id,
-            entry=entry,
+        result = (
+            await rag.chunks_vdb.update_metadata_for_ids(
+                record_ids=chunk_ids,
+                resource_id=resource_id,
+                entry=entry,
+            )
+            if vdb_ok
+            else _zero_counts()
+        )
+        kv_result = (
+            await text_chunks.update_metadata_for_ids(
+                record_ids=chunk_ids,
+                resource_id=resource_id,
+                entry=entry,
+            )
+            if kv_ok
+            else _zero_counts()
         )
         logger.info(
             f"chunk metadata cascade: doc_id={doc_id} org_id={org_id} "
             f"updated={result['updated']} "
             f"failures={result['failures']} "
             f"not_found={result['not_found']} "
+            f"kv_updated={kv_result['updated']} "
+            f"kv_failures={kv_result['failures']} "
+            f"kv_not_found={kv_result['not_found']} "
             f"total_chunks={len(chunk_ids)}"
         )
-        if result["failures"] > 0:
-            warning_msg = (
-                f"chunk metadata cascade: doc_id={doc_id} org_id={org_id} "
-                f"had {result['failures']} failures — see prior logs for details"
-            )
-            logger.warning(warning_msg)
-            await _record_history(warning_msg)
-        elif result["updated"] == 0 and len(chunk_ids) > 0:
-            warning_msg = (
-                f"chunk metadata cascade: doc_id={doc_id} org_id={org_id} "
-                f"updated 0 of {len(chunk_ids)} chunks "
-                f"(not_found={result['not_found']}; chunks may have been deleted)"
-            )
-            logger.warning(warning_msg)
-            await _record_history(warning_msg)
-        return {"chunks": result}
+        # Only report stages that actually ran — a skipped stage already logged
+        # its own warning above, and would otherwise look like a zero-update run.
+        ran = []
+        if vdb_ok:
+            ran.append(("chunks", result))
+        if kv_ok:
+            ran.append(("text_chunks", kv_result))
+        for stage, counts in ran:
+            if counts["failures"] > 0:
+                warning_msg = (
+                    f"chunk metadata cascade [{stage}]: doc_id={doc_id} "
+                    f"org_id={org_id} had {counts['failures']} failures — "
+                    f"see prior logs for details"
+                )
+                logger.warning(warning_msg)
+                await _record_history(warning_msg)
+            elif counts["updated"] == 0 and len(chunk_ids) > 0:
+                warning_msg = (
+                    f"chunk metadata cascade [{stage}]: doc_id={doc_id} "
+                    f"org_id={org_id} updated 0 of {len(chunk_ids)} chunks "
+                    f"(not_found={counts['not_found']}; chunks may have been deleted)"
+                )
+                logger.warning(warning_msg)
+                await _record_history(warning_msg)
+        return {"chunks": result, "text_chunks": kv_result}
     except Exception as e:
         # Never propagate — response may already have been sent. Log loudly.
         error_msg = (
@@ -2122,13 +2178,8 @@ async def cascade_metadata_to_chunks(
         logger.error(error_msg)
         logger.error(traceback.format_exc())
         await _record_history(error_msg)
-        return {
-            "chunks": {
-                "updated": 0,
-                "failures": len(chunk_ids),
-                "not_found": 0,
-            }
-        }
+        failed = {"updated": 0, "failures": len(chunk_ids), "not_found": 0}
+        return {"chunks": dict(failed), "text_chunks": dict(failed)}
 
 
 async def cascade_metadata_to_graph(
@@ -3617,7 +3668,7 @@ def create_document_routes(
             #    so sending a partial dict would strip the rest of the keys
             #    (knowledgebase_id included) off every record.
             chunk_ids = list(existing.get("chunks_list") or [])
-            cascade_entry = _clean_cascade_entry(new_metadata)
+            cascade_entry = _clean_cascade_entry(new_metadata, x_org_id)
 
             if not chunk_ids:
                 return UpdateDocumentMetadataResponse(

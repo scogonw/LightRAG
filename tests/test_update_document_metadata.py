@@ -150,10 +150,15 @@ TENANT_METADATA = {
 
 
 class _StubKV:
-    """Stands in for OpenSearchKVStorage (full_docs)."""
+    """Stands in for OpenSearchKVStorage (full_docs and text_chunks).
+
+    Both roles are the same class in production, and the chunk cascade has to
+    reach text_chunks as well as the vector index — chunks live in both.
+    """
 
     def __init__(self, records):
         self.records = records
+        self.calls = []
 
     async def get_metadata(self, doc_id):
         record = self.records.get(doc_id)
@@ -166,6 +171,16 @@ class _StubKV:
             return False
         self.records[doc_id]["metadata"] = dict(metadata)
         return True
+
+    async def update_metadata_for_ids(self, record_ids, resource_id, entry):
+        self.calls.append(
+            {
+                "record_ids": list(record_ids),
+                "resource_id": resource_id,
+                "entry": dict(entry),
+            }
+        )
+        return {"updated": len(record_ids), "failures": 0, "not_found": 0}
 
 
 class _StubDocStatus:
@@ -271,6 +286,7 @@ def _make_patch_client(
         workspace="test-ws",
         full_docs=_StubKV(full_docs_records),
         doc_status=_StubDocStatus(doc_status_records),
+        text_chunks=_StubKV({}),
         chunks_vdb=_StubVectorDB(),
         entities_vdb=_StubVectorDB(),
         relationships_vdb=_StubVectorDB(),
@@ -311,6 +327,12 @@ def test_patch_cascades_using_full_docs_metadata(monkeypatch):
     assert call["resource_id"] == "res-1"
     assert call["record_ids"] == ["chunk-1", "chunk-2"]
 
+    # Chunks live in text_chunks KV as well as the vector index, and KG-derived
+    # chunks are read from KV. Updating only the vector index is what made every
+    # entity/relation-derived chunk fail the query-side access filter.
+    assert len(rag.text_chunks.calls) == 1
+    assert rag.text_chunks.calls[0] == call
+
     # ... and reached the graph and both graph-side vector indices.
     assert len(rag.chunk_entity_relation_graph.calls) == 1
     assert len(rag.entities_vdb.calls) == 1
@@ -318,8 +340,10 @@ def test_patch_cascades_using_full_docs_metadata(monkeypatch):
 
     # Counts are reported back per stage.
     assert body["cascade"]["chunks"]["updated"] == 2
+    assert body["cascade"]["text_chunks"]["updated"] == 2
     assert set(body["cascade"]) == {
         "chunks",
+        "text_chunks",
         "nodes",
         "edges",
         "entities_vdb",
@@ -353,6 +377,44 @@ def test_patch_cascade_entry_keeps_untouched_keys(monkeypatch):
     assert rag.entities_vdb.calls[0]["entry"] == entry
     assert rag.relationships_vdb.calls[0]["entry"] == entry
     assert rag.chunk_entity_relation_graph.calls[0]["entry"] == entry
+
+
+def test_patch_cascade_entry_stamps_org_id_when_metadata_lacks_it(monkeypatch):
+    """Ingestion never writes org_id into metadata, so the cascade must add it.
+
+    The query-side check reads org_id from *inside* the entry
+    (``_chunk_meta_matches_kb_filter``); ingestion only ever wrote it as a
+    top-level record field, and records predating that field have no top-level
+    org for ``_entry_with_record_org`` to borrow either. Without the entry
+    carrying the org, an org-path caller is still rejected after a perfectly
+    successful cascade — which is the shape of the KG-derived chunk drop.
+
+    Note the default fixture metadata *does* include org_id, so this case needs
+    its own document: it is the production shape, not the fixture's.
+    """
+    client, rag = _make_patch_client(
+        monkeypatch,
+        full_doc_metadata={
+            "knowledgebase_id": "kb-1",
+            "access_level": "ORGANIZATION",
+            "resource_id": "res-1",
+        },
+    )
+
+    client.patch(
+        "/documents/doc-1/metadata?wait=true",
+        headers={"X-Org-Id": "org-test"},
+        json={"metadata": {"access_level": "ONLY_ME"}},
+    )
+
+    for stage in (
+        rag.chunks_vdb,
+        rag.text_chunks,
+        rag.entities_vdb,
+        rag.relationships_vdb,
+        rag.chunk_entity_relation_graph,
+    ):
+        assert stage.calls[0]["entry"]["org_id"] == "org-test"
 
 
 def test_patch_writes_back_to_full_docs(monkeypatch):
