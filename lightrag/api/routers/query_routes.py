@@ -3,6 +3,7 @@ This module contains all query-related routes for the LightRAG API.
 """
 
 import json
+import re
 from typing import Any, Dict, List, Literal, Optional
 from fastapi import APIRouter, Depends, Header, HTTPException
 from lightrag.base import QueryParam
@@ -100,6 +101,11 @@ class QueryRequest(BaseModel):
         description="If True, includes reference list in responses. Affects /query and /query/stream endpoints. /query/data always includes references.",
     )
 
+    strict_reference_verification: Optional[bool] = Field(
+        default=True,
+        description="If True, /query keeps only citations that are both referenced in the final answer and supported by matching context chunks.",
+    )
+
     include_chunk_content: Optional[bool] = Field(
         default=False,
         description="If True, includes actual chunk text content in references. Only applies when include_references=True. Useful for evaluation and debugging.",
@@ -139,7 +145,8 @@ class QueryRequest(BaseModel):
         # Use Pydantic's `.model_dump(exclude_none=True)` to remove None values automatically
         # Exclude API-level parameters that don't belong in QueryParam
         request_data = self.model_dump(
-            exclude_none=True, exclude={"query", "include_chunk_content"}
+            exclude_none=True,
+            exclude={"query", "include_chunk_content", "strict_reference_verification"},
         )
 
         # Ensure `mode` and `stream` are set explicitly
@@ -193,6 +200,242 @@ class StreamChunkResponse(BaseModel):
     error: Optional[str] = Field(
         default=None, description="Error message if processing fails"
     )
+
+
+DC_REFERENCE_PATTERN = re.compile(r"\[DC(\d+)\]", re.IGNORECASE)
+
+
+def _extract_used_reference_ids(response_text: str) -> list[str]:
+    """
+    Return citation IDs used in the final response text, e.g. [DC1], [DC2, DC4].
+
+    Args:
+        response_text: Generated response content.
+
+    Returns:
+        Ordered list of unique reference IDs.
+    """
+    if not response_text:
+        return []
+
+    refs = DC_REFERENCE_PATTERN.findall(response_text)
+    if not refs:
+        return []
+
+    unique_refs: list[str] = []
+    seen: set[str] = set()
+    for ref in refs:
+        if ref not in seen:
+            seen.add(ref)
+            unique_refs.append(ref)
+    return unique_refs
+
+
+def _filter_references_by_usage(
+    response_text: str, references: list[dict]
+) -> list[dict]:
+    """
+    Keep only references whose IDs are explicitly used in the response.
+    """
+    used_ref_ids = set(_extract_used_reference_ids(response_text))
+    if not used_ref_ids:
+        return []
+
+    by_id = {ref.get("reference_id", ""): ref for ref in references}
+    filtered: list[dict] = []
+    for ref_id in _extract_used_reference_ids(response_text):
+        ref = by_id.get(ref_id)
+        if ref is not None:
+            filtered.append(ref)
+    return filtered
+
+
+_STRICT_REFERENCE_MIN_TOKEN_THRESHOLD = 2
+_STRICT_REFERENCE_MIN_SIMILARITY = 0.15
+_STRICT_REFERENCE_STOP_WORDS = {
+    "a",
+    "an",
+    "the",
+    "and",
+    "or",
+    "of",
+    "to",
+    "in",
+    "on",
+    "for",
+    "with",
+    "by",
+    "is",
+    "are",
+    "was",
+    "were",
+    "be",
+    "been",
+    "this",
+    "that",
+    "these",
+    "those",
+    "it",
+    "its",
+    "they",
+    "them",
+    "as",
+    "at",
+    "from",
+    "here",
+    "there",
+    "therefore",
+    "also",
+    "which",
+    "who",
+    "what",
+    "when",
+    "where",
+    "why",
+    "how",
+    "can",
+    "could",
+    "would",
+    "should",
+    "will",
+    "shall",
+    "may",
+    "might",
+    "must",
+    "have",
+    "has",
+    "had",
+    "do",
+    "does",
+    "did",
+    "not",
+}
+
+
+def _strip_reference_markers(text: str) -> str:
+    """Remove inline citation tokens from text."""
+    return re.sub(r"\[DC\d+\]", "", text)
+
+
+def _tokenize_for_matching(text: str) -> list[str]:
+    """Simple tokenization for evidence checking."""
+    return [
+        token
+        for token in re.findall(r"[A-Za-z0-9]+", text.lower())
+        if token not in _STRICT_REFERENCE_STOP_WORDS
+    ]
+
+
+def _extract_claims_by_reference(response_text: str) -> dict[str, list[str]]:
+    """
+    Map each referenced DC id to the statement(s) that contains it.
+    """
+    if not response_text:
+        return {}
+
+    sentences = re.split(r"(?<=[.!?。！？])\s+|\n", response_text)
+    claims_by_ref: dict[str, list[str]] = {}
+
+    for sentence in sentences:
+        sentence = sentence.strip()
+        if not sentence:
+            continue
+
+        referenced_ids = DC_REFERENCE_PATTERN.findall(sentence)
+        if not referenced_ids:
+            continue
+
+        claim = _strip_reference_markers(sentence).strip()
+        if not claim:
+            continue
+
+        for ref_id in dict.fromkeys(referenced_ids):
+            claims_by_ref.setdefault(ref_id, []).append(claim)
+
+    return claims_by_ref
+
+
+def _is_claim_supported_by_chunks(claim: str, chunk_contents: list[str]) -> bool:
+    """
+    Conservative check that a claim is supported by at least one chunk.
+    """
+    if not chunk_contents:
+        return False
+
+    claim = claim.lower().strip()
+    claim_tokens = _tokenize_for_matching(claim)
+    if not claim_tokens:
+        # fallback to exact match for very short claims
+        return any(claim and claim in chunk_content.lower() for chunk_content in chunk_contents)
+
+    claim_token_set = set(claim_tokens)
+    min_overlap = max(_STRICT_REFERENCE_MIN_TOKEN_THRESHOLD, len(claim_token_set) // 3)
+
+    for chunk_content in chunk_contents:
+        if not chunk_content:
+            continue
+
+        chunk_tokens = set(_tokenize_for_matching(chunk_content.lower()))
+        if not chunk_tokens:
+            continue
+
+        overlap_count = len(claim_token_set.intersection(chunk_tokens))
+        if overlap_count >= min_overlap:
+            return True
+
+        # fallback for short or paraphrased claims
+        from difflib import SequenceMatcher
+
+        if len(chunk_content) > 30:
+            similarity = SequenceMatcher(None, claim, chunk_content.lower()).ratio()
+            if similarity >= _STRICT_REFERENCE_MIN_SIMILARITY:
+                return True
+
+    return False
+
+
+def _filter_references_by_usage_and_evidence(
+    response_text: str,
+    references: list[dict],
+    chunks: list[dict] | None = None,
+) -> list[dict]:
+    """
+    Keep only references that are both used in response and supported by evidence chunks.
+    """
+    claims_by_ref = _extract_claims_by_reference(response_text)
+    if not claims_by_ref:
+        return []
+
+    chunks_by_ref: dict[str, list[str]] = {}
+    if chunks:
+        for chunk in chunks:
+            ref_id = chunk.get("reference_id", "")
+            content = chunk.get("content", "")
+            if ref_id and isinstance(content, str) and content:
+                chunks_by_ref.setdefault(ref_id, []).append(content)
+
+    by_id = {
+        ref.get("reference_id", ""): ref
+        for ref in references
+        if ref.get("reference_id")
+    }
+
+    used_ref_ids = _extract_used_reference_ids(response_text)
+    filtered: list[dict] = []
+    for ref_id in used_ref_ids:
+        ref = by_id.get(ref_id)
+        if ref is None:
+            continue
+
+        claims = claims_by_ref.get(ref_id, [])
+        if not claims:
+            continue
+
+        ref_chunks = chunks_by_ref.get(ref_id, [])
+        if any(_is_claim_supported_by_chunks(claim, ref_chunks) for claim in claims):
+            filtered.append(ref)
+
+    return filtered
 
 
 def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
@@ -436,6 +679,15 @@ def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
                 response_content = "No relevant context found for the query."
 
             # Enrich references with chunk content if requested
+            if request.include_references:
+                chunks_for_verification = data.get("chunks", [])
+                if request.strict_reference_verification:
+                    references = _filter_references_by_usage_and_evidence(
+                        response_content, references, chunks_for_verification
+                    )
+                else:
+                    references = _filter_references_by_usage(response_content, references)
+
             if request.include_references and request.include_chunk_content:
                 chunks = data.get("chunks", [])
                 # Create a mapping from reference_id to chunk content

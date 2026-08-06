@@ -3427,50 +3427,100 @@ def generate_reference_list_from_chunks(
     chunks: list[dict],
 ) -> tuple[list[dict], list[dict]]:
     """
-    Generate reference list from chunks, prioritizing by occurrence frequency.
+    Generate reference list from chunks and attach reference IDs.
 
-    This function extracts file_paths from chunks, counts their occurrences,
-    sorts by frequency and first appearance order, creates reference_id mappings,
-    and builds a reference_list structure.
+    The function extracts ``file_path`` values from chunks, tracks an optional
+    relevance score when available, then sorts references accordingly.
 
     Args:
-        chunks: List of chunk dictionaries with file_path information
+        chunks: List of chunk dictionaries with file_path information.
 
     Returns:
         tuple: (reference_list, updated_chunks_with_reference_ids)
-            - reference_list: List of dicts with reference_id and file_path
-            - updated_chunks_with_reference_ids: Original chunks with reference_id field added
+            - reference_list: List of dicts with ``reference_id`` and ``file_path``
+            - updated_chunks_with_reference_ids: Original chunks with ``reference_id`` added
     """
     if not chunks:
         return [], []
 
-    # 1. Extract all valid file_paths and count their occurrences
-    file_path_counts = {}
+    def _extract_relevance_score(chunk: dict) -> float | None:
+        """Extract a chunk relevance score if one is available.
+
+        The pipeline may provide ``rerank_score`` after reranking and ``distance``
+        from vector retrieval in some implementations.
+        """
+
+        # Prefer explicit rerank score (higher is better)
+        for key in ("rerank_score", "relevance_score", "score"):
+            raw_score = chunk.get(key)
+            if raw_score is None:
+                continue
+            try:
+                return float(raw_score)
+            except (TypeError, ValueError):
+                logger.debug("Invalid chunk score '%s' for key '%s'", raw_score, key)
+
+        # As a fallback, keep vector distance if available.
+        raw_distance = chunk.get("distance")
+        if raw_distance is None:
+            return None
+        try:
+            return float(raw_distance)
+        except (TypeError, ValueError):
+            return None
+
+    # 1. Extract all valid file_paths, and track best score per file.
+    file_path_scores: dict[str, float | None] = {}
+    has_relevance_scores = False
     for chunk in chunks:
         file_path = chunk.get("file_path", "")
         if file_path and file_path != "unknown_source":
-            file_path_counts[file_path] = file_path_counts.get(file_path, 0) + 1
+            score = _extract_relevance_score(chunk)
+            if score is not None:
+                has_relevance_scores = True
+                previous = file_path_scores.get(file_path)
+                if previous is None or score > previous:
+                    file_path_scores[file_path] = score
+            elif file_path not in file_path_scores:
+                file_path_scores[file_path] = None
 
-    # 2. Sort file paths by frequency (descending), then by first appearance order
-    # Create a list of (file_path, count, first_index) tuples
-    file_path_with_indices = []
-    seen_paths = set()
-    for i, chunk in enumerate(chunks):
-        file_path = chunk.get("file_path", "")
-        if file_path and file_path != "unknown_source" and file_path not in seen_paths:
-            file_path_with_indices.append((file_path, file_path_counts[file_path], i))
-            seen_paths.add(file_path)
+    # If no file had any relevance signal, keep original first-appearance order.
+    if not has_relevance_scores:
+        file_path_with_indices = []
+        seen_paths = set()
+        for i, chunk in enumerate(chunks):
+            file_path = chunk.get("file_path", "")
+            if file_path and file_path != "unknown_source" and file_path not in seen_paths:
+                file_path_with_indices.append((file_path, i))
+                seen_paths.add(file_path)
+        sorted_file_paths = sorted(file_path_with_indices, key=lambda x: x[1])
+        unique_file_paths = [item[0] for item in sorted_file_paths]
+    else:
+        file_path_with_indices = []
+        seen_paths = set()
+        for i, chunk in enumerate(chunks):
+            file_path = chunk.get("file_path", "")
+            if file_path and file_path != "unknown_source" and file_path not in seen_paths:
+                file_path_with_indices.append(
+                    (
+                        file_path,
+                        file_path_scores.get(file_path, float("-inf")),
+                        i,
+                    )
+                )
+                seen_paths.add(file_path)
 
-    # Sort by count (descending), then by first appearance index (ascending)
-    sorted_file_paths = sorted(file_path_with_indices, key=lambda x: (-x[1], x[2]))
-    unique_file_paths = [item[0] for item in sorted_file_paths]
+        # Sort by score descending, then by first appearance index.
+        sorted_file_paths = sorted(
+            file_path_with_indices,
+            key=lambda x: (-x[1], x[2]),
+        )
+        unique_file_paths = [item[0] for item in sorted_file_paths]
 
-    # 3. Create mapping from file_path to reference_id (prioritized by frequency)
-    file_path_to_ref_id = {}
-    for i, file_path in enumerate(unique_file_paths):
-        file_path_to_ref_id[file_path] = str(i + 1)
+    # 2. Create mapping from file_path to reference_id
+    file_path_to_ref_id = {file_path: str(i + 1) for i, file_path in enumerate(unique_file_paths)}
 
-    # 4. Add reference_id field to each chunk
+    # 3. Add reference_id field to each chunk
     updated_chunks = []
     for chunk in chunks:
         chunk_copy = chunk.copy()
@@ -3481,9 +3531,11 @@ def generate_reference_list_from_chunks(
             chunk_copy["reference_id"] = ""
         updated_chunks.append(chunk_copy)
 
-    # 5. Build reference_list
-    reference_list = []
-    for i, file_path in enumerate(unique_file_paths):
-        reference_list.append({"reference_id": str(i + 1), "file_path": file_path})
+    # 4. Build reference_list
+    reference_list = [
+        {"reference_id": str(i + 1), "file_path": file_path}
+        for i, file_path in enumerate(unique_file_paths)
+    ]
 
     return reference_list, updated_chunks
+
