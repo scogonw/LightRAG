@@ -27,6 +27,7 @@ from lightrag.api.utils_api import (
     get_combined_auth_dependency,
     display_splash_screen,
     check_env_file,
+    is_whitelisted,
 )
 from .config import (
     global_args,
@@ -1116,6 +1117,27 @@ def create_app(args):
     # Add Ollama API routes
     ollama_api = OllamaAPI(rag, top_k=args.top_k, api_key=api_key)
     app.include_router(ollama_api.router, prefix="/api")
+
+    # WHITELIST_PATHS is matched by prefix, so a pattern such as `/api/*` exempts every
+    # Ollama route from combined_auth — including /api/chat, which runs the full
+    # LLM-generating RAG path with no org scoping. The per-route Depends(combined_auth)
+    # does not help: the whitelist is checked inside combined_auth, before any
+    # credential is examined. Warn rather than refuse to boot — an operator may have
+    # meant to expose these, and failing startup is the worse default.
+    exposed_ollama_routes = sorted(
+        f"/api{path}"
+        for path in {
+            getattr(route, "path", None) for route in ollama_api.router.routes
+        }
+        if path and is_whitelisted(f"/api{path}")
+    )
+    if exposed_ollama_routes:
+        logger.warning(
+            "SECURITY: WHITELIST_PATHS exempts these Ollama routes from ALL "
+            f"authentication: {', '.join(exposed_ollama_routes)}. "
+            "/api/chat queries the knowledge base across every org. "
+            "Set WHITELIST_PATHS=/health unless this is intentional."
+        )
 
     # Custom Swagger UI endpoint for offline support
     @app.get("/docs", include_in_schema=False)

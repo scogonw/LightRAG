@@ -1684,10 +1684,15 @@ security_check_env_file
     assert "AUTH_ACCOUNTS uses a predictable password prefix." in result.stdout
 
 
-def test_security_check_reports_api_key_only_with_default_whitelist(
+def test_security_check_passes_for_api_key_only_with_default_whitelist(
     tmp_path: Path,
 ) -> None:
-    """API-key-only deployment with unset WHITELIST_PATHS inherits /api/* and must be flagged."""
+    """API-key-only deployment with unset WHITELIST_PATHS inherits /health only.
+
+    The default was narrowed from ``/health,/api/*`` so that an operator who never
+    sets WHITELIST_PATHS does not silently expose the Ollama-compat routes, which
+    bypass authentication entirely and serve RAG answers across every org.
+    """
     write_text_lines(tmp_path / ".env", ["LIGHTRAG_API_KEY=my-secret-key"])
     result = subprocess.run(
         [
@@ -1706,8 +1711,11 @@ security_check_env_file
         text=True,
         check=False,
     )
-    assert result.returncode == 1
-    assert "WHITELIST_PATHS exposes /api routes" in result.stdout
+    # Assert the check actually ran and cleared, not merely that the warning is
+    # absent — an empty stdout would satisfy a bare `not in` vacuously.
+    assert result.returncode == 0
+    assert "No obvious security issues found" in result.stdout
+    assert "WHITELIST_PATHS exposes /api routes" not in result.stdout
 
 
 def test_security_check_reports_api_key_only_with_explicit_api_wildcard_whitelist(

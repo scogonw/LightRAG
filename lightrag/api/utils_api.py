@@ -84,6 +84,23 @@ for path in whitelist_paths:
         else:
             whitelist_patterns.append((path, False))  # (exact_path, is_prefix_match)
 
+
+def is_whitelisted(path: str) -> bool:
+    """Whether ``path`` bypasses authentication entirely via WHITELIST_PATHS.
+
+    A whitelisted path short-circuits ``combined_dependency`` before the token
+    and API-key checks, so this is the authoritative "no auth at all" test.
+    Shared with the startup exposure check in ``lightrag_server`` so the two
+    cannot drift.
+    """
+    for pattern, is_prefix in whitelist_patterns:
+        if (is_prefix and path.startswith(pattern)) or (
+            not is_prefix and path == pattern
+        ):
+            return True
+    return False
+
+
 # Global authentication configuration
 auth_configured = bool(auth_handler.accounts)
 
@@ -127,11 +144,8 @@ def get_combined_auth_dependency(api_key: Optional[str] = None):
     ):
         # 1. Check if path is in whitelist
         path = request.url.path
-        for pattern, is_prefix in whitelist_patterns:
-            if (is_prefix and path.startswith(pattern)) or (
-                not is_prefix and path == pattern
-            ):
-                return  # Whitelist path, allow access
+        if is_whitelisted(path):
+            return  # Whitelist path, allow access
 
         # 2. Validate token first if provided in the request (Ensure 401 error if token is invalid)
         if token:
