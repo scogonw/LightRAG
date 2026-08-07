@@ -11,7 +11,10 @@ import pytest
 # if the optional dependency isn't installed in this environment.
 opensearch_impl = pytest.importorskip("lightrag.kg.opensearch_impl")
 
+from lightrag.utils import merge_metadata_entry, remove_metadata_entry
+
 _metadata_upsert_script = opensearch_impl._metadata_upsert_script
+_metadata_remove_script = opensearch_impl._metadata_remove_script
 _summarize_bulk_update_errors = opensearch_impl._summarize_bulk_update_errors
 
 
@@ -79,28 +82,14 @@ def test_summarize_classifies_real_failures():
 
 
 def _apply_upsert(metadata, resource_id, entry):
-    """Python port of _METADATA_UPSERT_PAINLESS, for verifying the algorithm.
+    """Exercise the production merge helper under this module's argument order.
 
-    Mirrors the Painless source's branches exactly so the intended upsert
-    behaviour is checked offline (the script itself only runs in OpenSearch).
+    This was a hand-written Python port of _METADATA_UPSERT_PAINLESS. It is now
+    a thin adapter over ``utils.merge_metadata_entry``, which ingestion uses to
+    merge a document's entry into a shared chunk — so these cases verify the
+    real implementation rather than a copy of it that could drift from it.
     """
-    if resource_id is None:
-        return metadata  # no-op guard
-    if metadata is None:
-        return entry
-    if isinstance(metadata, dict):
-        if metadata.get("resource_id") == resource_id:
-            return entry
-        return [metadata, entry]
-    if isinstance(metadata, list):
-        m = list(metadata)
-        for i, e in enumerate(m):
-            if isinstance(e, dict) and e.get("resource_id") == resource_id:
-                m[i] = entry
-                return m
-        m.append(entry)
-        return m
-    return metadata
+    return merge_metadata_entry(metadata, entry, resource_id)
 
 
 def test_upsert_null_sets_entry():
@@ -248,3 +237,77 @@ async def test_metadata_methods_noop_when_index_missing():
     kv._index_ready = False
     assert await kv.get_metadata("doc-1") is None
     assert await kv.set_metadata("doc-1", {"a": 1}) is False
+
+
+# ---------------------------------------------------------------------------
+# Withdrawing a document's entry (the delete path)
+#
+# A chunk id is a content hash, so one record can belong to several documents.
+# Deleting a document must withdraw only its own entry; deleting the record
+# outright empties every sibling that shares the content.
+# ---------------------------------------------------------------------------
+
+
+def test_metadata_remove_script_shape():
+    script = _metadata_remove_script("r1")
+    assert script["lang"] == "painless"
+    assert script["params"] == {"rid": "r1"}
+    src = script["source"]
+    assert "m == null" in src
+    assert "instanceof Map" in src
+    assert "instanceof List" in src
+    # Collapses to a bare dict when one entry survives, matching
+    # utils.remove_metadata_entry.
+    assert "keep.size() == 1" in src
+    assert "ctx._source.metadata = null" in src
+
+
+def test_remove_last_entry_marks_record_unreferenced():
+    entry = {"resource_id": "r1", "access_level": "ORGANIZATION"}
+    remaining, unreferenced = remove_metadata_entry(entry, "r1")
+    assert remaining is None
+    assert unreferenced is True
+
+
+def test_remove_keeps_sibling_and_collapses_to_dict():
+    mine = {"resource_id": "r1", "access_level": "CHAT_WIDGET"}
+    theirs = {"resource_id": "r2", "access_level": "TEAM_MEMBERS"}
+    remaining, unreferenced = remove_metadata_entry([mine, theirs], "r1")
+    assert remaining == theirs
+    assert unreferenced is False
+
+
+def test_remove_keeps_multiple_siblings_as_list():
+    mine = {"resource_id": "r1"}
+    a = {"resource_id": "r2"}
+    b = {"resource_id": "r3"}
+    remaining, unreferenced = remove_metadata_entry([mine, a, b], "r1")
+    assert remaining == [a, b]
+    assert unreferenced is False
+
+
+def test_remove_unknown_resource_leaves_record_intact():
+    theirs = {"resource_id": "r2", "access_level": "ONLY_ME"}
+    remaining, unreferenced = remove_metadata_entry(theirs, "r1")
+    assert remaining == theirs
+    assert unreferenced is False
+
+
+def test_remove_without_metadata_reports_unreferenced():
+    """Records carrying no metadata keep the original delete-outright path."""
+    _, unreferenced = remove_metadata_entry(None, "r1")
+    assert unreferenced is True
+
+
+def test_upsert_then_remove_round_trips():
+    """Two documents share a chunk; deleting one leaves the other untouched."""
+    a = {"resource_id": "r1", "access_level": "CHAT_WIDGET"}
+    b = {"resource_id": "r2", "access_level": "ORGANIZATION"}
+    shared = merge_metadata_entry(merge_metadata_entry(None, a, "r1"), b, "r2")
+    assert shared == [a, b]
+    remaining, unreferenced = remove_metadata_entry(shared, "r1")
+    assert remaining == b
+    assert unreferenced is False
+    remaining, unreferenced = remove_metadata_entry(remaining, "r2")
+    assert remaining is None
+    assert unreferenced is True

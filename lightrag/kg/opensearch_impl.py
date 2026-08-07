@@ -157,6 +157,45 @@ _BULK_UPDATE_RETRY_ON_CONFLICT = 3
 _BULK_ERROR_LOG_LIMIT = 3
 
 
+_METADATA_REMOVE_PAINLESS = (
+    "def rid = params.rid; "
+    "if (rid == null) { return; } "
+    "def m = ctx._source.metadata; "
+    "if (m == null) { return; } "
+    "if (m instanceof Map) { "
+    "  if (rid.equals(m.get('resource_id'))) { ctx._source.metadata = null; } "
+    "} "
+    "else if (m instanceof List) { "
+    "  def keep = []; "
+    "  for (e in m) { "
+    "    if (!(e instanceof Map) || !rid.equals(e.get('resource_id'))) { keep.add(e); } "
+    "  } "
+    "  if (keep.size() == 0) { ctx._source.metadata = null; } "
+    "  else if (keep.size() == 1) { ctx._source.metadata = keep.get(0); } "
+    "  else { ctx._source.metadata = keep; } "
+    "}"
+)
+
+
+def _metadata_remove_script(resource_id: str) -> dict:
+    """Build the update script that strips one document's metadata entry.
+
+    Inverse of ``_metadata_upsert_script``. Needed because a chunk id is a
+    content hash: a record can belong to several documents at once, so deleting
+    a document must withdraw only *its* entry. Deleting the record outright
+    empties every sibling that shares the content, and leaving the entry in
+    place would keep granting access via a document that no longer exists.
+
+    Collapses a single surviving entry back to a bare dict, matching
+    ``utils.remove_metadata_entry``.
+    """
+    return {
+        "lang": "painless",
+        "source": _METADATA_REMOVE_PAINLESS,
+        "params": {"rid": resource_id},
+    }
+
+
 def _metadata_upsert_script(resource_id: str, entry: dict) -> dict:
     """Build the OpenSearch update script that upserts a doc's metadata entry.
 
@@ -212,13 +251,8 @@ def _summarize_bulk_update_errors(
     return {"updated": success, "failures": failures, "not_found": not_found}
 
 
-async def _bulk_upsert_record_metadata(
-    storage,
-    record_ids: list[str],
-    resource_id: str,
-    entry: dict,
-) -> dict:
-    """Apply the metadata upsert script to ``record_ids`` in ``storage``'s index.
+async def _bulk_metadata_script(storage, record_ids: list[str], script: dict) -> dict:
+    """Apply a metadata update ``script`` to ``record_ids`` in ``storage``'s index.
 
     Shared by the vector and KV storages: the operation is plain OpenSearch
     ``_update`` bulk traffic and touches nothing vector-specific, and both
@@ -230,12 +264,11 @@ async def _bulk_upsert_record_metadata(
     ``storage`` must expose ``client``, ``_index_name``, ``_index_ready`` and
     ``_mark_index_missing()``.
     """
-    if not record_ids or not resource_id:
+    if not record_ids:
         return {"updated": 0, "failures": 0, "not_found": 0}
     if not storage._index_ready:
         return {"updated": 0, "failures": 0, "not_found": len(record_ids)}
 
-    script = _metadata_upsert_script(resource_id, entry)
     actions = [
         {
             "_op_type": "update",
@@ -259,6 +292,33 @@ async def _bulk_upsert_record_metadata(
 
     return _summarize_bulk_update_errors(
         success, errors, context=f"[{storage.workspace}] {storage._index_name}: "
+    )
+
+
+async def _bulk_upsert_record_metadata(
+    storage,
+    record_ids: list[str],
+    resource_id: str,
+    entry: dict,
+) -> dict:
+    """Add or replace one document's metadata entry on the listed records."""
+    if not resource_id:
+        return {"updated": 0, "failures": 0, "not_found": 0}
+    return await _bulk_metadata_script(
+        storage, record_ids, _metadata_upsert_script(resource_id, entry)
+    )
+
+
+async def _bulk_remove_record_metadata(
+    storage,
+    record_ids: list[str],
+    resource_id: str,
+) -> dict:
+    """Withdraw one document's metadata entry from the listed records."""
+    if not resource_id:
+        return {"updated": 0, "failures": 0, "not_found": 0}
+    return await _bulk_metadata_script(
+        storage, record_ids, _metadata_remove_script(resource_id)
     )
 
 
@@ -843,6 +903,21 @@ class OpenSearchKVStorage(BaseKVStorage):
         return await _bulk_upsert_record_metadata(
             self, record_ids, resource_id, entry
         )
+
+    async def remove_metadata_for_ids(
+        self,
+        record_ids: list[str],
+        resource_id: str,
+    ) -> dict:
+        """Withdraw one document's metadata entry from the listed KV records.
+
+        Used when deleting a document: a chunk id is a content hash, so the
+        record may still belong to other documents and must survive with their
+        entries intact.
+
+        Returns ``{"updated": int, "failures": int, "not_found": int}``.
+        """
+        return await _bulk_remove_record_metadata(self, record_ids, resource_id)
 
     async def filter_keys(self, keys: set[str]) -> set[str]:
         """Return the subset of keys that do not exist in storage."""
@@ -3809,6 +3884,21 @@ class OpenSearchVectorDBStorage(BaseVectorStorage):
         return await _bulk_upsert_record_metadata(
             self, record_ids, resource_id, entry
         )
+
+    async def remove_metadata_for_ids(
+        self,
+        record_ids: list[str],
+        resource_id: str,
+    ) -> dict:
+        """Withdraw one document's metadata entry from the listed records.
+
+        Used when deleting a document: a chunk id is a content hash, so the
+        record may still belong to other documents and must survive with their
+        entries intact.
+
+        Returns ``{"updated": int, "failures": int, "not_found": int}``.
+        """
+        return await _bulk_remove_record_metadata(self, record_ids, resource_id)
 
     async def drop(self) -> dict[str, str]:
         """Delete and recreate the vector index."""

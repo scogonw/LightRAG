@@ -114,6 +114,8 @@ from lightrag.utils import (
     make_relation_vdb_ids,
     subtract_source_ids,
     make_relation_chunk_key,
+    merge_metadata_entry,
+    remove_metadata_entry,
     normalize_source_ids_limit_method,
     DocumentTokenTracker,
 )
@@ -2063,6 +2065,28 @@ class LightRAG:
                                 for dp in chunking_result
                             }
 
+                            # A chunk id is a hash of its content, so uploading
+                            # the same file into a second knowledgebase lands on
+                            # the SAME chunk records. The upserts below replace
+                            # each record wholesale, so writing this document's
+                            # metadata straight in would drop every other
+                            # document's entry, and the file would keep only
+                            # whichever knowledgebase was ingested last. Merge
+                            # against what is stored, anchored on resource_id —
+                            # the same rule the metadata cascade applies.
+                            doc_resource_id = (doc_metadata or {}).get("resource_id")
+                            if chunks and doc_resource_id:
+                                chunk_ids = list(chunks.keys())
+                                stored_chunks = await self.text_chunks.get_by_ids(
+                                    chunk_ids
+                                )
+                                for chunk_id, stored in zip(chunk_ids, stored_chunks):
+                                    chunks[chunk_id]["metadata"] = merge_metadata_entry(
+                                        (stored or {}).get("metadata"),
+                                        doc_metadata,
+                                        doc_resource_id,
+                                    )
+
                             if not chunks:
                                 logger.warning("No document chunks to process")
 
@@ -3881,12 +3905,62 @@ class LightRAG:
             if chunk_ids:
                 try:
                     deletion_stage = "delete_chunks"
-                    await self.chunks_vdb.delete(chunk_ids)
-                    await self.text_chunks.delete(chunk_ids)
+
+                    # A chunk id is a hash of its content, so the same record can
+                    # belong to several documents — the same file uploaded to two
+                    # knowledgebases, for instance. Deleting by id alone empties
+                    # every sibling that shares the content, leaving those
+                    # documents claiming chunks they no longer own. Withdraw only
+                    # this document's metadata entry, and delete a record outright
+                    # only once nothing else references it.
+                    #
+                    # Backends that do not carry per-document metadata fall
+                    # through with an empty ``shared_ids`` and keep the original
+                    # delete-everything behaviour.
+                    full_doc = await self.full_docs.get_by_id(doc_id)
+                    doc_resource_id = (
+                        (full_doc or {}).get("metadata") or {}
+                    ).get("resource_id") or (
+                        (doc_status_data or {}).get("metadata") or {}
+                    ).get("resource_id")
+
+                    shared_ids: list[str] = []
+                    if doc_resource_id:
+                        stored_chunks = await self.text_chunks.get_by_ids(chunk_ids)
+                        for chunk_id, stored in zip(chunk_ids, stored_chunks):
+                            if stored is None:
+                                continue
+                            _, unreferenced = remove_metadata_entry(
+                                stored.get("metadata"), doc_resource_id
+                            )
+                            if not unreferenced:
+                                shared_ids.append(chunk_id)
+
+                    shared_set = set(shared_ids)
+                    exclusive_ids = [c for c in chunk_ids if c not in shared_set]
+
+                    if exclusive_ids:
+                        await self.chunks_vdb.delete(exclusive_ids)
+                        await self.text_chunks.delete(exclusive_ids)
+
+                    if shared_ids:
+                        for store in (self.chunks_vdb, self.text_chunks):
+                            remover = getattr(store, "remove_metadata_for_ids", None)
+                            if remover is not None:
+                                await remover(shared_ids, doc_resource_id)
+                        logger.info(
+                            f"Retained {len(shared_ids)} chunk(s) still referenced "
+                            f"by other documents; withdrew this document's entry"
+                        )
 
                     async with pipeline_status_lock:
                         log_message = (
-                            f"Successfully deleted {len(chunk_ids)} chunks from storage"
+                            f"Successfully deleted {len(exclusive_ids)} chunks from storage"
+                            + (
+                                f" ({len(shared_ids)} retained for other documents)"
+                                if shared_ids
+                                else ""
+                            )
                         )
                         logger.info(log_message)
                         pipeline_status["latest_message"] = log_message

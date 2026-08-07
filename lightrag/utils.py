@@ -3054,6 +3054,87 @@ def subtract_source_ids(
     ]
 
 
+def normalize_metadata_entries(metadata: Any) -> list[dict]:
+    """Normalise a record's ``metadata`` to a list of per-document entries.
+
+    Chunks written by a single document carry a bare dict; records shared by
+    several documents carry a list. Mirrors ``operate._meta_entries``, except
+    that an unusable value yields an empty list rather than ``None`` — callers
+    here are rewriting metadata, not deciding access.
+    """
+    if isinstance(metadata, dict):
+        return [metadata]
+    if isinstance(metadata, list):
+        return [e for e in metadata if isinstance(e, dict)]
+    return []
+
+
+def merge_metadata_entry(existing: Any, entry: dict, resource_id: str) -> Any:
+    """Merge one document's metadata ``entry`` into a record's existing metadata.
+
+    Python twin of ``_METADATA_UPSERT_PAINLESS`` in
+    ``lightrag.kg.opensearch_impl``. The entry anchored on ``resource_id``
+    replaces the matching one, or is appended when absent; other documents'
+    entries are left intact.
+
+    The two implementations must stay in step. A chunk is content-addressed, so
+    the same record is written by **both** paths — ingestion through here, the
+    metadata cascade through the painless script. Ingestion used to overwrite
+    the field outright, which silently dropped every other document's entry and
+    meant a file published to two knowledgebases only kept whichever was written
+    last.
+
+    Shape is preserved exactly as the script preserves it: absent metadata, or a
+    single entry that matches, yields a bare dict; anything else yields a list.
+    """
+    if not resource_id:
+        return existing
+    if existing is None:
+        return entry
+    if isinstance(existing, dict):
+        if existing.get("resource_id") == resource_id:
+            return entry
+        return [existing, entry]
+    if isinstance(existing, list):
+        merged = list(existing)
+        for i, candidate in enumerate(merged):
+            if (
+                isinstance(candidate, dict)
+                and candidate.get("resource_id") == resource_id
+            ):
+                merged[i] = entry
+                return merged
+        merged.append(entry)
+        return merged
+    # Unrecognised shape: leave it alone, matching the painless script's
+    # if/else-if chain, which falls through without writing.
+    return existing
+
+
+def remove_metadata_entry(existing: Any, resource_id: str) -> tuple[Any, bool]:
+    """Drop the entry anchored on ``resource_id`` from a record's metadata.
+
+    Returns ``(remaining_metadata, is_now_unreferenced)``. The second value
+    tells a caller deleting a document whether the record still belongs to some
+    other document — chunks are content-addressed, so deleting a record outright
+    because one of its documents went away empties every sibling that shares it.
+    """
+    entries = normalize_metadata_entries(existing)
+    if not entries:
+        # Nothing to reason about: treat as unreferenced so callers keep the
+        # existing delete-outright behaviour for records with no metadata.
+        return existing, True
+    remaining = [e for e in entries if e.get("resource_id") != resource_id]
+    if not remaining:
+        return None, True
+    # Collapse back to a bare dict when one entry is left, so a record that has
+    # been reduced to a single document looks exactly like one that only ever
+    # had one. ``_METADATA_REMOVE_PAINLESS`` collapses the same way.
+    if len(remaining) == 1:
+        return remaining[0], False
+    return remaining, False
+
+
 def make_relation_chunk_key(src: str, tgt: str) -> str:
     """Create a deterministic storage key for relation chunk tracking."""
 
