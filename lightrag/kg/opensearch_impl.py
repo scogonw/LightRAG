@@ -146,6 +146,17 @@ _METADATA_UPSERT_PAINLESS = (
 )
 
 
+# A chunk/entity/relation record is shared by every document that references it,
+# so a backfill patching several documents at once collides on the same _id.
+# Relations collide most: one `rel-` record is touched by every document naming
+# the pair. Without this, those land as bulk failures the caller has to retry by
+# hand — observed as transient, retry-succeeds failures during a production run.
+_BULK_UPDATE_RETRY_ON_CONFLICT = 3
+
+# Cap on how many failure bodies a single bulk response logs.
+_BULK_ERROR_LOG_LIMIT = 3
+
+
 def _metadata_upsert_script(resource_id: str, entry: dict) -> dict:
     """Build the OpenSearch update script that upserts a doc's metadata entry.
 
@@ -160,10 +171,21 @@ def _metadata_upsert_script(resource_id: str, entry: dict) -> dict:
     }
 
 
-def _summarize_bulk_update_errors(success: int, errors: list | None) -> dict:
-    """Classify async_bulk update errors into updated/not_found/failures counts."""
+def _summarize_bulk_update_errors(
+    success: int, errors: list | None, context: str = ""
+) -> dict:
+    """Classify async_bulk update errors into updated/not_found/failures counts.
+
+    Failure *bodies* are logged, not just counted. A bare count leaves a cascade
+    failure undiagnosable after the fact — the response says "1 failure" and the
+    reason is gone — which is exactly the position a production backfill left us
+    in. ``not_found`` is deliberately not logged: relation ids are probed in both
+    orderings (see ``update_metadata_by_chunk_ids``), so roughly half of them
+    miss by construction and would drown the real errors.
+    """
     not_found = 0
     failures = 0
+    details: list[str] = []
     for err in errors or []:
         update_info = err.get("update") if isinstance(err, dict) else None
         if isinstance(update_info, dict) and (
@@ -171,8 +193,22 @@ def _summarize_bulk_update_errors(success: int, errors: list | None) -> dict:
             or update_info.get("status") == 404
         ):
             not_found += 1
-        else:
-            failures += 1
+            continue
+        failures += 1
+        if len(details) < _BULK_ERROR_LOG_LIMIT and isinstance(update_info, dict):
+            cause = update_info.get("error")
+            if isinstance(cause, dict):
+                cause = f"{cause.get('type')}: {str(cause.get('reason'))[:120]}"
+            details.append(
+                f"id={update_info.get('_id')} status={update_info.get('status')} {cause}"
+            )
+
+    if failures:
+        suffix = f" (showing {len(details)} of {failures})" if details else ""
+        logger.error(
+            f"{context}bulk update reported {failures} failure(s){suffix}: "
+            + " | ".join(details)
+        )
     return {"updated": success, "failures": failures, "not_found": not_found}
 
 
@@ -206,6 +242,7 @@ async def _bulk_upsert_record_metadata(
             "_index": storage._index_name,
             "_id": rid,
             "script": script,
+            "retry_on_conflict": _BULK_UPDATE_RETRY_ON_CONFLICT,
         }
         for rid in record_ids
     ]
@@ -220,7 +257,9 @@ async def _bulk_upsert_record_metadata(
         logger.error(f"[{storage.workspace}] Error updating record metadata: {e}")
         return {"updated": 0, "failures": len(record_ids), "not_found": 0}
 
-    return _summarize_bulk_update_errors(success, errors)
+    return _summarize_bulk_update_errors(
+        success, errors, context=f"[{storage.workspace}] {storage._index_name}: "
+    )
 
 
 # Keys in metadata_filter that are consumed by the knowledgebase filter builder
@@ -2368,13 +2407,21 @@ class OpenSearchGraphStorage(BaseGraphStorage):
         if not ids:
             return {"updated": 0, "failures": 0, "not_found": 0}
         actions = [
-            {"_op_type": "update", "_index": index, "_id": doc_id, "script": script}
+            {
+                "_op_type": "update",
+                "_index": index,
+                "_id": doc_id,
+                "script": script,
+                "retry_on_conflict": _BULK_UPDATE_RETRY_ON_CONFLICT,
+            }
             for doc_id in ids
         ]
         success, errors = await helpers.async_bulk(
             self.client, actions, raise_on_error=False, refresh=True
         )
-        return _summarize_bulk_update_errors(success, errors)
+        return _summarize_bulk_update_errors(
+            success, errors, context=f"[{self.workspace}] {index}: "
+        )
 
     async def update_metadata_by_chunk_ids(
         self, chunk_ids: list[str], resource_id: str, entry: dict

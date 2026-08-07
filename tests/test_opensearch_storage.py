@@ -5,8 +5,10 @@ All tests use mocks — no running OpenSearch instance required.
 Run with: pytest tests/test_opensearch_storage.py -v
 """
 
+import logging
 import pytest
 from contextlib import asynccontextmanager
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 import numpy as np
 
@@ -23,8 +25,11 @@ from lightrag.kg.opensearch_impl import (
     OpenSearchVectorDBStorage,
     ClientManager,
     _build_index_name,
+    _bulk_upsert_record_metadata,
     _resolve_workspace,
     _sanitize_index_name,
+    _summarize_bulk_update_errors,
+    _BULK_UPDATE_RETRY_ON_CONFLICT,
 )
 from lightrag.base import DocStatus, DocProcessingStatus
 
@@ -170,6 +175,80 @@ class TestHelpers:
         ws, ns, idx = _build_index_name("", "chunks")
         assert ws == ""
         assert idx == _sanitize_index_name("chunks")
+
+    def test_bulk_summary_logs_failure_bodies_but_not_not_found(self, caplog):
+        """Failures must be diagnosable; not_found must stay quiet.
+
+        A bare count leaves a cascade failure with no recoverable cause. But
+        relation ids are probed in both orderings, so roughly half miss by
+        construction — logging those would bury the real errors.
+        """
+        errors = [
+            {"update": {"_id": "rel-a", "result": "not_found", "status": 404}},
+            {
+                "update": {
+                    "_id": "rel-b",
+                    "status": 409,
+                    "error": {
+                        "type": "version_conflict_engine_exception",
+                        "reason": "current version is newer",
+                    },
+                }
+            },
+        ]
+        with caplog.at_level(logging.ERROR):
+            summary = _summarize_bulk_update_errors(7, errors, context="[ws] idx: ")
+
+        assert summary == {"updated": 7, "failures": 1, "not_found": 1}
+        assert "version_conflict_engine_exception" in caplog.text
+        assert "rel-b" in caplog.text
+        assert "rel-a" not in caplog.text
+
+    def test_bulk_summary_silent_when_nothing_failed(self, caplog):
+        with caplog.at_level(logging.ERROR):
+            assert _summarize_bulk_update_errors(4, []) == {
+                "updated": 4,
+                "failures": 0,
+                "not_found": 0,
+            }
+        assert caplog.text == ""
+
+    @pytest.mark.asyncio
+    async def test_metadata_upsert_sets_retry_on_conflict(self, monkeypatch):
+        """Concurrent patches collide on shared chunk/entity/relation ids.
+
+        Relations collide hardest — one record is touched by every document
+        naming the pair — and without this those surface as bulk failures the
+        caller has to retry by hand.
+        """
+        captured = {}
+
+        async def fake_bulk(client, actions, **kwargs):
+            captured["actions"] = list(actions)
+            return len(captured["actions"]), []
+
+        monkeypatch.setattr(
+            "lightrag.kg.opensearch_impl.helpers",
+            SimpleNamespace(async_bulk=fake_bulk),
+        )
+        storage = SimpleNamespace(
+            client=None,
+            _index_name="idx",
+            _index_ready=True,
+            workspace="ws",
+            _mark_index_missing=lambda: None,
+        )
+
+        result = await _bulk_upsert_record_metadata(
+            storage, ["chunk-1", "chunk-2"], "res-1", {"access_level": "ONLY_ME"}
+        )
+
+        assert result["updated"] == 2
+        assert len(captured["actions"]) == 2
+        assert all(
+            a["retry_on_conflict"] == _BULK_UPDATE_RETRY_ON_CONFLICT
+            for a in captured["actions"]
+        )
 
     def test_resolve_workspace_env_override(self):
         with patch.dict("os.environ", {"OPENSEARCH_WORKSPACE": "forced"}):
