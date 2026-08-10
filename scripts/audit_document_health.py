@@ -18,8 +18,13 @@ Classifies every document in a workspace:
     empty     declares no chunks at all
 
 Also reports KV/vector divergence and cross-org entry contamination, and emits
-SQL listing the resource_ids that need adjudicating — LightRAG can describe a
+the SQL needed to adjudicate the actionable documents — LightRAG can describe a
 document's *shape*, only the system of record knows whether it is *live*.
+
+Two queries are emitted, and a document is safe to delete only when it is absent
+from **both**. Searching by ``resource_id`` alone misses a live resource whose
+``lightrag_doc_id`` is NULL; searching by ``lightrag_doc_id`` alone misses a
+stale anchor left behind by a re-upload. Either mistake deletes live content.
 
 The same audit is available in the WebUI (Documents → Health check) and over the
 API at ``GET /documents/health``; the logic lives in
@@ -45,6 +50,49 @@ from lightrag.kg.opensearch_audit import (
 )
 from lightrag.kg.opensearch_impl import ClientManager, _build_index_name
 from lightrag.namespace import NameSpace
+
+_SELECT = (
+    "SELECT id, title, is_deleted, deleted_at,\n"
+    "       metadata #>> '{lightrag_doc_id}' AS lightrag_doc_id\n"
+)
+
+
+def _in_list(values: list[str]) -> str:
+    """Render values as the body of a SQL ``IN`` list, one per line."""
+    return ",\n".join(f"  '{v}'" for v in values)
+
+
+def _print_adjudication_sql(resource_ids: list[str], doc_ids: list[str]) -> None:
+    """Emit both lookup directions needed to adjudicate a document upstream.
+
+    Neither query alone is sufficient, and each covers the other's blind spot:
+
+    * By ``resource_id`` only — a live resource whose ``lightrag_doc_id`` is
+      NULL looks exactly like a deleted one when searched by doc id.
+    * By ``lightrag_doc_id`` only — a document keeps the FIRST ``resource_id``
+      it ever saw, so re-uploading a file leaves a stale anchor that returns no
+      row while a NEWER live resource still points at the document.
+
+    Deleting on the strength of one direction destroys live content, so the
+    safe rule is the conjunction: both empty, or keep the document.
+    """
+    print("-- Adjudicate every actionable document with BOTH queries below.")
+    print("-- Safe to delete ONLY when a document is absent from both results;")
+    print("-- a live row in either means keep it (re-embed if its chunks are gone).")
+    print()
+    print("-- (1) FORWARD, by resource_id: catches a live resource whose")
+    print("--     lightrag_doc_id is NULL — indistinguishable from a deleted")
+    print("--     resource when you search by doc id.")
+    print(_SELECT + "FROM resources WHERE id IN (")
+    print(_in_list(resource_ids))
+    print(");")
+    print()
+    print("-- (2) REVERSE, by lightrag_doc_id: catches the mirror image — a")
+    print("--     stale anchor left by a re-upload, where (1) returns no row")
+    print("--     but a NEWER live resource still anchors this document.")
+    print(_SELECT + "FROM resources WHERE metadata #>> '{lightrag_doc_id}' IN (")
+    print(_in_list(doc_ids))
+    print(");")
 
 
 def _print_report(report: dict, workspace: str) -> None:
@@ -78,18 +126,10 @@ def _print_report(report: dict, workspace: str) -> None:
                 f"{str(row['file_path'])[:44]}"
             )
         resource_ids = report["resource_ids"]
+        doc_ids = [row["doc_id"] for row in actionable]
         if resource_ids:
             print()
-            print("-- A row means the document is LIVE: re-embed it, do not delete.")
-            print("-- No row means the resource is gone: safe to delete.")
-            print("SELECT id, title, is_deleted,")
-            print("       metadata #>> '{lightrag_doc_id}' AS lightrag_doc_id")
-            print("FROM resources WHERE id IN (")
-            print(
-                "\n".join(f"  '{r}'," for r in resource_ids[:-1])
-                + f"\n  '{resource_ids[-1]}'"
-            )
-            print(");")
+            _print_adjudication_sql(resource_ids, doc_ids)
 
     listing = report.get("class_listing")
     if listing:
