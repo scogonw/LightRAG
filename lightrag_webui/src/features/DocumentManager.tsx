@@ -1481,6 +1481,7 @@ export default function DocumentManager() {
                           </div>
                         </TableHead>
                         <TableHead>Org ID</TableHead>
+                        <TableHead>Resource ID</TableHead>
                         <TableHead>{t('documentPanel.documentManager.columns.accessLevel')}</TableHead>
                         <TableHead>{t('documentPanel.documentManager.columns.status')}</TableHead>
                         <TableHead>{t('documentPanel.documentManager.columns.length')}</TableHead>
@@ -1549,6 +1550,11 @@ export default function DocumentManager() {
                           <TableCell className="max-w-xs min-w-45 truncate overflow-visible">
                             <div className="truncate">
                               {doc.org_id || '-'}
+                            </div>
+                          </TableCell>
+                          <TableCell className="max-w-xs min-w-45 truncate overflow-visible">
+                            <div className="truncate">
+                              {doc.resource_id || '-'}
                             </div>
                           </TableCell>
                           <TableCell className="max-w-xs truncate overflow-visible">

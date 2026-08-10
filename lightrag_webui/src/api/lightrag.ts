@@ -200,6 +200,8 @@ export type DocStatusResponse = {
   org_id?: string
   /** Joined from full_docs metadata by /documents/paginated; absent elsewhere. */
   access_level?: string | null
+  /** Joined from full_docs metadata by /documents/paginated; absent elsewhere. */
+  resource_id?: string | null
   token_usage?: Record<string, any> | null
 }
 

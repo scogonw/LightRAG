@@ -176,6 +176,17 @@ def _extract_access_level(metadata: dict | None) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
+def _extract_resource_id(metadata: dict | None) -> str | None:
+    """Pull ``resource_id`` out of a document's ``full_docs`` metadata.
+
+    Metadata is client-supplied and unvalidated, so a non-string or empty
+    value is reported as absent rather than rendered into the document
+    listing.
+    """
+    value = (metadata or {}).get("resource_id")
+    return value if isinstance(value, str) and value else None
+
+
 def sanitize_filename(filename: str, input_dir: Path) -> str:
     """
     Sanitize uploaded filename to prevent Path Traversal attacks.
@@ -643,6 +654,15 @@ class DocStatusResponse(BaseModel):
             "listing endpoint."
         ),
     )
+    resource_id: Optional[str] = Field(
+        default=None,
+        description=(
+            "Client-supplied identifier anchoring this document's metadata "
+            "cascade onto its chunks/entities/relations. Read from the "
+            "document's full_docs metadata; None when unset. Only populated "
+            "by the paginated listing endpoint."
+        ),
+    )
     token_usage: Optional[dict[str, Any]] = Field(
         default=None,
         description="Token usage accumulated during document ingestion, broken down by stage",
@@ -664,6 +684,7 @@ class DocStatusResponse(BaseModel):
                 "file_path": "research_paper.pdf",
                 "org_id": "org_abc123",
                 "access_level": "ORGANIZATION",
+                "resource_id": "res_abc123",
             }
         }
     )
@@ -4129,6 +4150,7 @@ def create_document_routes(
                         file_path=normalize_file_path(doc.file_path),
                         org_id=doc.org_id or None,
                         access_level=_extract_access_level(metadata_by_id.get(doc_id)),
+                        resource_id=_extract_resource_id(metadata_by_id.get(doc_id)),
                         token_usage=doc.token_usage,
                     )
                 )
