@@ -244,6 +244,38 @@ def create_graph_routes(rag, api_key: Optional[str] = None):
                 status_code=500, detail=f"Error getting knowledge graph: {str(e)}"
             )
 
+    @router.get("/graph/org/list", dependencies=[Depends(combined_auth)])
+    async def get_graph_org_ids():
+        """List the org IDs present in the knowledge graph.
+
+        Backs the WebUI's tenant selector: the UI has to know which orgs exist
+        before it can scope the graph to one via ``GET /graphs/by_org``.
+
+        This is a discovery aid, not an access control. The caller has already
+        passed ``combined_auth``, which carries no org binding, so this returns
+        every org in the deployment. Restricting *which* orgs a user may select
+        requires an org on the authenticated identity.
+
+        Returns:
+            list[str]: Distinct org IDs, sorted. Empty when the backend cannot
+            aggregate them (non-OpenSearch graph storage, or missing indices).
+        """
+        try:
+            lister = getattr(rag.chunk_entity_relation_graph, "list_org_ids", None)
+            if lister is None:
+                logger.debug(
+                    "org listing unsupported by "
+                    f"{type(rag.chunk_entity_relation_graph).__name__}"
+                )
+                return []
+            return await lister()
+        except Exception as e:
+            logger.error(f"Error listing graph org IDs: {str(e)}")
+            logger.error(traceback.format_exc())
+            raise HTTPException(
+                status_code=500, detail=f"Error listing org IDs: {str(e)}"
+            )
+
     @router.get("/graph/entity/exists", dependencies=[Depends(combined_auth)])
     async def check_entity_exists(
         name: str = Query(..., description="Entity name to check"),

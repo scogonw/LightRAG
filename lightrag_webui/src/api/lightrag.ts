@@ -296,10 +296,13 @@ export const RequireApiKeError = 'API Key required'
 const axiosInstance = axios.create({
   baseURL: backendBaseUrl,
   headers: {
-    'Content-Type': 'application/json',
-    'x-org-id': 'TEST'
+    'Content-Type': 'application/json'
   }
 })
+// X-Org-Id is injected per-request from the selected tenant (see the request
+// interceptor below). It used to be hardcoded to 'TEST', which matched no real
+// org: queries filtered to nothing and uploads were tagged with an org no
+// caller could reach.
 
 // ========== Token Management ==========
 // Prevent multiple requests from triggering token refresh simultaneously
@@ -359,6 +362,7 @@ axiosInstance.interceptors.request.use((config) => {
   }
 
   const apiKey = useSettingsStore.getState().apiKey
+  const orgId = useSettingsStore.getState().orgId
   const token = localStorage.getItem('LIGHTRAG-API-TOKEN');
 
   // Always include token if it exists, regardless of path
@@ -367,6 +371,13 @@ axiosInstance.interceptors.request.use((config) => {
   }
   if (apiKey) {
     config.headers['X-API-Key'] = apiKey
+  }
+  // Endpoints that require X-Org-Id (query, upload) 422 without it rather than
+  // silently returning cross-org data, so leaving it unset when no tenant is
+  // selected is deliberate: it surfaces the missing selection instead of
+  // running against a placeholder org.
+  if (orgId) {
+    config.headers['X-Org-Id'] = orgId
   }
   return config
 })
@@ -471,7 +482,58 @@ export const queryGraphs = async (
   maxDepth: number,
   maxNodes: number
 ): Promise<LightragGraphType> => {
-  const response = await axiosInstance.get(`/graphs?label=${encodeURIComponent(label)}&max_depth=${maxDepth}&max_nodes=${maxNodes}`)
+  // `/graphs` returns every tenant's nodes. When a tenant is selected, use the
+  // org-scoped variant instead — the interceptor supplies X-Org-Id, which
+  // /graphs/by_org requires.
+  const orgId = useSettingsStore.getState().orgId
+  const path = orgId ? '/graphs/by_org' : '/graphs'
+  const response = await axiosInstance.get(`${path}?label=${encodeURIComponent(label)}&max_depth=${maxDepth}&max_nodes=${maxNodes}`)
+  return response.data
+}
+
+/** Tenants present in the knowledge graph, for the org selector. */
+export const getGraphOrgIds = async (): Promise<string[]> => {
+  const response = await axiosInstance.get('/graph/org/list')
+  return response.data
+}
+
+export type DocumentHealthRow = {
+  doc_id: string
+  file_path: string | null
+  created_at: string
+  declared: number
+  owned: number
+  levels: string[]
+  resource_id: string | null
+  klass: string
+}
+
+export type DocumentHealthReport = {
+  documents: number
+  chunks: { kv: number; vector: number }
+  classes: Record<string, { documents: number; chunks_owned: number }>
+  integrity: {
+    access_mismatches: number
+    chunks_without_metadata: number
+    cross_org_entries: number
+  }
+  actionable: DocumentHealthRow[]
+  resource_ids: string[]
+  divergent_samples: { chunk_id: string; kv: string[]; vector: string[] }[]
+  class_listing?: { klass: string; documents: DocumentHealthRow[] }
+}
+
+/**
+ * Audit chunk ownership and tenant metadata across every document.
+ *
+ * Scans the full chunk and document indices, so it takes seconds on a large
+ * corpus rather than milliseconds — call it on demand, not on render.
+ */
+export const getDocumentHealth = async (
+  includeClass?: string
+): Promise<DocumentHealthReport> => {
+  const suffix = includeClass ? `?include_class=${encodeURIComponent(includeClass)}` : ''
+  const response = await axiosInstance.get(`/documents/health${suffix}`)
   return response.data
 }
 
@@ -535,12 +597,17 @@ export const queryTextStream = async (
   onError?: (error: string) => void
 ) => {
   const apiKey = useSettingsStore.getState().apiKey;
+  const orgId = useSettingsStore.getState().orgId;
   const token = localStorage.getItem('LIGHTRAG-API-TOKEN');
+  // This request bypasses axios (it streams via fetch), so it does not go
+  // through the interceptor and has to attach the tenant itself.
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
     'Accept': 'application/x-ndjson',
-    'x-org-id': 'TEST',
   };
+  if (orgId) {
+    headers['X-Org-Id'] = orgId;
+  }
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }

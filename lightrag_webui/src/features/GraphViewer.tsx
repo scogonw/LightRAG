@@ -16,6 +16,7 @@ import FullScreenControl from '@/components/graph/FullScreenControl'
 import Settings from '@/components/graph/Settings'
 import GraphSearch from '@/components/graph/GraphSearch'
 import GraphLabels from '@/components/graph/GraphLabels'
+import GraphOrgSelector from '@/components/graph/GraphOrgSelector'
 import PropertiesView from '@/components/graph/PropertiesView'
 import SettingsDisplay from '@/components/graph/SettingsDisplay'
 import Legend from '@/components/graph/Legend'
@@ -211,6 +212,7 @@ const GraphViewer = () => {
         <FocusOnNode node={autoFocusedNode} move={moveToSelectedNode} />
 
         <div className="absolute top-2 left-2 flex items-start gap-2">
+          <GraphOrgSelector />
           <GraphLabels />
           {showNodeSearchBar && !isThemeSwitching && (
             <GraphSearch

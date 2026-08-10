@@ -34,8 +34,9 @@ import { errorMessage } from '@/lib/utils'
 import { toast } from 'sonner'
 import { useBackendState, useAuthStore } from '@/stores/state'
 
-import { RefreshCwIcon, ActivityIcon, ArrowUpIcon, ArrowDownIcon, RotateCcwIcon, CheckSquareIcon, XIcon, AlertTriangle, Info } from 'lucide-react'
+import { RefreshCwIcon, ActivityIcon, ArrowUpIcon, ArrowDownIcon, RotateCcwIcon, CheckSquareIcon, XIcon, AlertTriangle, Info, StethoscopeIcon } from 'lucide-react'
 import PipelineStatusDialog from '@/components/documents/PipelineStatusDialog'
+import DocumentHealthDialog from '@/components/documents/DocumentHealthDialog'
 
 
 type StatusFilter = DocStatus | 'all';
@@ -264,6 +265,7 @@ export default function DocumentManager() {
   }, []);
 
   const [showPipelineStatus, setShowPipelineStatus] = useState(false)
+  const [showHealthCheck, setShowHealthCheck] = useState(false)
   const { t, i18n } = useTranslation()
   const health = useBackendState.use.health()
   const pipelineBusy = useBackendState.use.pipelineBusy()
@@ -1264,6 +1266,15 @@ export default function DocumentManager() {
                 <ActivityIcon /> {t('documentPanel.documentManager.pipelineStatusButton')}
               </Button>
             )}
+            <Button
+              variant="outline"
+              onClick={() => setShowHealthCheck(true)}
+              side="bottom"
+              tooltip="Audit chunk ownership and tenant metadata across all documents"
+              size="sm"
+            >
+              <StethoscopeIcon /> Health check
+            </Button>
           </div>
 
           {/* Pagination Controls in the middle */}
@@ -1313,6 +1324,10 @@ export default function DocumentManager() {
             <PipelineStatusDialog
               open={showPipelineStatus}
               onOpenChange={setShowPipelineStatus}
+            />
+            <DocumentHealthDialog
+              open={showHealthCheck}
+              onOpenChange={setShowHealthCheck}
             />
           </div>
         </div>

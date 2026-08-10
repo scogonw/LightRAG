@@ -3273,6 +3273,79 @@ def create_document_routes(
             logger.error(traceback.format_exc())
             raise HTTPException(status_code=500, detail=str(e))
 
+    @router.get("/health", dependencies=[Depends(combined_auth)])
+    async def document_health(
+        include_class: Optional[str] = Query(
+            None,
+            description=(
+                "Also return the full listing for one class "
+                "(healthy, orphan, shared, inert, empty)"
+            ),
+        ),
+    ) -> Dict[str, Any]:
+        """Audit chunk ownership and tenant metadata across every document.
+
+        Chunk IDs are content hashes, so one chunk record can belong to several
+        documents and ``full_doc_id`` names only one owner. A document can
+        therefore own its chunks, share them with a sibling, or point at chunks
+        that no longer exist — and "it appears in the list" distinguishes none
+        of those. This classifies all of them and reports the storage integrity
+        invariants (KV/vector divergence, chunks missing metadata, cross-org
+        entries), which should all read zero.
+
+        It does not decide whether a document is live: that lives in the
+        upstream system of record. ``resource_id`` is returned for the
+        actionable ones so the caller can adjudicate.
+
+        Scans the full chunk and document indices, so it is proportional to
+        corpus size — seconds for tens of thousands of chunks, not milliseconds.
+
+        Returns 501 when the storage backend cannot support the audit.
+        """
+        from lightrag.kg.opensearch_audit import CLASSES, audit_document_health
+
+        if include_class is not None and include_class not in CLASSES:
+            raise HTTPException(
+                status_code=422,
+                detail=f"include_class must be one of {', '.join(CLASSES)}",
+            )
+
+        stores = {
+            "doc_status": rag.doc_status,
+            "text_chunks": rag.text_chunks,
+            "chunks_vdb": rag.chunks_vdb,
+            "full_docs": rag.full_docs,
+        }
+        missing = [
+            name
+            for name, store in stores.items()
+            if not hasattr(store, "_index_name") or getattr(store, "client", None) is None
+        ]
+        if missing:
+            raise HTTPException(
+                status_code=501,
+                detail=(
+                    "Document health audit requires OpenSearch-backed storage; "
+                    f"unsupported for: {', '.join(missing)}"
+                ),
+            )
+
+        try:
+            return await audit_document_health(
+                rag.doc_status.client,
+                status_index=rag.doc_status._index_name,
+                kv_index=rag.text_chunks._index_name,
+                vdb_index=rag.chunks_vdb._index_name,
+                full_index=rag.full_docs._index_name,
+                include_class=include_class,
+            )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error auditing document health: {str(e)}")
+            logger.error(traceback.format_exc())
+            raise HTTPException(status_code=500, detail=str(e))
+
     # TODO: Deprecated, use /documents/paginated instead
     @router.get(
         "", response_model=DocsStatusesResponse, dependencies=[Depends(combined_auth)]

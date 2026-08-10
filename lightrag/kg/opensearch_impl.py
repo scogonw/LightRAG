@@ -2728,6 +2728,48 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                 self._mark_indices_missing()
             return []
 
+    async def list_org_ids(self, limit: int = 100) -> list[str]:
+        """Return the distinct ``org_id`` values present on graph nodes.
+
+        Backs the WebUI's tenant selector, which needs to know which orgs exist
+        before it can scope the graph to one.
+
+        The field is aggregated twice because the graph indices disagree about
+        its mapping: indices created before the explicit ``keyword`` mapping got
+        ``org_id`` through ``dynamic: True``, which maps a string as ``text``
+        with a ``.keyword`` subfield, while newer ones declare it as ``keyword``
+        outright. Aggregating the wrong one errors, so try the subfield first and
+        fall back — the same duality ``_org_id_clause`` works around on the query
+        side.
+        """
+        if not self._indices_ready:
+            return []
+        await self._refresh_graph_indices_if_dirty(refresh_nodes=True)
+        for field_name in ("org_id.keyword", "org_id"):
+            try:
+                response = await self.client.search(
+                    index=self._nodes_index,
+                    body={
+                        "size": 0,
+                        "aggs": {
+                            "orgs": {"terms": {"field": field_name, "size": limit}}
+                        },
+                    },
+                )
+            except OpenSearchException as e:
+                if _is_missing_index_error(e):
+                    self._mark_indices_missing()
+                    return []
+                # Wrong mapping for this field — try the other spelling.
+                continue
+            buckets = response.get("aggregations", {}).get("orgs", {}).get("buckets", [])
+            return sorted(str(b["key"]) for b in buckets if b.get("key"))
+        logger.warning(
+            f"[{self.workspace}] Could not aggregate org_id on {self._nodes_index} "
+            f"under either mapping"
+        )
+        return []
+
     async def _collect_node_ids(
         self, limit: int, exclude_ids: set[str] | None = None
     ) -> list[str]:

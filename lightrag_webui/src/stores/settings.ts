@@ -40,6 +40,17 @@ interface SettingsState {
   maxEdgeSize: number
   setMaxEdgeSize: (size: number) => void
 
+  /**
+   * Tenant the WebUI is currently scoped to. Sent as `X-Org-Id` on every
+   * request, and selects `/graphs/by_org` over the cross-org `/graphs`.
+   *
+   * A view filter, not an access control: the auth layer carries no org
+   * binding, so any authenticated user can select any org. Enforcing it would
+   * mean deriving the org from the identity rather than from this store.
+   */
+  orgId: string | null
+  setOrgId: (orgId: string | null) => void
+
   graphQueryMaxDepth: number
   setGraphQueryMaxDepth: (depth: number) => void
 
@@ -103,6 +114,8 @@ const useSettingsStoreBase = create<SettingsState>()(
       minEdgeSize: 1,
       maxEdgeSize: 1,
 
+      orgId: null,
+
       graphQueryMaxDepth: 3,
       graphMaxNodes: 1000,
       backendMaxGraphNodes: null,
@@ -151,6 +164,22 @@ const useSettingsStoreBase = create<SettingsState>()(
         set({
           queryLabel
         }),
+
+      setOrgId: (orgId: string | null) => {
+        const state = useSettingsStore.getState()
+        if (state.orgId === orgId) {
+          return
+        }
+        // Changing tenant changes which endpoint the viewer calls and which
+        // nodes come back, so the current graph has to be discarded. Clearing
+        // queryLabel and restoring it is the same refresh trigger
+        // setGraphMaxNodes uses — the fetch effect keys off the label.
+        const currentLabel = state.queryLabel
+        set({ orgId, queryLabel: '' })
+        setTimeout(() => {
+          set({ queryLabel: currentLabel })
+        }, 300)
+      },
 
       setGraphQueryMaxDepth: (depth: number) => set({ graphQueryMaxDepth: depth }),
 
@@ -238,7 +267,7 @@ const useSettingsStoreBase = create<SettingsState>()(
     {
       name: 'settings-storage',
       storage: createJSONStorage(() => localStorage),
-      version: 19,
+      version: 20,
       migrate: (state: any, version: number) => {
         if (version < 2) {
           state.showEdgeLabel = false
@@ -340,6 +369,11 @@ const useSettingsStoreBase = create<SettingsState>()(
           if (state.querySettings) {
             delete state.querySettings.response_type
           }
+        }
+        if (version < 20) {
+          // Tenant selection did not exist before; default to unscoped so the
+          // graph viewer behaves as it did until a tenant is chosen.
+          state.orgId = null
         }
         return state
       }
