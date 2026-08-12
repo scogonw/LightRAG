@@ -3069,6 +3069,38 @@ def normalize_metadata_entries(metadata: Any) -> list[dict]:
     return []
 
 
+#: Keys the *document* carries for its own bookkeeping (see the processing-status
+#: updates in ``lightrag.py``). They never belong on chunk/entity/relation
+#: metadata, so they are stripped before a document's metadata becomes an entry.
+DOC_STATUS_ONLY_METADATA_KEYS = {"processing_start_time", "processing_end_time"}
+
+
+def build_metadata_entry(metadata: Any, org_id: str | None = None) -> dict:
+    """Build the metadata entry stored on a document's chunks/entities/relations.
+
+    Single source of truth for "what a complete entry looks like", used by both
+    writers: ingestion (``lightrag.py``) and the metadata cascade behind the
+    PATCH route. They previously disagreed by exactly one key, which left every
+    freshly ingested document looking un-cascaded to the health audit.
+
+    ``org_id`` belongs *inside* the entry because the query-side access check
+    reads it from there (``operate._chunk_meta_matches_kb_filter``), and because
+    it is the only shape that can be correct: a chunk is content-addressed and an
+    entity is merged by name, so either can carry entries from documents in
+    different orgs, which a single record-level field cannot represent.
+    ``operate._entry_with_record_org`` remains the read-time shim for entries
+    written before this.
+    """
+    entry = {
+        k: v
+        for k, v in (metadata or {}).items()
+        if k not in DOC_STATUS_ONLY_METADATA_KEYS
+    }
+    if org_id:
+        entry["org_id"] = org_id
+    return entry
+
+
 def merge_metadata_entry(existing: Any, entry: dict, resource_id: str) -> Any:
     """Merge one document's metadata ``entry`` into a record's existing metadata.
 

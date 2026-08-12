@@ -5,13 +5,19 @@ cascades (script construction + bulk-error classification) without requiring a
 running OpenSearch cluster.
 """
 
+import sys
+
 import pytest
 
 # opensearch_impl imports opensearch-py at module load; skip the whole module
 # if the optional dependency isn't installed in this environment.
 opensearch_impl = pytest.importorskip("lightrag.kg.opensearch_impl")
 
-from lightrag.utils import merge_metadata_entry, remove_metadata_entry
+from lightrag.utils import (
+    build_metadata_entry,
+    merge_metadata_entry,
+    remove_metadata_entry,
+)
 
 _metadata_upsert_script = opensearch_impl._metadata_upsert_script
 _metadata_remove_script = opensearch_impl._metadata_remove_script
@@ -134,6 +140,90 @@ def test_upsert_is_idempotent():
 def test_upsert_noop_when_resource_id_missing():
     old = [{"resource_id": "r2"}]
     assert _apply_upsert(old, None, {"x": 1}) == old
+
+
+# ---------------------------------------------------------------------------
+# build_metadata_entry — the single definition of "a complete entry", used by
+# BOTH writers: ingestion and the metadata cascade. They previously disagreed by
+# exactly one key (org_id), which made every freshly ingested document look
+# un-cascaded to the health audit.
+# ---------------------------------------------------------------------------
+
+
+def test_build_entry_stamps_org_id():
+    entry = build_metadata_entry(
+        {
+            "resource_id": "r1",
+            "knowledgebase_id": "kb-1",
+            "access_level": "TEAM_MEMBERS",
+        },
+        "org-1",
+    )
+    assert entry == {
+        "resource_id": "r1",
+        "knowledgebase_id": "kb-1",
+        "access_level": "TEAM_MEMBERS",
+        "org_id": "org-1",
+    }
+
+
+def test_build_entry_strips_doc_status_bookkeeping():
+    entry = build_metadata_entry(
+        {
+            "resource_id": "r1",
+            "processing_start_time": 1,
+            "processing_end_time": 2,
+        },
+        "org-1",
+    )
+    assert entry == {"resource_id": "r1", "org_id": "org-1"}
+
+
+def test_build_entry_omits_org_id_when_absent():
+    """An empty org must not write a falsy key that the access check would read."""
+    assert build_metadata_entry({"resource_id": "r1"}, "") == {"resource_id": "r1"}
+    assert build_metadata_entry({"resource_id": "r1"}, None) == {"resource_id": "r1"}
+
+
+def test_build_entry_handles_no_metadata():
+    assert build_metadata_entry(None, "org-1") == {"org_id": "org-1"}
+    assert build_metadata_entry(None, None) == {}
+
+
+def test_ingest_and_cascade_entries_agree(monkeypatch):
+    """The two writers must produce byte-identical entries for the same inputs.
+
+    If they drift, one path's write silently reshapes the other's records —
+    which is how freshly ingested documents ended up classed ``orphan``.
+    """
+    metadata = {
+        "resource_id": "r1",
+        "knowledgebase_id": "kb-1",
+        "access_level": "ORGANIZATION",
+        "processing_start_time": 99,
+    }
+    # document_routes parses sys.argv at import time; hide pytest's own args.
+    monkeypatch.setattr(sys, "argv", sys.argv[:1])
+    from lightrag.api.routers.document_routes import _clean_cascade_entry
+
+    assert _clean_cascade_entry(metadata, "org-1") == build_metadata_entry(
+        metadata, "org-1"
+    )
+
+
+def test_ingest_entry_survives_a_later_cascade_unchanged():
+    """An ingest-written entry is replaced wholesale by an identical cascade entry.
+
+    merge_metadata_entry and the painless upsert are documented twins; this pins
+    that stamping at ingest does not create a second, divergent entry.
+    """
+    metadata = {"resource_id": "r1", "knowledgebase_id": "kb-1"}
+    ingested = build_metadata_entry(metadata, "org-1")
+    cascaded = build_metadata_entry(metadata, "org-1")
+
+    merged = merge_metadata_entry(ingested, cascaded, "r1")
+    assert merged == ingested
+    assert _apply_upsert(ingested, "r1", cascaded) == ingested
 
 
 # ---------------------------------------------------------------------------

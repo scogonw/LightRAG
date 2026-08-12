@@ -380,17 +380,19 @@ def test_patch_cascade_entry_keeps_untouched_keys(monkeypatch):
 
 
 def test_patch_cascade_entry_stamps_org_id_when_metadata_lacks_it(monkeypatch):
-    """Ingestion never writes org_id into metadata, so the cascade must add it.
+    """The cascade must stamp org_id onto an entry that arrives without one.
 
     The query-side check reads org_id from *inside* the entry
-    (``_chunk_meta_matches_kb_filter``); ingestion only ever wrote it as a
-    top-level record field, and records predating that field have no top-level
-    org for ``_entry_with_record_org`` to borrow either. Without the entry
-    carrying the org, an org-path caller is still rejected after a perfectly
-    successful cascade — which is the shape of the KG-derived chunk drop.
+    (``_chunk_meta_matches_kb_filter``). Ingestion stamps it now too (via
+    ``utils.build_metadata_entry``), but entries written before that change have
+    only a top-level record field — and records predating *that* have no
+    top-level org for ``_entry_with_record_org`` to borrow either. Without the
+    entry carrying the org, an org-path caller is still rejected after a
+    perfectly successful cascade — the shape of the KG-derived chunk drop.
 
+    So this stays the regression test for the legacy shape the cascade repairs.
     Note the default fixture metadata *does* include org_id, so this case needs
-    its own document: it is the production shape, not the fixture's.
+    its own document.
     """
     client, rag = _make_patch_client(
         monkeypatch,

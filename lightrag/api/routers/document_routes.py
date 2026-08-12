@@ -28,6 +28,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from lightrag import LightRAG
 from lightrag.base import DeletionResult, DocProcessingStatus, DocStatus
 from lightrag.utils import (
+    DOC_STATUS_ONLY_METADATA_KEYS,
+    build_metadata_entry,
     generate_track_id,
     compute_mdhash_id,
     sanitize_text_for_encoding,
@@ -120,11 +122,9 @@ def _shallow_merge_metadata(
     return result
 
 
-# Keys the ingestion pipeline writes into the doc-status ``metadata`` field for
-# its own bookkeeping (see lightrag.py processing-status updates). They never
-# exist on chunk/entity/relation metadata, so they must be stripped before the
-# doc's metadata is cascaded onto those records.
-_DOC_STATUS_ONLY_METADATA_KEYS = {"processing_start_time", "processing_end_time"}
+# Kept as a module-local alias for readability at the use sites below; the set
+# itself lives in lightrag.utils so ingestion and the cascade strip the same keys.
+_DOC_STATUS_ONLY_METADATA_KEYS = DOC_STATUS_ONLY_METADATA_KEYS
 
 
 def _zero_counts() -> dict:
@@ -143,27 +143,13 @@ def _zero_graph_counts() -> dict:
 
 
 def _clean_cascade_entry(metadata: dict | None, org_id: str | None = None) -> dict:
-    """Strip doc-status bookkeeping keys to get the metadata entry that should
-    be stored on the document's chunks/entities/relations.
+    """The metadata entry to store on this document's chunks/entities/relations.
 
-    ``org_id`` is stamped onto the entry because the query-side access check
-    reads it from *inside* the entry (``_chunk_meta_matches_kb_filter``), while
-    ingestion only ever wrote it as a top-level record field. Records that
-    predate that field — or that the cascade creates metadata for from scratch —
-    have no top-level org for ``_entry_with_record_org`` to borrow, so without
-    this an org-path caller is rejected even after a successful cascade. Keeping
-    it per-entry is also the more accurate shape: a chunk is content-addressed
-    and an entity is merged by name, so either can carry entries from documents
-    in different orgs, which a single record-level field cannot represent.
+    Thin alias for ``lightrag.utils.build_metadata_entry``, which ingestion uses
+    too — the two writers must produce identical entries or a document looks
+    un-cascaded to the health audit.
     """
-    entry = {
-        k: v
-        for k, v in (metadata or {}).items()
-        if k not in _DOC_STATUS_ONLY_METADATA_KEYS
-    }
-    if org_id:
-        entry["org_id"] = org_id
-    return entry
+    return build_metadata_entry(metadata, org_id)
 
 
 def _extract_access_level(metadata: dict | None) -> str | None:

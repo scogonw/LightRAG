@@ -8,8 +8,11 @@ its chunks, share them with a sibling, or point at chunks that are gone.
 Classifies every document in a workspace:
 
     healthy   owns chunks, and every chunk carries a tenant entry
-    orphan    owns chunks, but no chunk carries a cascaded entry
-              -> probably has no live upstream row; confirm before deleting
+    orphan    owns chunks whose entries carry no org_id
+              -> a legacy shape, NOT evidence the document is dead. Ingestion
+                 stamps org_id now, so only documents ingested before that and
+                 never cascaded since land here. Use --adjudicate-all to find
+                 dead documents; no class is a liveness signal on its own
     shared    owns no chunks, but its chunks_list is fully alive
               -> benign duplicate. Its resource_id may still be the ONLY anchor
                  for one audience, so deleting it can silently revoke access
@@ -30,8 +33,14 @@ The same audit is available in the WebUI (Documents → Health check) and over t
 API at ``GET /documents/health``; the logic lives in
 ``lightrag.kg.opensearch_audit`` so all three agree.
 
+``--adjudicate-all`` emits those two queries for **every** document rather than
+only the actionable classes. Prefer it when hunting dead documents: ``orphan``
+once approximated "no live upstream row" because only the cascade stamped
+``org_id``, but ingestion stamps it too now, so no class is a liveness signal.
+
 Usage:
     python scripts/audit_document_health.py [--workspace WS] [--list CLASS]
+                                            [--adjudicate-all]
 
 Reads only — it does not modify anything.
 """
@@ -93,6 +102,58 @@ def _print_adjudication_sql(resource_ids: list[str], doc_ids: list[str]) -> None
     print(_SELECT + "FROM resources WHERE metadata #>> '{lightrag_doc_id}' IN (")
     print(_in_list(doc_ids))
     print(");")
+
+
+def _print_bulk_adjudication(report: dict, workspace: str) -> None:
+    """Emit the adjudication SQL for EVERY document, not just the actionable ones.
+
+    ``orphan`` used to approximate "no live upstream row", because only the
+    metadata cascade stamped ``org_id`` and it ran only for resources that
+    existed. Ingestion stamps it now, so that approximation is gone and the only
+    honest way to find dead documents is to adjudicate the whole workspace.
+    """
+    listing = report.get("class_listing") or {}
+    rows = listing.get("documents") or []
+    anchored = [r for r in rows if r.get("resource_id")]
+    unanchored = [r for r in rows if not r.get("resource_id")]
+
+    print(f"workspace                 : {workspace or '(none)'}")
+    print(f"documents                 : {report['documents']}")
+    print(f"  with a resource_id      : {len(anchored)}")
+    print(f"  without a resource_id   : {len(unanchored)}")
+    print()
+    if unanchored:
+        print("-- No resource_id stored, so neither query below can reach them.")
+        print("-- Adjudicate these by file_path against the system of record.")
+        for row in unanchored[:20]:
+            print(
+                f"--   {row['doc_id']}  owned={row['owned']:<4} "
+                f"{str(row['file_path'])[:52]}"
+            )
+        if len(unanchored) > 20:
+            print(f"--   ... and {len(unanchored) - 20} more")
+        print()
+    if not rows and report["documents"]:
+        # This script is normally piped into a pod, where it imports
+        # lightrag.kg.opensearch_audit from the deployed IMAGE. An older image
+        # does not understand include_class="all" and returns an empty listing,
+        # which would otherwise read as "no documents to adjudicate".
+        print(
+            f"-- ERROR: the workspace has {report['documents']} documents but the "
+            "listing came back empty."
+        )
+        print(
+            "-- The deployed lightrag.kg.opensearch_audit predates "
+            "--adjudicate-all. Redeploy, or use --list <class>."
+        )
+        return
+    if not anchored:
+        print("-- Nothing to adjudicate.")
+        return
+    _print_adjudication_sql(
+        sorted({r["resource_id"] for r in anchored}),
+        [r["doc_id"] for r in anchored],
+    )
 
 
 def _print_report(report: dict, workspace: str) -> None:
@@ -160,7 +221,9 @@ def _print_report(report: dict, workspace: str) -> None:
     )
 
 
-async def main_async(workspace: str, list_class: str | None) -> None:
+async def main_async(
+    workspace: str, list_class: str | None, adjudicate_all: bool = False
+) -> None:
     client = await ClientManager.get_client()
     try:
         _, _, status_index = _build_index_name(workspace, NameSpace.DOC_STATUS)
@@ -173,9 +236,12 @@ async def main_async(workspace: str, list_class: str | None) -> None:
             kv_index=kv_index,
             vdb_index=vdb_index,
             full_index=full_index,
-            include_class=list_class,
+            include_class="all" if adjudicate_all else list_class,
         )
-        _print_report(report, workspace)
+        if adjudicate_all:
+            _print_bulk_adjudication(report, workspace)
+        else:
+            _print_report(report, workspace)
     finally:
         await ClientManager.release_client(client)
 
@@ -191,8 +257,17 @@ def main() -> None:
         choices=list(CLASSES),
         help="Print every document in one class",
     )
+    parser.add_argument(
+        "--adjudicate-all",
+        action="store_true",
+        help=(
+            "Emit both adjudication queries for EVERY document, not just the "
+            "actionable classes. Use this to find dead documents: no class is a "
+            "reliable liveness signal on its own."
+        ),
+    )
     args = parser.parse_args()
-    asyncio.run(main_async(args.workspace, args.list_class))
+    asyncio.run(main_async(args.workspace, args.list_class, args.adjudicate_all))
 
 
 if __name__ == "__main__":

@@ -114,6 +114,7 @@ from lightrag.utils import (
     make_relation_vdb_ids,
     subtract_source_ids,
     make_relation_chunk_key,
+    build_metadata_entry,
     merge_metadata_entry,
     remove_metadata_entry,
     normalize_source_ids_limit_method,
@@ -2052,6 +2053,15 @@ class LightRAG:
                                         # Reconstruct user metadata from meta (exclude org_id)
                                         doc_metadata = {k: v for k, v in meta.items() if k != "org_id"} or None
 
+                            # The entry stored on this document's records. Built
+                            # by the same helper the metadata cascade uses, so
+                            # both writers produce an identical shape — org_id
+                            # included. Ingestion used to omit org_id, which left
+                            # every freshly ingested document looking
+                            # un-cascaded to the health audit even though nothing
+                            # was wrong with it.
+                            doc_entry = build_metadata_entry(doc_metadata, doc_org_id)
+
                             # Build chunks dictionary
                             chunks: dict[str, Any] = {
                                 compute_mdhash_id(dp["content"], prefix="chunk-"): {
@@ -2059,7 +2069,7 @@ class LightRAG:
                                     "full_doc_id": doc_id,
                                     "file_path": file_path,  # Add file path to each chunk
                                     "llm_cache_list": [],  # Initialize empty LLM cache list for each chunk
-                                    "metadata": doc_metadata,
+                                    "metadata": doc_entry or None,
                                     "org_id": doc_org_id,
                                 }
                                 for dp in chunking_result
@@ -2083,7 +2093,7 @@ class LightRAG:
                                 for chunk_id, stored in zip(chunk_ids, stored_chunks):
                                     chunks[chunk_id]["metadata"] = merge_metadata_entry(
                                         (stored or {}).get("metadata"),
-                                        doc_metadata,
+                                        doc_entry,
                                         doc_resource_id,
                                     )
 

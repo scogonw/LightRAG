@@ -12,6 +12,14 @@ decide whether a document is live — LightRAG knows a document's *shape*, only
 the upstream system of record knows whether its resource still exists. Callers
 get the ``resource_id`` so they can adjudicate that themselves.
 
+That caveat now carries real weight. ``orphan`` used to double as a rough
+liveness hint, because only the metadata cascade stamped ``org_id`` onto an
+entry and the cascade only ran for a resource that existed upstream. Ingestion
+stamps it too now, so the hint is gone by design: **adjudicate ``resource_id``
+upstream, in both directions, for every document you intend to act on.** The CLI
+grew ``--adjudicate-all`` for exactly that. ``inert`` is untouched and remains a
+real signal.
+
 Read-only.
 """
 
@@ -23,8 +31,9 @@ from lightrag.utils import normalize_metadata_entries
 _SCROLL = "3m"
 _PAGE = 2000
 
-#: Documents that own no chunks and whose chunks_list is dead, or that own
-#: chunks nothing has ever cascaded onto. These are the ones needing a decision.
+#: Documents that own no chunks and whose chunks_list is dead, or that own chunks
+#: whose entries lack org_id. A starting point for adjudication, not a verdict —
+#: see the module docstring on why ``orphan`` no longer implies "probably dead".
 ACTIONABLE_CLASSES = ("orphan", "inert")
 
 CLASSES = ("healthy", "orphan", "shared", "inert", "empty")
@@ -47,10 +56,21 @@ def classify(owned: int, declared: int, chunk_list: list, alive_ids: set, marked
     """Bucket one document.
 
     ``healthy`` owns chunks that carry a tenant entry. ``orphan`` owns chunks
-    that nothing has cascaded onto — usually no live upstream row, but verify.
-    ``shared`` owns nothing yet every chunk it lists is alive, so a sibling owns
-    them: benign, and its resource may still be the only anchor for one
-    audience. ``inert`` owns nothing and its chunks are gone.
+    whose entries carry no ``org_id``. ``shared`` owns nothing yet every chunk it
+    lists is alive, so a sibling owns them: benign, and its resource may still be
+    the only anchor for one audience. ``inert`` owns nothing and its chunks are
+    gone.
+
+    ``orphan`` is **not** a liveness signal. It once approximated one, because
+    only the cascade stamped ``org_id`` and the cascade only ran for a resource
+    that existed upstream. Ingestion now stamps it too, so ``orphan`` means
+    "ingested before that change and never cascaded since" — a shrinking legacy
+    set, not evidence a document is dead. Decide liveness by adjudicating
+    ``resource_id`` upstream in both directions; ``--adjudicate-all`` on the CLI
+    emits the SQL for every document, not just the actionable ones.
+
+    ``inert`` is unaffected by any of this: it keys on chunks being gone, so it
+    remains the live detector for zero-chunk dead documents.
     """
     if declared == 0 and owned == 0:
         return "empty"
@@ -112,8 +132,10 @@ async def audit_document_health(
             levels[doc_id].add(entry.get("access_level"))
             entry_org = entry.get("org_id")
             if entry_org:
-                # An entry carrying org_id was written by the metadata cascade,
-                # which only runs for a resource that exists upstream.
+                # Both writers now stamp org_id: ingestion via
+                # utils.build_metadata_entry, and the metadata cascade. So this
+                # marks "the entry has a complete shape", NOT "a cascade ran" and
+                # therefore NOT "a live upstream row exists" — see classify().
                 marked[doc_id] = True
                 if record_org and entry_org != record_org:
                     contaminated.append(hit["_id"])
@@ -188,10 +210,15 @@ async def audit_document_health(
         ],
     }
     if include_class:
+        # "all" spans every class, for adjudicating the whole workspace upstream
+        # rather than only the classes this module guesses are interesting.
+        rows = (
+            [row for klass in CLASSES for row in buckets.get(klass, [])]
+            if include_class == "all"
+            else buckets.get(include_class, [])
+        )
         result["class_listing"] = {
             "klass": include_class,
-            "documents": sorted(
-                buckets.get(include_class, []), key=lambda r: -r["owned"]
-            ),
+            "documents": sorted(rows, key=lambda r: -r["owned"]),
         }
     return result

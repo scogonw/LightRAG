@@ -16,6 +16,7 @@ from lightrag.utils import (
     Tokenizer,
     compute_mdhash_id,
     make_relation_chunk_key,
+    normalize_metadata_entries,
 )
 
 pytestmark = pytest.mark.offline
@@ -933,6 +934,61 @@ async def test_delete_succeeds_when_chunks_list_missing(tmp_path):
             )
             is not None
         )
+    finally:
+        await rag.finalize_storages()
+
+
+@pytest.mark.asyncio
+async def test_ingest_stamps_org_id_into_the_chunk_metadata_entry(tmp_path):
+    """Ingestion must write a COMPLETE entry, org_id included.
+
+    The query-side access check reads org_id from *inside* the entry, and the
+    health audit reads its presence as "this entry has a complete shape".
+    Ingestion used to omit it — writing only
+    ``{resource_id, knowledgebase_id, access_level}`` — so every freshly
+    ingested document was classed ``orphan`` and looked like it needed
+    adjudicating upstream when nothing was wrong with it.
+    """
+    rag = await _build_rag(tmp_path, "ingest_stamps_org_id", _deterministic_chunking)
+    try:
+        content = "org stamping document"
+        file_path = "org_stamp.txt"
+        metadata = {
+            "resource_id": "res-A",
+            "knowledgebase_id": "kb-A",
+            "access_level": "TEAM_MEMBERS",
+        }
+        # doc_id is hash(knowledgebase_id::file_path), not a content hash.
+        doc_id = compute_mdhash_id(f"kb-A::{file_path}", prefix="doc-")
+
+        await rag.apipeline_enqueue_documents(
+            input=content, file_paths=file_path, metadata=metadata, org_id="org-1"
+        )
+        await rag.apipeline_process_enqueue_documents()
+
+        status = await rag.doc_status.get_by_id(doc_id)
+        assert status is not None, "document was not ingested"
+        chunk_ids = status.get("chunks_list") or []
+        assert chunk_ids, "document produced no chunks"
+
+        for store_name, store in (("text_chunks", rag.text_chunks), ("chunks_vdb", rag.chunks_vdb)):
+            for chunk_id in chunk_ids:
+                record = await store.get_by_id(chunk_id)
+                assert record is not None, f"{store_name}: {chunk_id} missing"
+                entries = normalize_metadata_entries(record.get("metadata"))
+                mine = [e for e in entries if e.get("resource_id") == "res-A"]
+                assert mine, f"{store_name}: {chunk_id} has no entry for res-A"
+                entry = mine[0]
+                assert entry.get("org_id") == "org-1", (
+                    f"{store_name}: entry lacks org_id -> the audit would class "
+                    f"this fresh document as orphan"
+                )
+                # The rest of the entry must survive the stamping.
+                assert entry.get("knowledgebase_id") == "kb-A"
+                assert entry.get("access_level") == "TEAM_MEMBERS"
+                # Doc-status bookkeeping must never leak onto records.
+                assert "processing_start_time" not in entry
+                assert "processing_end_time" not in entry
     finally:
         await rag.finalize_storages()
 
