@@ -3514,6 +3514,13 @@ class LightRAG:
                     context=f"doc {doc_id} chunks_list",
                 )
             )
+            # Keep ``chunk_ids`` a set: the graph analysis below intersects it with
+            # ``set(graph_sources)``, which a list cannot do. Storage APIs, on the
+            # other hand, take a list — ``get_by_ids`` serialises its argument to
+            # JSON, and a set raises SerializationError that the OpenSearch backend
+            # swallows into ``[None] * len(ids)``. Materialise one ordered list here
+            # and use it for every storage call, so the two needs cannot drift apart.
+            ordered_chunk_ids = list(chunk_ids)
 
             if not chunk_ids:
                 logger.warning(f"No chunks found for document {doc_id}")
@@ -3601,7 +3608,7 @@ class LightRAG:
                 else:
                     try:
                         chunk_data_list = await self.text_chunks.get_by_ids(
-                            list(chunk_ids)
+                            ordered_chunk_ids
                         )
                         seen_cache_ids: set[str] = set(doc_llm_cache_ids)
                         for chunk_data in chunk_data_list:
@@ -3926,8 +3933,15 @@ class LightRAG:
 
                     shared_ids: list[str] = []
                     if doc_resource_id:
-                        stored_chunks = await self.text_chunks.get_by_ids(chunk_ids)
-                        for chunk_id, stored in zip(chunk_ids, stored_chunks):
+                        # ``ordered_chunk_ids``, not ``chunk_ids``: passing the set
+                        # makes get_by_ids raise SerializationError, which the
+                        # OpenSearch backend swallows into ``[None] * len(ids)`` —
+                        # every chunk then looks absent, ``shared_ids`` stays empty,
+                        # and the retention below silently deletes shared chunks.
+                        stored_chunks = await self.text_chunks.get_by_ids(
+                            ordered_chunk_ids
+                        )
+                        for chunk_id, stored in zip(ordered_chunk_ids, stored_chunks):
                             if stored is None:
                                 continue
                             _, unreferenced = remove_metadata_entry(
@@ -3937,7 +3951,9 @@ class LightRAG:
                                 shared_ids.append(chunk_id)
 
                     shared_set = set(shared_ids)
-                    exclusive_ids = [c for c in chunk_ids if c not in shared_set]
+                    exclusive_ids = [
+                        c for c in ordered_chunk_ids if c not in shared_set
+                    ]
 
                     if exclusive_ids:
                         await self.chunks_vdb.delete(exclusive_ids)

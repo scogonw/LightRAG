@@ -938,6 +938,105 @@ async def test_delete_succeeds_when_chunks_list_missing(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_delete_retains_chunk_shared_with_another_document(tmp_path):
+    """A chunk another live document still references must survive deletion.
+
+    Chunk ids are content hashes, so one record can belong to several documents.
+    ``adelete_by_doc_id`` withdraws only this document's metadata entry and
+    deletes a record outright once nothing else references it.
+
+    That branch is reached only when the document carries a ``resource_id`` AND
+    the chunk metadata records the sibling — which nothing else in this file
+    sets up, so it was never exercised. It was also silently broken in
+    production: a ``set`` was handed to ``get_by_ids``, whose OpenSearch
+    implementation swallowed the resulting SerializationError and answered
+    ``[None] * len(ids)``, i.e. "no such records", so every shared chunk was
+    treated as exclusive and destroyed.
+
+    The default JSON/nano storages accept a set happily, so this test makes
+    ``get_by_ids`` reject a non-list the way OpenSearch effectively does.
+    Without that, the test would pass with or without the fix and prove nothing.
+    """
+    rag = await _build_rag(
+        tmp_path, "delete_shared_chunk_retention", _deterministic_chunking
+    )
+    try:
+        doc_id = "doc-shared-retention"
+        shared_chunk = "chunk-shared-with-sibling"
+        exclusive_chunk = "chunk-exclusive-to-this-doc"
+
+        await _seed_delete_retry_state(
+            rag,
+            doc_id=doc_id,
+            status_chunk_ids=[shared_chunk, exclusive_chunk],
+            tracking_chunk_ids=[shared_chunk, exclusive_chunk],
+            chunk_owners={shared_chunk: doc_id, exclusive_chunk: doc_id},
+            metadata={"resource_id": "res-A"},
+        )
+
+        shared_record = await rag.text_chunks.get_by_id(shared_chunk)
+        exclusive_record = await rag.text_chunks.get_by_id(exclusive_chunk)
+        await rag.text_chunks.upsert(
+            {
+                # Referenced by this document AND a sibling in another KB.
+                shared_chunk: {
+                    **shared_record,
+                    "metadata": [
+                        {"resource_id": "res-A", "knowledgebase_id": "kb-A"},
+                        {"resource_id": "res-B", "knowledgebase_id": "kb-B"},
+                    ],
+                },
+                # Referenced only by this document.
+                exclusive_chunk: {
+                    **exclusive_record,
+                    "metadata": {"resource_id": "res-A", "knowledgebase_id": "kb-A"},
+                },
+            }
+        )
+
+        # Mirror OpenSearchKVStorage: a non-list body is unserialisable, the
+        # error is swallowed, and the caller is told the records do not exist.
+        original_get_by_ids = rag.text_chunks.get_by_ids
+
+        async def strict_get_by_ids(ids):
+            if not isinstance(ids, list):
+                return [None] * len(ids)
+            return await original_get_by_ids(ids)
+
+        rag.text_chunks.get_by_ids = strict_get_by_ids
+
+        # Default storages have no remove_metadata_for_ids, and lightrag reaches
+        # it via getattr — so retention silently no-ops unless we supply one.
+        withdrawals: list[tuple[list[str], str]] = []
+
+        async def remove_metadata_for_ids(self, record_ids, resource_id):
+            assert isinstance(record_ids, list), (
+                f"remove_metadata_for_ids got {type(record_ids).__name__}, not list"
+            )
+            withdrawals.append((list(record_ids), resource_id))
+            return {"updated": len(record_ids), "failures": 0, "not_found": 0}
+
+        rag.text_chunks.remove_metadata_for_ids = MethodType(
+            remove_metadata_for_ids, rag.text_chunks
+        )
+
+        result = await rag.adelete_by_doc_id(doc_id)
+        assert result.status == "success", result.message
+
+        assert await rag.text_chunks.get_by_id(shared_chunk) is not None, (
+            "a chunk still referenced by res-B was destroyed"
+        )
+        assert await rag.text_chunks.get_by_id(exclusive_chunk) is None, (
+            "a chunk referenced only by the deleted document should be removed"
+        )
+        assert withdrawals == [([shared_chunk], "res-A")], (
+            f"expected one withdrawal of res-A from the shared chunk, got {withdrawals}"
+        )
+    finally:
+        await rag.finalize_storages()
+
+
+@pytest.mark.asyncio
 async def test_delete_ignores_stale_graph_source_ids_when_tracking_exists(tmp_path):
     rag = await _build_rag(
         tmp_path, "delete_ignore_stale_graph_sources", _deterministic_chunking

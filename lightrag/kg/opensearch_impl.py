@@ -771,6 +771,15 @@ class OpenSearchKVStorage(BaseKVStorage):
 
     async def get_by_ids(self, ids: list[str]) -> list[dict[str, Any]]:
         """Get multiple documents by IDs, preserving input order."""
+        # Normalise before anything calls len() or serialises the body. A set,
+        # frozenset or dict_keys is not JSON-serialisable, so mget would raise
+        # SerializationError — an OpenSearchException, therefore caught below and
+        # returned as "none of these records exist". Callers acting on that answer
+        # (the deletion path's shared-chunk check) then destroy live data. delete()
+        # already normalises for the same reason; so does filter_keys.
+        ids = list(ids)
+        if not ids:
+            return []
         if not self._index_ready:
             return [None] * len(ids)
         try:
@@ -1220,6 +1229,11 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
 
     async def get_by_ids(self, ids: list[str]) -> list[dict[str, Any]]:
         """Get multiple document status records by IDs."""
+        # See OpenSearchKVStorage.get_by_ids: a non-list iterable would raise
+        # SerializationError and be swallowed as "no such record".
+        ids = list(ids)
+        if not ids:
+            return []
         if not self._index_ready:
             return [None] * len(ids)
         try:
@@ -3777,6 +3791,9 @@ class OpenSearchVectorDBStorage(BaseVectorStorage):
 
     async def get_by_ids(self, ids: list[str]) -> list[dict[str, Any]]:
         """Get multiple vector documents by IDs, preserving order."""
+        # See OpenSearchKVStorage.get_by_ids: a non-list iterable would raise
+        # SerializationError and be swallowed as "no such record".
+        ids = list(ids)
         if not ids:
             return []
         if not self._index_ready:
@@ -3799,6 +3816,9 @@ class OpenSearchVectorDBStorage(BaseVectorStorage):
 
     async def get_vectors_by_ids(self, ids: list[str]) -> dict[str, list[float]]:
         """Get only the vector embeddings for given IDs."""
+        # See OpenSearchKVStorage.get_by_ids: a non-list iterable would raise
+        # SerializationError and be swallowed as "no such record".
+        ids = list(ids)
         if not ids:
             return {}
         if not self._index_ready:

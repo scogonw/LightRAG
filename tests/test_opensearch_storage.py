@@ -379,6 +379,64 @@ class TestKVStorage:
             mock_client.get.assert_not_awaited()
 
     @pytest.mark.asyncio
+    async def test_get_by_ids_normalizes_non_list_iterables(
+        self, global_config, embed_func, mock_client
+    ):
+        """A non-list iterable must never reach mget.
+
+        A set is not JSON-serialisable, so opensearch-py raises
+        SerializationError — which subclasses OpenSearchException and is
+        therefore caught by this method's own handler and turned into
+        ``[None] * len(ids)``, indistinguishable from "these records do not
+        exist". The deletion path's shared-chunk check believes that answer and
+        deletes chunks that other live documents still reference.
+
+        The fake serialises the body exactly as the real transport does, so this
+        test fails if the argument arrives un-normalised. A fake that merely
+        accepts the argument would pass either way and prove nothing.
+        """
+        from opensearchpy.serializer import JSONSerializer
+
+        serializer = JSONSerializer()
+        seen_bodies = []
+
+        async def fake_mget(index, body, **kwargs):
+            serializer.dumps(body)  # raises SerializationError on a set
+            seen_bodies.append(body)
+            return {
+                "docs": [
+                    {"_id": i, "found": True, "_source": {"content": i}}
+                    for i in body["ids"]
+                ]
+            }
+
+        mock_client.mget = AsyncMock(side_effect=fake_mget)
+        with patch.object(ClientManager, "get_client", return_value=mock_client):
+            s = self._make(global_config, embed_func)
+            await s.initialize()
+            result = await s.get_by_ids({"a", "b"})
+
+        assert seen_bodies, "mget was never reached — the call failed before it"
+        assert isinstance(seen_bodies[0]["ids"], list)
+        assert all(r is not None for r in result), (
+            "get_by_ids returned None entries: a serialisation failure was "
+            "swallowed into a 'no such record' answer"
+        )
+        assert {r["content"] for r in result} == {"a", "b"}
+
+    @pytest.mark.asyncio
+    async def test_get_by_ids_empty_short_circuits(
+        self, global_config, embed_func, mock_client
+    ):
+        """An empty id collection must not cost a round trip."""
+        mock_client.mget = AsyncMock()
+        with patch.object(ClientManager, "get_client", return_value=mock_client):
+            s = self._make(global_config, embed_func)
+            await s.initialize()
+            assert await s.get_by_ids([]) == []
+            mock_client.mget.assert_not_awaited()
+
+    @pytest.mark.asyncio
     async def test_get_by_ids_preserves_order(
         self, global_config, embed_func, mock_client
     ):
