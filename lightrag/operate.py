@@ -5,6 +5,7 @@ from pathlib import Path
 import asyncio
 import json
 import json_repair
+import re
 from typing import Any, AsyncIterator, overload, Literal
 from collections import Counter, defaultdict
 
@@ -330,6 +331,180 @@ def chunking_by_token_size(
                     "chunk_order_index": index,
                 }
             )
+    return results
+
+
+_TABLE_ROW_RE = re.compile(r"^\s*\|")
+_TABLE_SEPARATOR_RE = re.compile(r"^\s*\|?(\s*:?-{3,}:?\s*\|)+\s*(:?-{3,}:?\s*)?$")
+# A header taller than this is not worth repeating on every piece of its table.
+_TABLE_HEADER_ROWS_MAX = 4
+
+
+def _split_markdown_tables(content: str) -> list[tuple[bool, str]]:
+    """Split content into (is_table, text) segments; a table is two or more consecutive `|` lines."""
+    segments: list[tuple[bool, str]] = []
+    lines = content.split("\n")
+    text_lines: list[str] = []
+    i = 0
+    while i < len(lines):
+        if not _TABLE_ROW_RE.match(lines[i]):
+            text_lines.append(lines[i])
+            i += 1
+            continue
+        end = i
+        while end < len(lines) and _TABLE_ROW_RE.match(lines[end]):
+            end += 1
+        if end - i < 2:
+            text_lines.extend(lines[i:end])
+        else:
+            if text_lines:
+                segments.append((False, "\n".join(text_lines)))
+                text_lines = []
+            segments.append((True, "\n".join(lines[i:end])))
+        i = end
+    if text_lines:
+        segments.append((False, "\n".join(text_lines)))
+    return segments
+
+
+def _split_markdown_table(
+    tokenizer: Tokenizer,
+    table: str,
+    chunk_overlap_token_size: int,
+    chunk_token_size: int,
+) -> list[str]:
+    """Split a table on row boundaries, repeating its header rows on every piece.
+
+    A piece without its header is a row of bare numbers: the reader cannot tell which period
+    or entity each column belongs to, and picks the wrong one.
+    """
+    if len(tokenizer.encode(table)) <= chunk_token_size:
+        return [table]
+
+    rows = table.split("\n")
+    header: list[str] = []
+    for index, row in enumerate(rows[:_TABLE_HEADER_ROWS_MAX]):
+        if _TABLE_SEPARATOR_RE.match(row):
+            header = rows[: index + 1]
+            break
+    header_tokens = len(tokenizer.encode("\n".join(header))) if header else 0
+    if header_tokens > chunk_token_size // 2:
+        header, header_tokens = [], 0
+    body = rows[len(header) :]
+
+    pieces: list[str] = []
+    current: list[str] = []
+    current_tokens = header_tokens
+    for row in body:
+        row_tokens = len(tokenizer.encode(row)) + 1
+        if current and current_tokens + row_tokens > chunk_token_size:
+            pieces.append("\n".join(header + current))
+            current, current_tokens = [], header_tokens
+        if header_tokens + row_tokens > chunk_token_size:
+            # A single row too large to sit under its header: fall back to token windows.
+            pieces.extend(
+                chunk["content"]
+                for chunk in chunking_by_token_size(
+                    tokenizer,
+                    row,
+                    None,
+                    False,
+                    chunk_overlap_token_size,
+                    chunk_token_size,
+                )
+            )
+            continue
+        current.append(row)
+        current_tokens += row_tokens
+    if current:
+        pieces.append("\n".join(header + current))
+    return pieces
+
+
+def chunking_by_token_size_table_aware(
+    tokenizer: Tokenizer,
+    content: str,
+    split_by_character: str | None = None,
+    split_by_character_only: bool = False,
+    chunk_overlap_token_size: int = 100,
+    chunk_token_size: int = 1200,
+) -> list[dict[str, Any]]:
+    """Token-size chunking that never cuts a markdown table mid-row or away from its header.
+
+    Parsed financial statements are mostly tables. Fixed token windows cut them at arbitrary
+    points, so a later chunk holds rows like `| Paid-up Equity Share Capital | 43,570 | 43,380 |`
+    with the column dates left behind in an earlier chunk.
+
+    Tables that fit are kept whole (starting a new chunk rather than straddling two); larger
+    tables are split on row boundaries with the header repeated. Text between tables is
+    windowed exactly as `chunking_by_token_size` does. Content without tables, and callers that
+    ask for character splitting, get `chunking_by_token_size` unchanged.
+    """
+    if split_by_character:
+        return chunking_by_token_size(
+            tokenizer,
+            content,
+            split_by_character,
+            split_by_character_only,
+            chunk_overlap_token_size,
+            chunk_token_size,
+        )
+
+    segments = _split_markdown_tables(content)
+    if not any(is_table for is_table, _ in segments):
+        return chunking_by_token_size(
+            tokenizer, content, None, False, chunk_overlap_token_size, chunk_token_size
+        )
+
+    units: list[str] = []
+    for is_table, text in segments:
+        if not text.strip():
+            continue
+        if is_table:
+            units.extend(
+                _split_markdown_table(
+                    tokenizer, text, chunk_overlap_token_size, chunk_token_size
+                )
+            )
+        elif len(tokenizer.encode(text)) <= chunk_token_size:
+            units.append(text.strip())
+        else:
+            units.extend(
+                chunk["content"]
+                for chunk in chunking_by_token_size(
+                    tokenizer,
+                    text,
+                    None,
+                    False,
+                    chunk_overlap_token_size,
+                    chunk_token_size,
+                )
+            )
+
+    chunks: list[str] = []
+    current = ""
+    for unit in units:
+        candidate = f"{current}\n\n{unit}" if current else unit
+        if current and len(tokenizer.encode(candidate)) > chunk_token_size:
+            chunks.append(current)
+            current = unit
+        else:
+            current = candidate
+    if current:
+        chunks.append(current)
+
+    results: list[dict[str, Any]] = []
+    for chunk in chunks:
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        results.append(
+            {
+                "tokens": len(tokenizer.encode(chunk)),
+                "content": chunk,
+                "chunk_order_index": len(results),
+            }
+        )
     return results
 
 
