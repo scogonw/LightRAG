@@ -89,7 +89,7 @@ from lightrag.base import (
 )
 from lightrag.namespace import NameSpace
 from lightrag.operate import (
-    chunking_by_token_size,
+    chunking_by_token_size_table_aware,
     extract_entities,
     merge_nodes_and_edges,
     kg_query,
@@ -342,7 +342,7 @@ class LightRAG:
             int,
         ],
         Union[List[Dict[str, Any]], Awaitable[List[Dict[str, Any]]]],
-    ] = field(default_factory=lambda: chunking_by_token_size)
+    ] = field(default_factory=lambda: chunking_by_token_size_table_aware)
     """
     Custom chunking function for splitting text into chunks before processing.
 
@@ -364,7 +364,8 @@ class LightRAG:
         - `content` (str): The text content of the chunk.
         - `chunk_order_index` (int): Zero-based index indicating the chunk's order in the document.
 
-    Defaults to `chunking_by_token_size` if not specified.
+    Defaults to `chunking_by_token_size_table_aware` (`chunking_by_token_size`, except that markdown
+    tables are split only on row boundaries with their header rows repeated).
     """
 
     # Embedding
