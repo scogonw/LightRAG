@@ -4,6 +4,7 @@ import { errorMessage } from '@/lib/utils'
 import { useSettingsStore } from '@/stores/settings'
 import { useAuthStore } from '@/stores/state'
 import { navigationService } from '@/services/navigation'
+import type { DeletionJobStatus } from './deletionJob'
 
 // Types
 export type LightragNodeType = {
@@ -181,6 +182,7 @@ export type DeleteDocResponse = {
   status: 'deletion_started' | 'busy' | 'not_allowed'
   message: string
   doc_id: string
+  job_id?: string | null
 }
 
 export type DocStatus = 'pending' | 'processing' | 'preprocessed' | 'processed' | 'failed'
@@ -930,6 +932,14 @@ export const deleteDocuments = async (
   const response = await axiosInstance.delete('/documents/delete_document', {
     data: { doc_ids: docIds, delete_file: deleteFile, delete_llm_cache: deleteLLMCache }
   })
+  return response.data
+}
+
+export const getDeletionJob = async (jobId: string): Promise<DeletionJobStatus> => {
+  const response = await axiosInstance.get<DeletionJobStatus>(
+    `/documents/deletion_jobs/${encodeURIComponent(jobId)}`,
+    { timeout: 10_000 }
+  )
   return response.data
 }
 

@@ -1435,13 +1435,7 @@ async def test_pipeline_cancellation_repairs_placeholder_file_path_for_queued_do
 
 @pytest.mark.asyncio
 async def test_delete_doc_entries_guard_prevents_zombie_record(tmp_path, monkeypatch):
-    """When doc_status.delete fails, the guard must not re-create a zombie record.
-
-    The exception handler skips _update_delete_retry_state when deletion_stage is
-    "delete_doc_entries". doc_status.delete runs first, so full_docs is still intact
-    on failure. This test confirms: (a) the result is status="fail", and (b) the
-    exception handler does not upsert a new record with deletion_failed=True.
-    """
+    """An ambiguous status delete must never recreate a removed record."""
     rag = await _build_rag(
         tmp_path, "delete_doc_entries_guard", _deterministic_chunking
     )
@@ -1458,11 +1452,8 @@ async def test_delete_doc_entries_guard_prevents_zombie_record(tmp_path, monkeyp
 
         original_delete = rag.doc_status.delete
 
-        call_count = 0
-
         async def fail_doc_status_delete(ids):
-            nonlocal call_count
-            call_count += 1
+            await original_delete(ids)
             raise RuntimeError("doc_status delete fail sentinel")
 
         monkeypatch.setattr(rag.doc_status, "delete", fail_doc_status_delete)
@@ -1473,18 +1464,45 @@ async def test_delete_doc_entries_guard_prevents_zombie_record(tmp_path, monkeyp
 
         assert result.status == "fail"
         assert "doc_status delete fail sentinel" in result.message
-        # doc_status.delete is now called first (before full_docs.delete). The patch
-        # makes it fail, so doc_status still exists. The guard must not call
-        # _update_delete_retry_state (which would upsert the record with
-        # deletion_failed=True) when deletion_stage is "delete_doc_entries".
-        status_record = await rag.doc_status.get_by_id(doc_id)
-        assert (
-            status_record is not None
-        ), "doc_status should still exist (delete failed)"
-        metadata = status_record.get("metadata", {})
-        assert not metadata.get(
-            "deletion_failed"
-        ), "guard failed: zombie record written with deletion_failed=True"
+        assert await rag.doc_status.get_by_id(doc_id) is None
+        assert await rag.full_docs.get_by_id(doc_id) is None
+    finally:
+        await rag.finalize_storages()
+
+
+@pytest.mark.asyncio
+async def test_delete_retries_document_entries_after_partial_cleanup(
+    tmp_path, monkeypatch
+):
+    rag = await _build_rag(tmp_path, "retry_doc_entries", _deterministic_chunking)
+    try:
+        doc_id = "doc-retry-entries"
+        chunk_id = "chunk-retry-entries"
+        await _seed_delete_retry_state(
+            rag,
+            doc_id=doc_id,
+            status_chunk_ids=[chunk_id],
+            tracking_chunk_ids=[chunk_id],
+            chunk_owners={chunk_id: doc_id},
+        )
+
+        async def silent_delete_failure(ids):
+            return None
+
+        with monkeypatch.context() as patch:
+            patch.setattr(rag.full_docs, "delete", silent_delete_failure)
+            result = await rag.adelete_by_doc_id(doc_id)
+
+        assert result.status == "fail"
+        assert "content still exists" in result.message
+        assert await rag.full_docs.get_by_id(doc_id) is not None
+        assert await rag.text_chunks.get_by_id(chunk_id) is None
+        status = await rag.doc_status.get_by_id(doc_id)
+        assert status["chunks_list"] == []
+
+        assert (await rag.adelete_by_doc_id(doc_id)).status == "success"
+        assert await rag.full_docs.get_by_id(doc_id) is None
+        assert await rag.doc_status.get_by_id(doc_id) is None
     finally:
         await rag.finalize_storages()
 

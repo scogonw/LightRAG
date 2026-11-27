@@ -21,12 +21,18 @@ from fastapi import (
     Header,
     HTTPException,
     Query,
+    Response,
     UploadFile,
 )
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from lightrag import LightRAG
-from lightrag.base import DeletionResult, DocProcessingStatus, DocStatus
+from lightrag.base import (
+    DeletionResult,
+    DocProcessingStatus,
+    DocStatus,
+    strict_storage_errors,
+)
 from lightrag.utils import (
     DOC_STATUS_ONLY_METADATA_KEYS,
     build_metadata_entry,
@@ -2358,10 +2364,20 @@ async def cascade_metadata_to_graph(
         return failed
 
 
+_MAX_DELETION_JOBS = 100
+
+
+class DeletionJobStatus(BaseModel):
+    status: Literal["running", "completed", "failed"]
+    deleted_count: int = 0
+    failed_count: int = 0
+
+
 async def background_delete_documents(
     rag: LightRAG,
     doc_manager: DocumentManager,
-    doc_ids: List[str],
+    doc_ids: list[str],
+    job_id: str,
     delete_file: bool = False,
     delete_llm_cache: bool = False,
 ):
@@ -2377,15 +2393,18 @@ async def background_delete_documents(
     pipeline_status_lock = get_namespace_lock(
         "pipeline_status", workspace=rag.workspace
     )
+    deletion_jobs = await get_namespace_data("deletion_jobs", workspace=rag.workspace)
 
     total_docs = len(doc_ids)
-    successful_deletions = []
-    failed_deletions = []
+    deleted_count = 0
 
     # Double-check pipeline status before proceeding
     async with pipeline_status_lock:
         if pipeline_status.get("busy", False):
             logger.warning("Error: Unexpected pipeline busy state, aborting deletion.")
+            deletion_jobs[job_id] = DeletionJobStatus(
+                status="failed", failed_count=total_docs
+            ).model_dump()
             return  # Abort deletion operation
 
         # Set pipeline status to busy for deletion
@@ -2414,14 +2433,10 @@ async def background_delete_documents(
             # Check for cancellation at the start of each document deletion
             async with pipeline_status_lock:
                 if pipeline_status.get("cancellation_requested", False):
-                    cancel_msg = f"Deletion cancelled by user at document {i}/{total_docs}. {len(successful_deletions)} deleted, {total_docs - i + 1} remaining."
+                    cancel_msg = f"Deletion cancelled by user at document {i}/{total_docs}. {deleted_count} deleted, {total_docs - i + 1} remaining."
                     logger.info(cancel_msg)
                     pipeline_status["latest_message"] = cancel_msg
                     pipeline_status["history_messages"].append(cancel_msg)
-                    # Add remaining documents to failed list with cancellation reason
-                    failed_deletions.extend(
-                        doc_ids[i - 1 :]
-                    )  # i-1 because enumerate starts at 1
                     break  # Exit the loop, remaining documents unchanged
 
                 start_msg = f"Deleting document {i}/{total_docs}: {doc_id}"
@@ -2439,7 +2454,7 @@ async def background_delete_documents(
                     getattr(result, "file_path", "-") if "result" in locals() else "-"
                 )
                 if result.status == "success":
-                    successful_deletions.append(doc_id)
+                    deleted_count += 1
                     success_msg = (
                         f"Document deleted {i}/{total_docs}: {doc_id}[{file_path}]"
                     )
@@ -2560,7 +2575,6 @@ async def background_delete_documents(
                             pipeline_status["latest_message"] = no_file_msg
                             pipeline_status["history_messages"].append(no_file_msg)
                 else:
-                    failed_deletions.append(doc_id)
                     error_msg = f"Failed to delete {i}/{total_docs}: {doc_id}[{file_path}] - {result.message}"
                     logger.error(error_msg)
                     async with pipeline_status_lock:
@@ -2568,7 +2582,6 @@ async def background_delete_documents(
                         pipeline_status["history_messages"].append(error_msg)
 
             except Exception as e:
-                failed_deletions.append(doc_id)
                 error_msg = f"Error deleting document {i}/{total_docs}: {doc_id}[{file_path}] - {str(e)}"
                 logger.error(error_msg)
                 logger.error(traceback.format_exc())
@@ -2590,7 +2603,13 @@ async def background_delete_documents(
             pipeline_status["cancellation_requested"] = (
                 False  # Always reset cancellation flag
             )
-            completion_msg = f"Deletion completed: {len(successful_deletions)} successful, {len(failed_deletions)} failed"
+            failed_count = total_docs - deleted_count
+            deletion_jobs[job_id] = DeletionJobStatus(
+                status="failed" if failed_count else "completed",
+                deleted_count=deleted_count,
+                failed_count=failed_count,
+            ).model_dump()
+            completion_msg = f"Deletion completed: {deleted_count} successful, {failed_count} failed"
             pipeline_status["latest_message"] = completion_msg
             pipeline_status["history_messages"].append(completion_msg)
 
@@ -3444,6 +3463,9 @@ def create_document_routes(
         )
         message: str = Field(description="Message describing the operation result")
         doc_id: str = Field(description="The ID of the document to delete")
+        job_id: str | None = Field(
+            default=None, description="Job ID for checking the background result"
+        )
 
     @router.delete(
         "/delete_document",
@@ -3492,6 +3514,9 @@ def create_document_routes(
             pipeline_status_lock = get_namespace_lock(
                 "pipeline_status", workspace=rag.workspace
             )
+            deletion_jobs = await get_namespace_data(
+                "deletion_jobs", workspace=rag.workspace
+            )
 
             # Check if pipeline is busy with proper lock
             async with pipeline_status_lock:
@@ -3501,6 +3526,24 @@ def create_document_routes(
                         message="Cannot delete documents while pipeline is busy",
                         doc_id=", ".join(doc_ids),
                     )
+                if len(deletion_jobs) >= _MAX_DELETION_JOBS:
+                    oldest = next(
+                        (
+                            key
+                            for key, job in deletion_jobs.items()
+                            if job["status"] != "running"
+                        ),
+                        None,
+                    )
+                    if oldest is None:
+                        return DeleteDocByIdResponse(
+                            status="busy",
+                            message="Too many deletion jobs are waiting to run",
+                            doc_id=", ".join(doc_ids),
+                        )
+                    del deletion_jobs[oldest]
+                job_id = uuid4().hex
+                deletion_jobs[job_id] = DeletionJobStatus(status="running").model_dump()
 
             # Add deletion task to background tasks
             background_tasks.add_task(
@@ -3508,6 +3551,7 @@ def create_document_routes(
                 rag,
                 doc_manager,
                 doc_ids,
+                job_id,
                 delete_request.delete_file,
                 delete_request.delete_llm_cache,
             )
@@ -3516,6 +3560,7 @@ def create_document_routes(
                 status="deletion_started",
                 message=f"Document deletion for {len(doc_ids)} documents has been initiated. Processing will continue in background.",
                 doc_id=", ".join(doc_ids),
+                job_id=job_id,
             )
 
         except Exception as e:
@@ -3523,6 +3568,22 @@ def create_document_routes(
             logger.error(error_msg)
             logger.error(traceback.format_exc())
             raise HTTPException(status_code=500, detail=error_msg)
+
+    @router.get(
+        "/deletion_jobs/{job_id}",
+        response_model=DeletionJobStatus,
+        dependencies=[Depends(combined_auth)],
+        summary="Get the result of a background document deletion.",
+    )
+    async def get_deletion_job(job_id: str, response: Response) -> DeletionJobStatus:
+        from lightrag.kg.shared_storage import get_namespace_data
+
+        jobs = await get_namespace_data("deletion_jobs", workspace=rag.workspace)
+        job = jobs.get(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="Deletion job is unavailable")
+        response.headers["Cache-Control"] = "no-store"
+        return DeletionJobStatus.model_validate(job)
 
     @router.patch(
         "/{doc_id}/metadata",
@@ -3845,8 +3906,9 @@ def create_document_routes(
             CheckDeletionStatusResponse: Whether the document has been deleted.
 
         Raises:
-            HTTPException: 500 if an unexpected error occurs.
+            HTTPException: 503 if the document status cannot be checked.
         """
+        token = strict_storage_errors.set(True)
         try:
             existing_doc = await rag.doc_status.get_by_id(doc_id)
             return CheckDeletionStatusResponse(
@@ -3855,8 +3917,11 @@ def create_document_routes(
             )
         except Exception as e:
             logger.error(f"Error checking deletion status for {doc_id}: {str(e)}")
-            logger.error(traceback.format_exc())
-            raise HTTPException(status_code=500, detail=str(e))
+            raise HTTPException(
+                status_code=503, detail="Document storage is unavailable"
+            ) from e
+        finally:
+            strict_storage_errors.reset(token)
 
     @router.post(
         "/clear_cache",

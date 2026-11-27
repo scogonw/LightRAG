@@ -31,7 +31,7 @@ from lightrag.kg.opensearch_impl import (
     _summarize_bulk_update_errors,
     _BULK_UPDATE_RETRY_ON_CONFLICT,
 )
-from lightrag.base import DocStatus, DocProcessingStatus
+from lightrag.base import DocStatus, DocProcessingStatus, strict_storage_errors
 
 pytestmark = pytest.mark.offline
 
@@ -377,6 +377,55 @@ class TestKVStorage:
             await s.initialize()
             assert await s.get_by_id("missing") is None
             mock_client.get.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_get_by_ids_batches_large_reads_in_order(
+        self, global_config, embed_func, mock_client
+    ):
+        ids = [f"chunk-{index}" for index in range(205)]
+
+        async def fake_mget(*, index, body):
+            return {
+                "docs": [
+                    {"_id": key, "found": False}
+                    if key == ids[100]
+                    else {"_id": key, "found": True, "_source": {"content": key}}
+                    for key in reversed(body["ids"])
+                ]
+            }
+
+        mock_client.mget.side_effect = fake_mget
+        with patch.object(ClientManager, "get_client", return_value=mock_client):
+            store = self._make(global_config, embed_func)
+            await store.initialize()
+            records = await store.get_by_ids(ids)
+
+        assert [
+            len(call.kwargs["body"]["ids"]) for call in mock_client.mget.await_args_list
+        ] == [100, 100, 5]
+        assert [record and record["_id"] for record in records] == [
+            *ids[:100],
+            None,
+            *ids[101:],
+        ]
+
+    @pytest.mark.asyncio
+    async def test_strict_multi_get_does_not_return_partial_records(
+        self, global_config, embed_func, mock_client
+    ):
+        mock_client.mget.side_effect = [
+            {"docs": [{"_id": "chunk", "found": False}] * 100},
+            {"docs": [{"_id": "chunk-100", "error": {"type": "security_exception"}}]},
+        ]
+        with patch.object(ClientManager, "get_client", return_value=mock_client):
+            store = self._make(global_config, embed_func)
+            await store.initialize()
+            token = strict_storage_errors.set(True)
+            try:
+                with pytest.raises(OpenSearchException, match="failed mget results"):
+                    await store.get_by_ids([f"chunk-{index}" for index in range(101)])
+            finally:
+                strict_storage_errors.reset(token)
 
     @pytest.mark.asyncio
     async def test_get_by_ids_normalizes_non_list_iterables(
@@ -731,6 +780,50 @@ class TestDocStatusStorage:
             await s.initialize()
             assert await s.get_by_id("missing") is None
             mock_client.get.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_strict_status_lookup_rejects_a_failed_mget_item(
+        self, global_config, embed_func, mock_client
+    ):
+        mock_client.mget.return_value = {
+            "docs": [{"_id": "document", "error": {"type": "security_exception"}}]
+        }
+        with patch.object(ClientManager, "get_client", return_value=mock_client):
+            store = self._make(global_config, embed_func)
+            await store.initialize()
+            assert await store.get_by_id("document") is None
+
+            token = strict_storage_errors.set(True)
+            try:
+                with pytest.raises(OpenSearchException, match="failed mget results"):
+                    await store.get_by_id("document")
+            finally:
+                strict_storage_errors.reset(token)
+
+    @pytest.mark.asyncio
+    async def test_delete_rejects_failed_status_bulk_items(
+        self, global_config, embed_func, mock_client
+    ):
+        with (
+            patch.object(ClientManager, "get_client", return_value=mock_client),
+            patch("lightrag.kg.opensearch_impl.helpers.async_bulk") as bulk,
+        ):
+            store = self._make(global_config, embed_func)
+            await store.initialize()
+            bulk.return_value = (0, [{"delete": {"status": 401}}])
+            with pytest.raises(OpenSearchException, match="401"):
+                await store.delete(["document"])
+
+            bulk.return_value = (
+                0,
+                [{"delete": {"status": 404, "result": "not_found"}}],
+            )
+            await store.delete(["document"])
+            assert bulk.call_args.kwargs["refresh"] == "wait_for"
+
+            bulk.side_effect = OpenSearchException("request authentication failed")
+            with pytest.raises(OpenSearchException, match="authentication failed"):
+                await store.delete(["document"])
 
     @pytest.mark.asyncio
     async def test_upsert_sets_chunks_list_default(

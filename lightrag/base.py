@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from contextvars import ContextVar
 from enum import Enum
 import os
 from dotenv import load_dotenv
@@ -36,6 +37,11 @@ from .constants import (
 # allows to use different .env file for each lightrag instance
 # the OS environment variables take precedence over the .env file
 load_dotenv(dotenv_path=".env", override=False)
+
+# A delete must distinguish an absent record from an unavailable storage read.
+strict_storage_errors: ContextVar[bool] = ContextVar(
+    "strict_storage_errors", default=False
+)
 
 
 class OllamaServerInfos:
