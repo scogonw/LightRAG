@@ -86,6 +86,7 @@ from lightrag.base import (
     DeletionResult,
     OllamaServerInfos,
     QueryResult,
+    strict_storage_errors,
 )
 from lightrag.namespace import NameSpace
 from lightrag.operate import (
@@ -3220,9 +3221,22 @@ class LightRAG:
             "metadata": updated_metadata,
             "error_msg": error_message if failed else "",
         }
+        if deletion_stage == "delete_doc_entries" and not failed:
+            # Chunk and graph cleanup is done. Retain the status and cache IDs
+            # so retries can finish deleting the document entries.
+            updated_status_data.update(chunks_list=[], chunks_count=0)
 
         await self.doc_status.upsert({doc_id: updated_status_data})
         return updated_status_data
+
+    async def _delete_document_entries(self, doc_id: str) -> None:
+        # Keep the status record as the retry anchor until content is gone.
+        await self.full_docs.delete([doc_id])
+        if await self.full_docs.get_by_id(doc_id) is not None:
+            raise RuntimeError(f"Document content still exists after delete: {doc_id}")
+        await self.doc_status.delete([doc_id])
+        if await self.doc_status.get_by_id(doc_id) is not None:
+            raise RuntimeError(f"Document status still exists after delete: {doc_id}")
 
     async def _get_existing_llm_cache_ids(self, cache_ids: list[str]) -> list[str]:
         """Return cache IDs that still exist in cache storage.
@@ -3458,6 +3472,7 @@ class LightRAG:
             pipeline_status["latest_message"] = log_message
             pipeline_status["history_messages"].append(log_message)
 
+        strict_errors_token = strict_storage_errors.set(True)
         try:
             # 1. Get the document status and related data
             doc_status_data = await self.doc_status.get_by_id(doc_id)
@@ -3575,8 +3590,7 @@ class LightRAG:
                 try:
                     deletion_stage = "delete_doc_entries"
                     in_final_delete_stage = True
-                    await self.doc_status.delete([doc_id])
-                    await self.full_docs.delete([doc_id])
+                    await self._delete_document_entries(doc_id)
                 except Exception as e:
                     logger.error(
                         f"Failed to delete document {doc_id} with no chunks: {e}"
@@ -3944,11 +3958,8 @@ class LightRAG:
 
                     shared_ids: list[str] = []
                     if doc_resource_id:
-                        # ``ordered_chunk_ids``, not ``chunk_ids``: passing the set
-                        # makes get_by_ids raise SerializationError, which the
-                        # OpenSearch backend swallows into ``[None] * len(ids)`` —
-                        # every chunk then looks absent, ``shared_ids`` stays empty,
-                        # and the retention below silently deletes shared chunks.
+                        # Storage reads preserve order so the ownership check
+                        # can pair each chunk record with its requested ID.
                         stored_chunks = await self.text_chunks.get_by_ids(
                             ordered_chunk_ids
                         )
@@ -3974,7 +3985,11 @@ class LightRAG:
                         for store in (self.chunks_vdb, self.text_chunks):
                             remover = getattr(store, "remove_metadata_for_ids", None)
                             if remover is not None:
-                                await remover(shared_ids, doc_resource_id)
+                                result = await remover(shared_ids, doc_resource_id)
+                                if result["failures"]:
+                                    raise RuntimeError(
+                                        f"Failed to remove metadata from {result['failures']} shared chunks"
+                                    )
                         logger.info(
                             f"Retained {len(shared_ids)} chunk(s) still referenced "
                             f"by other documents; withdrew this document's entry"
@@ -4223,9 +4238,17 @@ class LightRAG:
             # 11. Hard-delete document status and full doc content.
             try:
                 deletion_stage = "delete_doc_entries"
+                # A retry after partial final cleanup can skip the graph and
+                # chunk stages even if the original full document is gone.
+                doc_status_data = await self._update_delete_retry_state(
+                    doc_id,
+                    doc_status_data,
+                    deletion_stage=deletion_stage,
+                    doc_llm_cache_ids=doc_llm_cache_ids,
+                    failed=False,
+                )
                 in_final_delete_stage = True
-                await self.doc_status.delete([doc_id])
-                await self.full_docs.delete([doc_id])
+                await self._delete_document_entries(doc_id)
             except Exception as e:
                 logger.error(f"Failed to delete document and status: {e}")
                 raise Exception(f"Failed to delete document and status: {e}") from e
@@ -4278,6 +4301,7 @@ class LightRAG:
             )
 
         finally:
+            strict_storage_errors.reset(strict_errors_token)
             # ALWAYS ensure persistence if any deletion operations were started
             if deletion_operations_started:
                 try:

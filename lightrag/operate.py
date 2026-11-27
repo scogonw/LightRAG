@@ -52,6 +52,7 @@ from lightrag.base import (
     QueryParam,
     QueryResult,
     QueryContextResult,
+    strict_storage_errors,
 )
 from lightrag.prompt import PROMPTS
 from lightrag.constants import (
@@ -1097,6 +1098,8 @@ async def rebuild_knowledge_from_chunks(
                         async with pipeline_status_lock:
                             pipeline_status["latest_message"] = status_message
                             pipeline_status["history_messages"].append(status_message)
+                    if strict_storage_errors.get():
+                        raise
 
     async def _locked_rebuild_relationship(src, tgt, chunk_ids):
         nonlocal rebuilt_relationships_count, failed_relationships_count
@@ -1135,6 +1138,8 @@ async def rebuild_knowledge_from_chunks(
                         async with pipeline_status_lock:
                             pipeline_status["latest_message"] = status_message
                             pipeline_status["history_messages"].append(status_message)
+                    if strict_storage_errors.get():
+                        raise
 
     # Create tasks for parallel processing
     tasks = []
@@ -1943,6 +1948,8 @@ async def _rebuild_single_relationship(
             logger.debug(
                 f"Could not delete old relationship vector records {rel_vdb_id}, {rel_vdb_id_reverse}: {e}"
             )
+            if strict_storage_errors.get():
+                raise
 
         # Insert new vector record
         rel_content = f"{combined_keywords}\t{src}\n{tgt}\n{final_description}"

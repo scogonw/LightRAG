@@ -27,6 +27,7 @@ from ..base import (
     DocProcessingStatus,
     DocStatus,
     DocStatusStorage,
+    strict_storage_errors,
 )
 from ..utils import (
     logger,
@@ -612,13 +613,43 @@ async def _mget_optional_doc(
     if source_includes is not None:
         body = {"docs": [{"_id": doc_id, "_source": source_includes}]}
     response = await client.mget(index=index_name, body=body)
-    docs = response.get("docs", [])
+    docs = _mget_documents(response, 1)
     if not docs:
         return None
     doc = docs[0]
     if not doc.get("found"):
         return None
     return doc
+
+
+_MGET_BATCH_SIZE = 100
+
+
+def _mget_documents(response: dict, expected_count: int) -> list[dict]:
+    docs = response.get("docs", [])
+    if strict_storage_errors.get() and (
+        len(docs) != expected_count or any("error" in doc for doc in docs)
+    ):
+        raise OpenSearchException("OpenSearch returned incomplete or failed mget results")
+    return docs
+
+
+def _check_bulk_delete_errors(errors: list[dict], index_name: str) -> None:
+    # An already-deleted document is expected on replay and for reverse edges.
+    failures = [
+        item["delete"]
+        for item in errors
+        if item["delete"]["status"] >= 300
+        and not (
+            item["delete"]["status"] == 404
+            and item["delete"].get("result") == "not_found"
+        )
+    ]
+    if failures:
+        statuses = sorted({failure["status"] for failure in failures})
+        raise OpenSearchException(
+            f"{len(failures)} deletes failed in {index_name} (HTTP {statuses})"
+        )
 
 
 def _is_missing_index_error(exc: Exception) -> bool:
@@ -767,6 +798,8 @@ class OpenSearchKVStorage(BaseKVStorage):
                 self._mark_index_missing()
                 return None
             logger.error(f"[{self.workspace}] Error getting document {id}: {e}")
+            if strict_storage_errors.get():
+                raise
             return None
 
     async def get_by_ids(self, ids: list[str]) -> list[dict[str, Any]]:
@@ -783,21 +816,27 @@ class OpenSearchKVStorage(BaseKVStorage):
         if not self._index_ready:
             return [None] * len(ids)
         try:
-            response = await self.client.mget(index=self._index_name, body={"ids": ids})
             doc_map = {}
-            for doc in response["docs"]:
-                if doc.get("found"):
-                    data = doc["_source"]
-                    data["_id"] = doc["_id"]
-                    data.setdefault("create_time", 0)
-                    data.setdefault("update_time", 0)
-                    doc_map[doc["_id"]] = data
+            for start in range(0, len(ids), _MGET_BATCH_SIZE):
+                batch = ids[start : start + _MGET_BATCH_SIZE]
+                response = await self.client.mget(
+                    index=self._index_name, body={"ids": batch}
+                )
+                for doc in _mget_documents(response, len(batch)):
+                    if doc.get("found"):
+                        data = doc["_source"]
+                        data["_id"] = doc["_id"]
+                        data.setdefault("create_time", 0)
+                        data.setdefault("update_time", 0)
+                        doc_map[doc["_id"]] = data
             return [doc_map.get(id) for id in ids]
         except OpenSearchException as e:
             if _is_missing_index_error(e):
                 self._mark_index_missing()
                 return [None] * len(ids)
             logger.error(f"[{self.workspace}] Error getting documents: {e}")
+            if strict_storage_errors.get():
+                raise
             return [None] * len(ids)
 
     async def get_metadata(self, doc_id: str) -> dict[str, Any] | None:
@@ -974,6 +1013,10 @@ class OpenSearchKVStorage(BaseKVStorage):
                 self.client, actions, raise_on_error=False
             )
             if failed:
+                if strict_storage_errors.get():
+                    raise OpenSearchException(
+                        f"{len(failed)} upserts failed in {self._index_name}"
+                    )
                 logger.warning(
                     f"[{self.workspace}] {len(failed)} documents failed to upsert"
                 )
@@ -1021,9 +1064,10 @@ class OpenSearchKVStorage(BaseKVStorage):
                 {"_op_type": "delete", "_index": self._index_name, "_id": doc_id}
                 for doc_id in ids
             ]
-            success, _ = await helpers.async_bulk(
+            success, errors = await helpers.async_bulk(
                 self.client, actions, raise_on_error=False
             )
+            _check_bulk_delete_errors(errors, self._index_name)
             logger.info(
                 f"[{self.workspace}] Deleted {success} documents from {self.namespace}"
             )
@@ -1032,6 +1076,7 @@ class OpenSearchKVStorage(BaseKVStorage):
                 self._mark_index_missing()
                 return
             logger.error(f"[{self.workspace}] Error deleting documents: {e}")
+            raise
 
     async def drop(self) -> dict[str, str]:
         """Delete the entire index."""
@@ -1225,6 +1270,8 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
                 self._mark_index_missing()
                 return None
             logger.error(f"[{self.workspace}] Error getting doc status {id}: {e}")
+            if strict_storage_errors.get():
+                raise
             return None
 
     async def get_by_ids(self, ids: list[str]) -> list[dict[str, Any]]:
@@ -1290,11 +1337,17 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
         try:
             # DocStatus needs refresh="wait_for" because get_docs_by_status
             # (search-based) is called immediately after enqueue upserts.
-            await helpers.async_bulk(
+            _, errors = await helpers.async_bulk(
                 self.client, actions, raise_on_error=False, refresh="wait_for"
             )
+            if errors and strict_storage_errors.get():
+                raise OpenSearchException(
+                    f"{len(errors)} upserts failed in {self._index_name}"
+                )
         except OpenSearchException as e:
             logger.error(f"[{self.workspace}] Error upserting doc statuses: {e}")
+            if strict_storage_errors.get():
+                raise
 
     async def get_status_counts(self) -> dict[str, int]:
         """Get document counts grouped by status."""
@@ -1578,14 +1631,16 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
                 {"_op_type": "delete", "_index": self._index_name, "_id": doc_id}
                 for doc_id in ids
             ]
-            await helpers.async_bulk(
+            _, errors = await helpers.async_bulk(
                 self.client, actions, raise_on_error=False, refresh="wait_for"
             )
+            _check_bulk_delete_errors(errors, self._index_name)
         except OpenSearchException as e:
             if _is_missing_index_error(e):
                 self._mark_index_missing()
                 return
             logger.error(f"[{self.workspace}] Error deleting doc statuses: {e}")
+            raise
 
     async def drop(self) -> dict[str, str]:
         """Delete the entire doc status index."""
@@ -1839,6 +1894,8 @@ class OpenSearchGraphStorage(BaseGraphStorage):
         except OpenSearchException as e:
             if _is_missing_index_error(e):
                 self._mark_indices_missing()
+            elif strict_storage_errors.get():
+                raise
             return False
 
     async def has_edge(self, source_node_id: str, target_node_id: str) -> bool:
@@ -1911,6 +1968,8 @@ class OpenSearchGraphStorage(BaseGraphStorage):
         except OpenSearchException as e:
             if _is_missing_index_error(e):
                 self._mark_indices_missing()
+            elif strict_storage_errors.get():
+                raise
             return None
 
     async def get_edge(
@@ -1934,7 +1993,7 @@ class OpenSearchGraphStorage(BaseGraphStorage):
             response = await self.client.mget(
                 index=self._edges_index, body={"ids": [forward_id, reverse_id]}
             )
-            for doc in response.get("docs", []):
+            for doc in _mget_documents(response, 2):
                 if doc.get("found"):
                     result = doc["_source"]
                     result["_id"] = doc["_id"]
@@ -1943,6 +2002,8 @@ class OpenSearchGraphStorage(BaseGraphStorage):
         except OpenSearchException as e:
             if _is_missing_index_error(e):
                 self._mark_indices_missing()
+            elif strict_storage_errors.get():
+                raise
             return None
 
     async def get_node_edges(self, source_node_id: str) -> list[tuple[str, str]] | None:
@@ -2030,7 +2091,7 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                     index=self._nodes_index, body={"ids": node_ids}
                 )
                 result = {}
-                for doc in response["docs"]:
+                for doc in _mget_documents(response, len(node_ids)):
                     if doc.get("found"):
                         data = doc["_source"]
                         data["_id"] = doc["_id"]
@@ -2039,6 +2100,8 @@ class OpenSearchGraphStorage(BaseGraphStorage):
         except OpenSearchException as e:
             if _is_missing_index_error(e):
                 self._mark_indices_missing()
+            elif strict_storage_errors.get():
+                raise
             return {}
 
     def _edge_id_candidates(self, src: str, tgt: str) -> tuple[str, str]:
@@ -2094,7 +2157,7 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                 )
                 found = [
                     (doc["_id"], doc["_source"])
-                    for doc in response.get("docs", [])
+                    for doc in _mget_documents(response, len(edge_ids))
                     if doc.get("found")
                 ]
 
@@ -2110,6 +2173,8 @@ class OpenSearchGraphStorage(BaseGraphStorage):
         except OpenSearchException as e:
             if _is_missing_index_error(e):
                 self._mark_indices_missing()
+            elif strict_storage_errors.get():
+                raise
             logger.error(f"[{self.workspace}] Error batch-getting edges: {e}")
             return {}
 
@@ -2263,7 +2328,8 @@ class OpenSearchGraphStorage(BaseGraphStorage):
         except OpenSearchException as e:
             if _is_missing_index_error(e):
                 self._mark_indices_missing()
-            pass
+            elif strict_storage_errors.get():
+                raise
         return result
 
     # --- Upsert operations ---
@@ -2282,6 +2348,8 @@ class OpenSearchGraphStorage(BaseGraphStorage):
             self._nodes_dirty = True
         except OpenSearchException as e:
             logger.error(f"[{self.workspace}] Error upserting node {node_id}: {e}")
+            if strict_storage_errors.get():
+                raise
 
     async def upsert_edge(
         self, source_node_id: str, target_node_id: str, edge_data: dict[str, str]
@@ -2312,7 +2380,8 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                 if await self.client.exists(index=self._edges_index, id=reverse_id):
                     edge_id = reverse_id
             except OpenSearchException:
-                pass
+                if strict_storage_errors.get():
+                    raise
 
             await self.client.index(index=self._edges_index, id=edge_id, body=doc)
             self._edges_dirty = True
@@ -2320,6 +2389,8 @@ class OpenSearchGraphStorage(BaseGraphStorage):
             logger.error(
                 f"[{self.workspace}] Error upserting edge {source_node_id}->{target_node_id}: {e}"
             )
+            if strict_storage_errors.get():
+                raise
 
     async def upsert_nodes_batch(self, nodes: list[tuple[str, dict[str, str]]]) -> None:
         """Batch insert/update multiple nodes using the OpenSearch bulk API.
@@ -2645,21 +2716,32 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                     }
                 }
             }
-            await self.client.delete_by_query(
+            result = await self.client.delete_by_query(
                 index=self._edges_index,
                 body=body,
                 params={"conflicts": "proceed"},
             )
             # Delete nodes
+            if strict_storage_errors.get() and (
+                result.get("timed_out")
+                or result.get("failures")
+                or result.get("version_conflicts")
+            ):
+                raise OpenSearchException("OpenSearch failed to delete connected edges")
             actions = [
                 {"_op_type": "delete", "_index": self._nodes_index, "_id": nid}
                 for nid in nodes
             ]
-            await helpers.async_bulk(self.client, actions, raise_on_error=False)
+            _, errors = await helpers.async_bulk(
+                self.client, actions, raise_on_error=False
+            )
+            _check_bulk_delete_errors(errors, self._nodes_index)
             self._nodes_dirty = True
             self._edges_dirty = True
         except OpenSearchException as e:
             logger.error(f"[{self.workspace}] Error removing nodes: {e}")
+            if strict_storage_errors.get():
+                raise
 
     async def remove_edges(self, edges: list[tuple[str, str]]) -> None:
         """Batch-delete multiple edges by deterministic ID (real-time).
@@ -2691,10 +2773,14 @@ class OpenSearchGraphStorage(BaseGraphStorage):
                             }
                         }
                     )
-            await self.client.bulk(body=operations)
+            result = await self.client.bulk(body=operations)
+            if result.get("errors"):
+                _check_bulk_delete_errors(result["items"], self._edges_index)
             self._edges_dirty = True
         except OpenSearchException as e:
             logger.error(f"[{self.workspace}] Error removing edges: {e}")
+            if strict_storage_errors.get():
+                raise
 
     # --- Query operations ---
 
@@ -3685,6 +3771,10 @@ class OpenSearchVectorDBStorage(BaseVectorStorage):
                 self.client, actions, raise_on_error=False
             )
             if failed:
+                if strict_storage_errors.get():
+                    raise OpenSearchException(
+                        f"{len(failed)} upserts failed in {self._index_name}"
+                    )
                 logger.warning(
                     f"[{self.workspace}] {len(failed)} vectors failed to upsert"
                 )
@@ -3853,17 +3943,19 @@ class OpenSearchVectorDBStorage(BaseVectorStorage):
                 {"_op_type": "delete", "_index": self._index_name, "_id": doc_id}
                 for doc_id in ids
             ]
-            result = await helpers.async_bulk(
+            success, errors = await helpers.async_bulk(
                 self.client, actions, raise_on_error=False
             )
+            _check_bulk_delete_errors(errors, self._index_name)
             logger.debug(
-                f"[{self.workspace}] Deleted {result[0]} vectors from {self.namespace}"
+                f"[{self.workspace}] Deleted {success} vectors from {self.namespace}"
             )
         except OpenSearchException as e:
             if _is_missing_index_error(e):
                 self._mark_index_missing()
                 return
             logger.error(f"[{self.workspace}] Error deleting vectors: {e}")
+            raise
 
     async def delete_entity(self, entity_name: str) -> None:
         """Delete an entity vector by computing its hash ID."""

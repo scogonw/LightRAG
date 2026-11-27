@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback } from 'react'
 import Button from '@/components/ui/Button'
 import {
   Dialog,
@@ -12,7 +12,8 @@ import {
 import Input from '@/components/ui/Input'
 import { toast } from 'sonner'
 import { errorMessage } from '@/lib/utils'
-import { deleteDocuments } from '@/api/lightrag'
+import { deleteDocuments, getDeletionJob } from '@/api/lightrag'
+import { waitForDeletionJob } from '@/api/deletionJob'
 
 import { TrashIcon, AlertTriangleIcon } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -47,15 +48,12 @@ export default function DeleteDocumentsDialog({ selectedDocIds, onDocumentsDelet
   const [deleteLLMCache, setDeleteLLMCache] = useState(false)
   const isConfirmEnabled = confirmText.toLowerCase() === 'yes' && !isDeleting
 
-  // Reset state when dialog closes
-  useEffect(() => {
-    if (!open) {
-      setConfirmText('')
-      setDeleteFile(false)
-      setDeleteLLMCache(false)
-      setIsDeleting(false)
-    }
-  }, [open])
+  const closeDialog = useCallback(() => {
+    setOpen(false)
+    setConfirmText('')
+    setDeleteFile(false)
+    setDeleteLLMCache(false)
+  }, [])
 
   const handleDelete = useCallback(async () => {
     if (!isConfirmEnabled || selectedDocIds.length === 0) return
@@ -64,42 +62,54 @@ export default function DeleteDocumentsDialog({ selectedDocIds, onDocumentsDelet
     try {
       const result = await deleteDocuments(selectedDocIds, deleteFile, deleteLLMCache)
 
-      if (result.status === 'deletion_started') {
-        toast.success(t('documentPanel.deleteDocuments.success', { count: selectedDocIds.length }))
-      } else if (result.status === 'busy') {
-        toast.error(t('documentPanel.deleteDocuments.busy'))
+      if (result.status !== 'deletion_started') {
+        const message = result.status === 'busy'
+          ? t('documentPanel.deleteDocuments.busy')
+          : result.status === 'not_allowed'
+            ? t('documentPanel.deleteDocuments.notAllowed')
+            : t('documentPanel.deleteDocuments.failed', { message: result.message })
+        toast.error(message)
         setConfirmText('')
-        setIsDeleting(false)
         return
-      } else if (result.status === 'not_allowed') {
-        toast.error(t('documentPanel.deleteDocuments.notAllowed'))
-        setConfirmText('')
-        setIsDeleting(false)
-        return
+      }
+
+      let job = null
+      try {
+        const jobId = result.job_id
+        if (jobId) {
+          job = await waitForDeletionJob(() => getDeletionJob(jobId))
+        }
+      } catch (err) {
+        console.error('Failed to check the deletion job', err)
+      }
+
+      if (!job) {
+        toast.warning(t('documentPanel.deleteDocuments.unconfirmed'))
+      } else if (job.status === 'failed') {
+        toast.error(t('documentPanel.deleteDocuments.jobFailed', {
+          deleted: job.deleted_count,
+          failed: job.failed_count
+        }))
       } else {
-        toast.error(t('documentPanel.deleteDocuments.failed', { message: result.message }))
-        setConfirmText('')
-        setIsDeleting(false)
-        return
+        toast.success(t('documentPanel.deleteDocuments.completed', { count: job.deleted_count }))
       }
 
-      // Refresh document list if provided
-      if (onDocumentsDeleted) {
-        onDocumentsDeleted().catch(console.error)
-      }
-
-      // Close dialog after successful operation
-      setOpen(false)
+      onDocumentsDeleted?.().catch(console.error)
+      closeDialog()
     } catch (err) {
       toast.error(t('documentPanel.deleteDocuments.error', { error: errorMessage(err) }))
       setConfirmText('')
     } finally {
       setIsDeleting(false)
     }
-  }, [isConfirmEnabled, selectedDocIds, deleteFile, deleteLLMCache, setOpen, t, onDocumentsDeleted])
+  }, [isConfirmEnabled, selectedDocIds, deleteFile, deleteLLMCache, closeDialog, t, onDocumentsDeleted])
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(nextOpen) => {
+      if (isDeleting) return
+      if (nextOpen) setOpen(true)
+      else closeDialog()
+    }}>
       <DialogTrigger asChild>
         <Button
           variant="destructive"
@@ -174,7 +184,7 @@ export default function DeleteDocumentsDialog({ selectedDocIds, onDocumentsDelet
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)} disabled={isDeleting}>
+          <Button variant="outline" onClick={closeDialog} disabled={isDeleting}>
             {t('common.cancel')}
           </Button>
           <Button
